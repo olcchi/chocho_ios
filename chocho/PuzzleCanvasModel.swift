@@ -140,6 +140,84 @@ enum PuzzleCanvasCoordinate {
     }
 }
 
+enum DotSizeControl {
+    static let minControlValue: Double = 1
+    static let maxControlValue: Double = 100
+    static let minRenderedScale: Double = 24
+    static let maxRenderedScale: Double = 96
+    static let defaultControlValue: Double = 23
+    static let defaultRenderedScale = renderedScale(forControlValue: defaultControlValue)
+
+    static func renderedScale(forControlValue value: Double) -> Double {
+        let clampedValue = min(max(value, minControlValue), maxControlValue)
+        let progress = (clampedValue - minControlValue) / (maxControlValue - minControlValue)
+
+        return minRenderedScale + progress * (maxRenderedScale - minRenderedScale)
+    }
+
+    static func controlValue(forRenderedScale scale: Double) -> Double {
+        let clampedScale = min(max(scale, minRenderedScale), maxRenderedScale)
+        let progress = (clampedScale - minRenderedScale) / (maxRenderedScale - minRenderedScale)
+
+        return minControlValue + progress * (maxControlValue - minControlValue)
+    }
+}
+
+struct CanvasHistory<Value: Equatable> {
+    private(set) var currentValue: Value
+    private var undoStack: [Value] = []
+    private var redoStack: [Value] = []
+
+    var canUndo: Bool {
+        !undoStack.isEmpty
+    }
+
+    var canRedo: Bool {
+        !redoStack.isEmpty
+    }
+
+    init(initialValue: Value) {
+        currentValue = initialValue
+    }
+
+    mutating func reset(to value: Value) {
+        currentValue = value
+        undoStack = []
+        redoStack = []
+    }
+
+    mutating func record(_ value: Value) {
+        guard value != currentValue else { return }
+
+        undoStack.append(currentValue)
+        currentValue = value
+        redoStack = []
+    }
+
+    mutating func undo() -> Value? {
+        guard let previousValue = undoStack.popLast() else { return nil }
+
+        redoStack.append(currentValue)
+        currentValue = previousValue
+        return previousValue
+    }
+
+    mutating func redo() -> Value? {
+        guard let nextValue = redoStack.popLast() else { return nil }
+
+        undoStack.append(currentValue)
+        currentValue = nextValue
+        return nextValue
+    }
+}
+
+extension CanvasHistory where Value: RangeReplaceableCollection {
+    mutating func clearValue() -> Value {
+        record(Value())
+        return currentValue
+    }
+}
+
 struct PuzzleDot: Identifiable, Equatable {
     let id: UUID
     let position: CGPoint

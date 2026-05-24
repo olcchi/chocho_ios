@@ -127,6 +127,60 @@ struct PuzzleCanvasModelTests {
         #expect(center.y == 196)
     }
 
+    @Test func canvasHistoryUndoAndRedoMoveBetweenDotStates() {
+        let firstDot = PuzzleDotFactory.makeDot(position: CGPoint(x: 0.2, y: 0.3), index: 0)
+        let secondDot = PuzzleDotFactory.makeDot(position: CGPoint(x: 0.4, y: 0.5), index: 1)
+        var history = CanvasHistory<[PuzzleDot]>(initialValue: [])
+
+        history.record([firstDot])
+        history.record([firstDot, secondDot])
+
+        #expect(history.canUndo)
+        #expect(history.undo() == [firstDot])
+        #expect(history.canRedo)
+        #expect(history.redo() == [firstDot, secondDot])
+    }
+
+    @Test func canvasHistoryClearRecordsEmptyState() {
+        let dot = PuzzleDotFactory.makeDot(position: CGPoint(x: 0.2, y: 0.3), index: 0)
+        var history = CanvasHistory<[PuzzleDot]>(initialValue: [dot])
+
+        let clearedDots = history.clearValue()
+
+        #expect(clearedDots == [])
+        #expect(history.canUndo)
+        #expect(history.undo() == [dot])
+    }
+
+    @Test func canvasHistoryRecordAfterUndoDropsRedoStack() {
+        let firstDot = PuzzleDotFactory.makeDot(position: CGPoint(x: 0.2, y: 0.3), index: 0)
+        let secondDot = PuzzleDotFactory.makeDot(position: CGPoint(x: 0.4, y: 0.5), index: 1)
+        let replacementDot = PuzzleDotFactory.makeDot(position: CGPoint(x: 0.6, y: 0.7), index: 2)
+        var history = CanvasHistory<[PuzzleDot]>(initialValue: [])
+
+        history.record([firstDot])
+        history.record([firstDot, secondDot])
+        _ = history.undo()
+        history.record([replacementDot])
+
+        #expect(history.canRedo == false)
+        #expect(history.undo() == [firstDot])
+    }
+
+    @Test func dotSizeControlMapsSmallestValueToUsableRenderedSize() {
+        #expect(DotSizeControl.renderedScale(forControlValue: 1) == 24)
+        #expect(DotSizeControl.renderedScale(forControlValue: 100) == 96)
+    }
+
+    @Test func dotSizeControlConvertsRenderedScaleBackToControlValue() {
+        #expect(DotSizeControl.controlValue(forRenderedScale: 24) == 1)
+        #expect(DotSizeControl.controlValue(forRenderedScale: 96) == 100)
+    }
+
+    @Test func dotSizeControlKeepsDefaultRenderedScaleWhenControlRangeChanges() {
+        #expect(DotSizeControl.defaultRenderedScale == 40)
+    }
+
     @Test func dotShapeCatalogGroupsItemsByPanelCategory() {
         #expect(DotShapeCategory.panelOrder.map(\.title) == ["最近", "基础", "小物", "彩纸", "贴纸", "纽扣", "水钻", "布", "针线"])
         #expect(DotShapeAsset.all.filter { $0.matches(category: .objects) }.map(\.title).prefix(4) == ["工牌", "未标题-1", "眼睛", "花束"])

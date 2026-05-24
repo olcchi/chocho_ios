@@ -44,7 +44,7 @@ enum PanelTab: String, CaseIterable, Identifiable {
 struct BottomSheetPanel: View {
     static let height: CGFloat = 320
     static let collapsedHeight: CGFloat = 78
-    private static let topCornerRadius: CGFloat = 24
+    static let topCornerRadius: CGFloat = 24
     private static let contentHorizontalInset: CGFloat = 16
     private static let contentBottomInset: CGFloat = 4
     private static let maxVisibleBottomSafeAreaInset: CGFloat = 0
@@ -107,19 +107,7 @@ struct BottomSheetPanel: View {
             ),
             style: .continuous
         )
-        .fill(.ultraThinMaterial)
-        .overlay {
-            UnevenRoundedRectangle(
-                cornerRadii: RectangleCornerRadii(
-                    topLeading: Self.topCornerRadius,
-                    bottomLeading: 0,
-                    bottomTrailing: 0,
-                    topTrailing: Self.topCornerRadius
-                ),
-                style: .continuous
-            )
-            .fill(Color.popover.opacity(0.28))
-        }
+        .fill(Color.popover)
     }
 
     private var visibleBottomSafeAreaInset: CGFloat {
@@ -196,6 +184,88 @@ struct BottomSheetPanel: View {
     }
 }
 
+struct CanvasHistoryControls: View {
+    let canUndo: Bool
+    let canRedo: Bool
+    let canClear: Bool
+    let onClear: () -> Void
+    let onUndo: () -> Void
+    let onRedo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onClear) {
+                Text("打扫")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.foreground)
+                    .frame(height: 30)
+                    .padding(.horizontal, 12)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canClear)
+            .opacity(canClear ? 1 : 0.42)
+            .accessibilityLabel("清空画布内容")
+
+            controlDivider
+
+            historyButton(
+                assetName: "public/undo",
+                isEnabled: canUndo,
+                accessibilityLabel: "撤销",
+                action: onUndo
+            )
+
+            controlDivider
+
+            historyButton(
+                assetName: "public/redo",
+                isEnabled: canRedo,
+                accessibilityLabel: "重做",
+                action: onRedo
+            )
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 36)
+        .background(
+            RoundedRectangle(cornerRadius: BottomSheetPanel.topCornerRadius, style: .continuous)
+                .fill(Color.popover)
+                .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: BottomSheetPanel.topCornerRadius, style: .continuous)
+                .stroke(Color.border.opacity(0.7), lineWidth: 1)
+        }
+    }
+
+    private var controlDivider: some View {
+        Rectangle()
+            .fill(Color.border)
+            .frame(width: 1, height: 22)
+            .padding(.horizontal, 4)
+    }
+
+    private func historyButton(
+        assetName: String,
+        isEnabled: Bool,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(assetName)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .foregroundStyle(Color.foreground)
+                .frame(width: 34, height: 30)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.38)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
 private struct PanelContentCard: View {
     let tab: PanelTab
     @Binding var dotCount: Double
@@ -239,20 +309,12 @@ private struct DrawPanelControls: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 10) {
-                Text("波点数量")
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(Color.foreground)
-
-                Slider(value: $dotCount, in: 0...30, step: 1)
-                    .tint(activeColor)
-
-                Text("\(Int(dotCount.rounded()))")
-                    .font(.system(size: 16, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Color.mutedForeground)
-                    .frame(width: 54, height: 32)
-                    .background(Color.card.opacity(0.86), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
+            StyledSlider(
+                title: "波点数量",
+                value: $dotCount,
+                range: 0...30,
+                step: 1
+            )
 
             Button(action: onDrawDots) {
                 HStack(spacing: 8) {
@@ -348,21 +410,23 @@ private struct DotSizeSlider: View {
     @Binding var dotScale: Double
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text("波点尺寸")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.foreground)
-
-            Slider(value: $dotScale, in: 1...100, step: 1)
-                .tint(Color.primary)
-
-            Text("\(Int(dotScale.rounded()))")
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.mutedForeground)
-                .frame(width: 48, height: 28)
-                .background(Color.card.opacity(0.86), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
+        StyledSlider(
+            title: "大小",
+            value: dotControlValue,
+            range: DotSizeControl.minControlValue...DotSizeControl.maxControlValue
+        )
         .padding(.horizontal, 2)
+    }
+
+    private var dotControlValue: Binding<Double> {
+        Binding(
+            get: {
+                DotSizeControl.controlValue(forRenderedScale: dotScale)
+            },
+            set: { newValue in
+                dotScale = DotSizeControl.renderedScale(forControlValue: newValue)
+            }
+        )
     }
 }
 
@@ -370,7 +434,7 @@ private struct DotColorPicker: View {
     @Binding var selectedDotColor: Color
 
     var body: some View {
-        ColorPicker("波点颜色", selection: $selectedDotColor, supportsOpacity: false)
+        ColorPicker("颜色", selection: $selectedDotColor, supportsOpacity: false)
             .font(.system(size: 14, weight: .medium))
             .foregroundStyle(Color.foreground)
             .frame(height: 30)

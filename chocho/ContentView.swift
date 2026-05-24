@@ -18,10 +18,12 @@ struct ContentView: View {
     @State private var viewportOffset: CGSize = .zero
     @State private var isPanelExpanded = true
     @State private var dotCount: Double = 10
-    @State private var dotScale: Double = 36
+    @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
     @State private var selectedDotColor: Color = .primary
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var puzzleDots: [PuzzleDot] = []
+    @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
+    @State private var showsClearCanvasConfirmation = false
     @State private var exportMessage: String?
     @State private var shareItem: CanvasShareItem?
     @GestureState private var gestureScale: CGFloat = 1
@@ -66,6 +68,19 @@ struct ContentView: View {
                     onDrawDots: drawPuzzleDots
                 )
                     .padding(.bottom, -proxy.safeAreaInsets.bottom)
+
+                CanvasHistoryControls(
+                    canUndo: canvasHistory.canUndo,
+                    canRedo: canvasHistory.canRedo,
+                    canClear: !puzzleDots.isEmpty,
+                    onClear: presentClearCanvasConfirmation,
+                    onUndo: undoCanvasChange,
+                    onRedo: redoCanvasChange
+                )
+                .padding(.trailing, 20)
+                .padding(.bottom, historyControlsBottomPadding(for: proxy))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .zIndex(2)
             }
         }
         .task(id: selectedPhotoItem) {
@@ -74,6 +89,12 @@ struct ContentView: View {
         .sheet(item: $shareItem) { item in
             CanvasShareSheet(fileURL: item.fileURL)
                 .ignoresSafeArea()
+        }
+        .alert("打扫波点", isPresented: $showsClearCanvasConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("打扫", role: .destructive, action: clearCanvasContent)
+        } message: {
+            Text("你想要把画布上的波点都打扫掉吗？")
         }
     }
 
@@ -113,6 +134,10 @@ struct ContentView: View {
     private var panelBackgroundColor: Color {
         Color.popover
     }
+
+    private func historyControlsBottomPadding(for proxy: GeometryProxy) -> CGFloat {
+        BottomSheetPanel.visibleHeight(isExpanded: isPanelExpanded) + 10
+    }
     
     @MainActor
     private func loadSelectedPhoto() async {
@@ -127,6 +152,7 @@ struct ContentView: View {
 
             canvasImage = image
             puzzleDots = []
+            canvasHistory.reset(to: [])
             viewportScale = 1
             viewportOffset = .zero
             exportMessage = nil
@@ -142,20 +168,61 @@ struct ContentView: View {
             return
         }
 
-        puzzleDots = PuzzleDotFactory.makeDots(
+        let newDots = PuzzleDotFactory.makeDots(
             count: Int(dotCount.rounded()),
             shapeAssetName: selectedDotShape.name
         )
+        applyPuzzleDots(newDots)
         exportMessage = nil
     }
 
     @MainActor
     private func addPuzzleDot(at position: CGPoint) {
-        puzzleDots.append(PuzzleDotFactory.makeDot(
+        var newDots = puzzleDots
+        newDots.append(PuzzleDotFactory.makeDot(
             position: position,
             index: puzzleDots.count,
             shapeAssetName: selectedDotShape.name
         ))
+        applyPuzzleDots(newDots)
+        exportMessage = nil
+    }
+
+    @MainActor
+    private func presentClearCanvasConfirmation() {
+        guard !puzzleDots.isEmpty else { return }
+
+        showsClearCanvasConfirmation = true
+    }
+
+    @MainActor
+    private func clearCanvasContent() {
+        guard !puzzleDots.isEmpty else { return }
+
+        puzzleDots = canvasHistory.clearValue()
+        exportMessage = nil
+    }
+
+    @MainActor
+    private func undoCanvasChange() {
+        guard let previousDots = canvasHistory.undo() else { return }
+
+        puzzleDots = previousDots
+        exportMessage = nil
+    }
+
+    @MainActor
+    private func redoCanvasChange() {
+        guard let nextDots = canvasHistory.redo() else { return }
+
+        puzzleDots = nextDots
+        exportMessage = nil
+    }
+
+    @MainActor
+    private func applyPuzzleDots(_ dots: [PuzzleDot]) {
+        canvasHistory.record(dots)
+        puzzleDots = canvasHistory.currentValue
         exportMessage = nil
     }
 
