@@ -16,7 +16,10 @@ struct ContentView: View {
     @State private var extensionRatio: CGFloat = 0.2
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
+    @State private var isPanelExpanded = true
     @State private var dotCount: Double = 10
+    @State private var dotScale: Double = 36
+    @State private var selectedDotColor: Color = .primary
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var puzzleDots: [PuzzleDot] = []
     @State private var exportMessage: String?
@@ -27,7 +30,7 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
-                Color(red: 245 / 255, green: 254 / 255, blue: 233 / 255)
+                Color.background
                     .ignoresSafeArea()
 
                 panelBackgroundColor
@@ -37,16 +40,16 @@ struct ContentView: View {
 
                 canvasArea
                 .padding(.top, topCanvasInset(for: proxy))
-                .padding(.bottom, 297 - proxy.safeAreaInsets.bottom)
+                .padding(.bottom, BottomSheetPanel.visibleHeight(isExpanded: isPanelExpanded))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .animation(.smooth(duration: 0.24), value: isPanelExpanded)
 
-                VStack(alignment: .trailing, spacing: 8) {
-                    canvasActions()
-
-                    if let exportMessage {
-                        CanvasStatusLabel(title: exportMessage)
-                    }
-                }
+                CanvasHeader(
+                    selectedPhotoItem: $selectedPhotoItem,
+                    exportMessage: exportMessage,
+                    canDownload: canvasImage != nil,
+                    onDownload: shareCanvas
+                )
                 .padding(.top, 4)
                 .padding(.trailing, 25)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -54,8 +57,12 @@ struct ContentView: View {
 
                 BottomSheetPanel(
                     selectedTab: $selectedTab,
+                    isExpanded: $isPanelExpanded,
                     dotCount: $dotCount,
+                    dotScale: $dotScale,
+                    selectedDotColor: $selectedDotColor,
                     selectedDotShape: $selectedDotShape,
+                    bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
                     onDrawDots: drawPuzzleDots
                 )
                     .padding(.bottom, -proxy.safeAreaInsets.bottom)
@@ -77,6 +84,8 @@ struct ContentView: View {
                 image: canvasImage,
                 extensionRatio: extensionRatio,
                 dots: puzzleDots,
+                dotScale: CGFloat(dotScale),
+                dotColor: selectedDotColor,
                 viewportScale: viewportScale * gestureScale,
                 viewportOffset: viewportOffset + gestureOffset,
                 onTapCanvas: addPuzzleDot(at:),
@@ -93,25 +102,6 @@ struct ContentView: View {
         }
     }
 
-    private func canvasActions() -> some View {
-        let canDownload = canvasImage != nil
-
-        return HStack(spacing: 10) {
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                CanvasActionLabel(title: "上传", iconAssetName: "public/upload")
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                shareCanvas()
-            } label: {
-                CanvasActionLabel(title: "下载", iconAssetName: "public/download", isEnabled: canDownload)
-            }
-            .buttonStyle(.plain)
-            .disabled(!canDownload)
-        }
-    }
-
     private func topCanvasInset(for proxy: GeometryProxy) -> CGFloat {
         topActionBarHeight
     }
@@ -121,7 +111,7 @@ struct ContentView: View {
     }
 
     private var panelBackgroundColor: Color {
-        Color(red: 253 / 255, green: 253 / 255, blue: 253 / 255)
+        Color.popover
     }
     
     @MainActor
@@ -190,6 +180,8 @@ struct ContentView: View {
                 image: canvasImage,
                 extensionRatio: extensionRatio,
                 dots: puzzleDots,
+                dotScale: CGFloat(dotScale),
+                dotColor: selectedDotColor,
                 size: exportSize
             )
         )
@@ -266,31 +258,6 @@ private struct CanvasShareItem: Identifiable {
     let fileURL: URL
 }
 
-private struct CanvasActionLabel: View {
-    let title: String
-    let iconAssetName: String
-    var isEnabled = true
-
-    var body: some View {
-        Image(iconAssetName)
-            .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
-            .frame(width: 16, height: 16)
-            .foregroundStyle(isEnabled ? Color.black : Color.black.opacity(0.35))
-            .frame(width: 36, height: 30)
-            .background(
-                actionColor.opacity(isEnabled ? 1 : 0.45),
-                in: Capsule(style: .continuous)
-            )
-            .accessibilityLabel(title)
-    }
-
-    private var actionColor: Color {
-        Color(red: 165 / 255, green: 231 / 255, blue: 76 / 255)
-    }
-}
-
 private struct CanvasUploadPlaceholder: View {
     var body: some View {
         VStack(spacing: 5) {
@@ -306,32 +273,16 @@ private struct CanvasUploadPlaceholder: View {
             Text("抽一张后会撒上波点")
         }
         .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(Color(red: 0 / 255, green: 195 / 255, blue: 255 / 255))
+        .foregroundStyle(Color.appAccent)
         .multilineTextAlignment(.center)
         .frame(width: 308, height: 220)
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
-                    Color(red: 0 / 255, green: 195 / 255, blue: 255 / 255),
+                    Color.appAccent,
                     style: StrokeStyle(lineWidth: 1.5, dash: [4, 4])
                 )
         }
-    }
-}
-
-private struct CanvasStatusLabel: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.black)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(
-                Color(red: 165 / 255, green: 231 / 255, blue: 76 / 255),
-                in: Capsule(style: .continuous)
-            )
     }
 }
 
@@ -403,13 +354,17 @@ private struct CanvasExportView: View {
     let image: UIImage
     let extensionRatio: CGFloat
     let dots: [PuzzleDot]
+    let dotScale: CGFloat
+    let dotColor: Color
     let size: CGSize
 
     var body: some View {
         PuzzleCanvasView(
             image: image,
             extensionRatio: extensionRatio,
-            dots: dots
+            dots: dots,
+            dotScale: dotScale,
+            dotColor: dotColor
         )
         .frame(width: size.width, height: size.height)
     }

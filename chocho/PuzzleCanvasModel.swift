@@ -146,20 +146,26 @@ struct PuzzleDot: Identifiable, Equatable {
     let color: Color
     let size: CGFloat
     let shapeAssetName: String
+
+    var usesTemplateColor: Bool {
+        !shapeAssetName.contains(".")
+    }
 }
 
 enum PuzzleDotFactory {
+    private static let unitSize: CGFloat = 1
+
     static func makeDot(
         position: CGPoint,
         index: Int,
         shapeAssetName: String = DotShapeAsset.defaultSelection.name
     ) -> PuzzleDot {
         let palette: [Color] = [
-            Color(red: 138 / 255, green: 255 / 255, blue: 78 / 255),
-            Color(red: 77 / 255, green: 238 / 255, blue: 91 / 255),
-            Color(red: 82 / 255, green: 72 / 255, blue: 235 / 255),
-            Color(red: 255 / 255, green: 233 / 255, blue: 52 / 255),
-            Color(red: 255 / 255, green: 48 / 255, blue: 119 / 255)
+            Color.chart1,
+            Color.chart2,
+            Color.chart3,
+            Color.chart4,
+            Color.chart5
         ]
 
         return PuzzleDot(
@@ -169,7 +175,7 @@ enum PuzzleDotFactory {
                 y: min(max(position.y, 0), 1)
             ),
             color: palette[max(index, 0) % palette.count],
-            size: CGFloat.random(in: 24...42),
+            size: unitSize,
             shapeAssetName: shapeAssetName
         )
     }

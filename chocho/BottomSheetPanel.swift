@@ -42,83 +42,165 @@ enum PanelTab: String, CaseIterable, Identifiable {
 }
 
 struct BottomSheetPanel: View {
+    static let height: CGFloat = 320
+    static let collapsedHeight: CGFloat = 78
+    private static let topCornerRadius: CGFloat = 24
+    private static let contentHorizontalInset: CGFloat = 16
+    private static let contentBottomInset: CGFloat = 4
+    private static let maxVisibleBottomSafeAreaInset: CGFloat = 0
+    private static let handleTouchHeight: CGFloat = 28
+    private static let collapseDragThreshold: CGFloat = 28
+
+    static func visibleHeight(isExpanded: Bool) -> CGFloat {
+        isExpanded ? height : collapsedHeight
+    }
+
     @Binding var selectedTab: PanelTab
+    @Binding var isExpanded: Bool
     @Binding var dotCount: Double
+    @Binding var dotScale: Double
+    @Binding var selectedDotColor: Color
     @Binding var selectedDotShape: DotShapeAsset
+    var bottomSafeAreaInset: CGFloat = 0
     let onDrawDots: () -> Void
-    @Namespace private var tabCursorNamespace
 
     var body: some View {
         VStack(spacing: 0) {
-            panelHandle
-                .padding(.top, 6)
-
-            panelTabBar
-                .padding(.top, 8)
+            panelHandleArea
 
             PanelContentCard(
                 tab: selectedTab,
                 dotCount: $dotCount,
+                dotScale: $dotScale,
+                selectedDotColor: $selectedDotColor,
                 selectedDotShape: $selectedDotShape,
                 onDrawDots: onDrawDots
             )
-            .padding(.top, 10)
-            .padding(.horizontal, 16)
+            .padding(.top, isExpanded ? 8 : 0)
+            .frame(height: isExpanded ? nil : 0, alignment: .top)
+            .opacity(isExpanded ? 1 : 0)
+            .accessibilityHidden(!isExpanded)
+            .allowsHitTesting(isExpanded)
+
+            panelTabBar
+                .padding(.top, isExpanded ? 6 : 4)
         }
+        .padding(.horizontal, Self.contentHorizontalInset)
+        .padding(.bottom, Self.contentBottomInset + visibleBottomSafeAreaInset)
         .frame(maxWidth: .infinity)
-        .frame(height: 297)
-        .background(Color(red: 253 / 255, green: 253 / 255, blue: 253 / 255))
+        .frame(height: Self.visibleHeight(isExpanded: isExpanded) + bottomSafeAreaInset, alignment: .top)
+        .background(panelBackground)
+        .clipped()
+        .compositingGroup()
+        .shadow(color: Color.black.opacity(0.10), radius: 28, x: 0, y: -5)
         .animation(.smooth(duration: 0.22), value: selectedTab)
+        .animation(.smooth(duration: 0.24), value: isExpanded)
+    }
+
+    private var panelBackground: some View {
+        UnevenRoundedRectangle(
+            cornerRadii: RectangleCornerRadii(
+                topLeading: Self.topCornerRadius,
+                bottomLeading: 0,
+                bottomTrailing: 0,
+                topTrailing: Self.topCornerRadius
+            ),
+            style: .continuous
+        )
+        .fill(.ultraThinMaterial)
+        .overlay {
+            UnevenRoundedRectangle(
+                cornerRadii: RectangleCornerRadii(
+                    topLeading: Self.topCornerRadius,
+                    bottomLeading: 0,
+                    bottomTrailing: 0,
+                    topTrailing: Self.topCornerRadius
+                ),
+                style: .continuous
+            )
+            .fill(Color.popover.opacity(0.28))
+        }
+    }
+
+    private var visibleBottomSafeAreaInset: CGFloat {
+        min(bottomSafeAreaInset, Self.maxVisibleBottomSafeAreaInset)
     }
 
     private var panelHandle: some View {
         Capsule(style: .continuous)
-            .fill(Color(red: 235 / 255, green: 235 / 255, blue: 235 / 255))
+            .fill(Color.border)
             .frame(width: 48, height: 6)
+    }
+
+    private var panelHandleArea: some View {
+        panelHandle
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.handleTouchHeight)
+            .contentShape(Rectangle())
+            .gesture(handleDragGesture)
+            .accessibilityLabel(isExpanded ? "折叠面板" : "展开面板")
     }
 
     private var panelTabBar: some View {
         HStack(spacing: 0) {
             ForEach(PanelTab.allCases) { tab in
+                let isSelected = tab == selectedTab
+
                 Button {
                     selectedTab = tab
-                } label: {
-                    VStack(spacing: 6) {
-                        Text(tab.title)
-                            .font(.system(size: 17, weight: tab == selectedTab ? .semibold : .regular))
-                            .foregroundStyle(tab == selectedTab ? Color.black : Color.black.opacity(0.55))
-
-                        ZStack {
-                            if tab == selectedTab {
-                                Capsule(style: .continuous)
-                                    .fill(activeTabColor)
-                                    .frame(width: 36, height: 3)
-                                    .matchedGeometryEffect(id: "tabCursor", in: tabCursorNamespace)
-                            } else {
-                                Color.clear
-                                    .frame(width: 36, height: 3)
-                            }
-                        }
+                    if !isExpanded {
+                        setExpanded(true)
                     }
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(tab.iconAssetName)
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 18, height: 18)
+
+                        Text(tab.title)
+                            .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    }
+                    .foregroundStyle(isSelected ? activeTabColor : Color.mutedForeground)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(height: 42)
+                    .scaleEffect(isSelected ? 1.1 : 1)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityAddTraits(tab == selectedTab ? .isSelected : [])
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 20)
     }
 
     private var activeTabColor: Color {
-        Color(red: 165 / 255, green: 231 / 255, blue: 76 / 255)
+        Color.primary
+    }
+
+    private var handleDragGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onEnded { value in
+                let verticalTranslation = value.translation.height
+
+                guard abs(verticalTranslation) > Self.collapseDragThreshold else { return }
+
+                setExpanded(verticalTranslation < 0)
+            }
+    }
+
+    private func setExpanded(_ newValue: Bool) {
+        withAnimation(.smooth(duration: 0.24)) {
+            isExpanded = newValue
+        }
     }
 }
 
 private struct PanelContentCard: View {
     let tab: PanelTab
     @Binding var dotCount: Double
+    @Binding var dotScale: Double
+    @Binding var selectedDotColor: Color
     @Binding var selectedDotShape: DotShapeAsset
     let onDrawDots: () -> Void
 
@@ -126,7 +208,11 @@ private struct PanelContentCard: View {
         Group {
             switch tab {
             case .dots:
-                DotShapePickerPanel(selectedShape: $selectedDotShape)
+                DotShapePickerPanel(
+                    selectedShape: $selectedDotShape,
+                    dotScale: $dotScale,
+                    selectedDotColor: $selectedDotColor
+                )
             case .draw:
                 DrawPanelControls(
                     dotCount: $dotCount,
@@ -139,11 +225,11 @@ private struct PanelContentCard: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 204)
+        .frame(height: 232)
     }
 
     private var panelFill: Color {
-        Color(red: 242 / 255, green: 242 / 255, blue: 242 / 255)
+        Color.muted
     }
 }
 
@@ -152,20 +238,20 @@ private struct DrawPanelControls: View {
     let onDrawDots: () -> Void
 
     var body: some View {
-        VStack(spacing: 18) {
-            HStack(spacing: 14) {
+        VStack(spacing: 14) {
+            HStack(spacing: 10) {
                 Text("波点数量")
                     .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(Color.foreground)
 
                 Slider(value: $dotCount, in: 0...30, step: 1)
                     .tint(activeColor)
 
                 Text("\(Int(dotCount.rounded()))")
                     .font(.system(size: 16, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Color.black.opacity(0.68))
+                    .foregroundStyle(Color.mutedForeground)
                     .frame(width: 54, height: 32)
-                    .background(Color.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color.card.opacity(0.86), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
             Button(action: onDrawDots) {
@@ -179,9 +265,9 @@ private struct DrawPanelControls: View {
                     Text("抽一张")
                         .font(.system(size: 16, weight: .semibold))
                 }
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.primaryForeground)
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(height: 48)
                 .background(activeColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
@@ -191,7 +277,7 @@ private struct DrawPanelControls: View {
     }
 
     private var activeColor: Color {
-        Color(red: 67 / 255, green: 238 / 255, blue: 98 / 255)
+        Color.primary
     }
 }
 
@@ -202,13 +288,13 @@ private struct PlaceholderPanelContent: View {
         ZStack(alignment: .topLeading) {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.foreground)
                 .padding(.top, 10)
                 .padding(.leading, 10)
 
             Text("占位...")
                 .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Color.foreground)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
     }
@@ -217,6 +303,8 @@ private struct PlaceholderPanelContent: View {
 private struct DotShapePickerPanel: View {
     @State private var selectedCategory: DotShapeCategory = .objects
     @Binding var selectedShape: DotShapeAsset
+    @Binding var dotScale: Double
+    @Binding var selectedDotColor: Color
     @AppStorage("chocho.dotShape.recentNames") private var recentShapeNamesStore = DotShapeAsset.defaultSelection.name
 
     var body: some View {
@@ -237,6 +325,10 @@ private struct DotShapePickerPanel: View {
                 )
                 recentShapeNamesStore = DotShapeRecentList.storageString(for: recentShapeNames)
             }
+
+            DotSizeSlider(dotScale: $dotScale)
+
+            DotColorPicker(selectedDotColor: $selectedDotColor)
         }
         .frame(maxWidth: .infinity)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -252,21 +344,55 @@ private struct DotShapePickerPanel: View {
     }
 }
 
+private struct DotSizeSlider: View {
+    @Binding var dotScale: Double
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("波点尺寸")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color.foreground)
+
+            Slider(value: $dotScale, in: 1...100, step: 1)
+                .tint(Color.primary)
+
+            Text("\(Int(dotScale.rounded()))")
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.mutedForeground)
+                .frame(width: 48, height: 28)
+                .background(Color.card.opacity(0.86), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .padding(.horizontal, 2)
+    }
+}
+
+private struct DotColorPicker: View {
+    @Binding var selectedDotColor: Color
+
+    var body: some View {
+        ColorPicker("波点颜色", selection: $selectedDotColor, supportsOpacity: false)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Color.foreground)
+            .frame(height: 30)
+            .padding(.horizontal, 2)
+    }
+}
+
 private struct DotShapeCategoryTabs: View {
     @Binding var selectedCategory: DotShapeCategory
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 ForEach(DotShapeCategory.panelOrder) { category in
                     Button {
                         selectedCategory = category
                     } label: {
                         Text(category.title)
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.black)
+                            .foregroundStyle(Color.foreground)
                             .frame(minWidth: 48)
-                            .frame(height: 30)
+                            .frame(height: 28)
                             .padding(.horizontal, 2)
                             .background {
                                 if category == selectedCategory {
@@ -274,7 +400,7 @@ private struct DotShapeCategoryTabs: View {
                                         .fill(activeColor)
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                                                .stroke(Color.foreground.opacity(0.08), lineWidth: 1)
                                         }
                                 }
                             }
@@ -289,7 +415,7 @@ private struct DotShapeCategoryTabs: View {
     }
 
     private var activeColor: Color {
-        Color(red: 0 / 255, green: 235 / 255, blue: 93 / 255)
+        Color.primary
     }
 }
 
@@ -297,14 +423,21 @@ private struct DotShapeGrid: View {
     let shapes: [DotShapeAsset]
     @Binding var selectedShape: DotShapeAsset
     let onSelect: (DotShapeAsset) -> Void
+    @State private var availableWidth: CGFloat = 361
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 66, maximum: 78), spacing: 8)
-    ]
+    private let columnCount = 6
+    private let gridSpacing: CGFloat = 6
+    private let gridPadding: CGFloat = 8
+    private let visibleRowCount: CGFloat = 2
+
+    private let columns = Array(
+        repeating: GridItem(.flexible(), spacing: 6),
+        count: 6
+    )
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 8) {
+            LazyVGrid(columns: columns, spacing: gridSpacing) {
                 ForEach(shapes) { shape in
                     DotShapeTile(
                         shape: shape,
@@ -314,16 +447,41 @@ private struct DotShapeGrid: View {
                     }
                 }
             }
-            .padding(10)
+            .padding(gridPadding)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity)
-        .frame(height: 132)
+        .frame(height: heightForTwoRows(availableWidth: availableWidth))
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(red: 253 / 255, green: 253 / 255, blue: 253 / 255))
-                .stroke(Color(red: 225 / 255, green: 226 / 255, blue: 236 / 255), lineWidth: 1.5)
+                .fill(Color.card)
+                .stroke(Color.border, lineWidth: 1.5)
         )
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: DotShapeGridWidthKey.self, value: proxy.size.width)
+            }
+        )
+        .onPreferenceChange(DotShapeGridWidthKey.self) { width in
+            availableWidth = width
+        }
+    }
+
+    private func heightForTwoRows(availableWidth width: CGFloat) -> CGFloat {
+        let horizontalGaps = CGFloat(columnCount - 1) * gridSpacing
+        let contentWidth = width - gridPadding * 2 - horizontalGaps
+        let tileSide = floor(contentWidth / CGFloat(columnCount))
+        let rowGaps = (visibleRowCount - 1) * gridSpacing
+
+        return tileSide * visibleRowCount + rowGaps + gridPadding * 2
+    }
+}
+
+private struct DotShapeGridWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 361
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -334,18 +492,22 @@ private struct DotShapeTile: View {
 
     var body: some View {
         Button(action: onSelect) {
-            Image(shape.previewAssetName)
-                .resizable()
-                .scaledToFit()
-                .padding(shape.previewTilePadding)
-                .frame(width: 66, height: 66)
-                .background(tileBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color(red: 225 / 255, green: 226 / 255, blue: 236 / 255), lineWidth: isSelected ? 0 : 1.5)
-                }
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(tileBackground)
+
+                Image(shape.previewAssetName)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(shape.previewTilePadding)
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.border, lineWidth: isSelected ? 0 : 1.5)
+            }
         }
+        .frame(maxWidth: .infinity)
         .buttonStyle(.plain)
         .accessibilityLabel(shape.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -353,8 +515,8 @@ private struct DotShapeTile: View {
 
     private var tileBackground: Color {
         isSelected
-            ? Color(red: 0 / 255, green: 235 / 255, blue: 93 / 255)
-            : Color(red: 253 / 255, green: 253 / 255, blue: 253 / 255)
+            ? Color.primary
+            : Color.card
     }
 }
 

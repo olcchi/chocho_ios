@@ -5,6 +5,8 @@ struct PuzzleCanvasView: View {
     let image: UIImage
     let extensionRatio: CGFloat
     let dots: [PuzzleDot]
+    var dotScale: CGFloat = 1
+    var dotColor: Color = .primary
     var viewportScale: CGFloat = 1
     var viewportOffset: CGSize = .zero
     var onTapCanvas: ((CGPoint) -> Void)?
@@ -50,6 +52,8 @@ struct PuzzleCanvasView: View {
 
                     PuzzleDotsCanvas(
                         dots: dots,
+                        dotScale: dotScale,
+                        dotColor: dotColor,
                         composedFrame: composedFrame
                     )
                 }
@@ -121,7 +125,7 @@ private struct PuzzleGridCanvas: View {
 
             context.fill(
                 Path(CGRect(origin: .zero, size: size)),
-                with: .color(Color(red: 248 / 255, green: 252 / 255, blue: 255 / 255))
+                with: .color(Color.secondary)
             )
 
             let spacing: CGFloat = 12
@@ -143,7 +147,7 @@ private struct PuzzleGridCanvas: View {
 
             context.stroke(
                 path,
-                with: .color(Color(red: 200 / 255, green: 229 / 255, blue: 255 / 255)),
+                with: .color(Color.border),
                 lineWidth: 1
             )
         }
@@ -152,26 +156,45 @@ private struct PuzzleGridCanvas: View {
 
 private struct PuzzleDotsCanvas: View {
     let dots: [PuzzleDot]
+    let dotScale: CGFloat
+    let dotColor: Color
     let composedFrame: CGRect
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(dots) { dot in
-                let radius = dot.size / 2
+                let size = dot.size * dotScale
+                let radius = size / 2
                 let center = PuzzleCanvasCoordinate.clampedDotCenter(
                     position: dot.position,
                     in: composedFrame,
                     radius: radius
                 )
 
-                Image("public/shapes/\(dot.shapeAssetName)")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: dot.size, height: dot.size)
+                dotImage(for: dot)
+                    .frame(width: size, height: size)
                     .position(center)
             }
         }
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func dotImage(for dot: PuzzleDot) -> some View {
+        let image = Image("public/shapes/\(dot.shapeAssetName)")
+
+        if dot.usesTemplateColor {
+            image
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(dotColor)
+        } else {
+            image
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+        }
     }
 }
 
@@ -185,5 +208,5 @@ private struct PuzzleDotsCanvas: View {
         dots: PuzzleDotFactory.makeDots(count: 10)
     )
     .padding()
-    .background(Color(red: 245 / 255, green: 254 / 255, blue: 233 / 255))
+    .background(Color.background)
 }
