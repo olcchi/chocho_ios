@@ -60,6 +60,7 @@ struct BottomSheetPanel: View {
     @Binding var dotCount: Double
     @Binding var dotScale: Double
     @Binding var selectedDotColor: Color
+    @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
     var bottomSafeAreaInset: CGFloat = 0
     let onDrawDots: () -> Void
@@ -68,19 +69,7 @@ struct BottomSheetPanel: View {
         VStack(spacing: 0) {
             panelHandleArea
 
-            PanelContentCard(
-                tab: selectedTab,
-                dotCount: $dotCount,
-                dotScale: $dotScale,
-                selectedDotColor: $selectedDotColor,
-                selectedDotShape: $selectedDotShape,
-                onDrawDots: onDrawDots
-            )
-            .padding(.top, isExpanded ? 8 : 0)
-            .frame(height: isExpanded ? nil : 0, alignment: .top)
-            .opacity(isExpanded ? 1 : 0)
-            .accessibilityHidden(!isExpanded)
-            .allowsHitTesting(isExpanded)
+            panelContent
 
             panelTabBar
                 .padding(.top, isExpanded ? 6 : 4)
@@ -93,8 +82,24 @@ struct BottomSheetPanel: View {
         .clipped()
         .compositingGroup()
         .shadow(color: Color.black.opacity(0.10), radius: 28, x: 0, y: -5)
-        .animation(.smooth(duration: 0.22), value: selectedTab)
         .animation(.smooth(duration: 0.24), value: isExpanded)
+    }
+
+    private var panelContent: some View {
+        PanelContentCard(
+            tab: selectedTab,
+            dotCount: $dotCount,
+            dotScale: $dotScale,
+            selectedDotColor: $selectedDotColor,
+            usesRandomDotColors: $usesRandomDotColors,
+            selectedDotShape: $selectedDotShape,
+            onDrawDots: onDrawDots
+        )
+        .padding(.top, isExpanded ? 8 : 0)
+        .frame(height: isExpanded ? nil : 0, alignment: .top)
+        .opacity(isExpanded ? 1 : 0)
+        .accessibilityHidden(!isExpanded)
+        .allowsHitTesting(isExpanded)
     }
 
     private var panelBackground: some View {
@@ -155,6 +160,7 @@ struct BottomSheetPanel: View {
                     .frame(height: 42)
                     .scaleEffect(isSelected ? 1.1 : 1)
                     .contentShape(Rectangle())
+                    .animation(.smooth(duration: 0.18), value: isSelected)
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -196,10 +202,10 @@ struct CanvasHistoryControls: View {
         HStack(spacing: 0) {
             Button(action: onClear) {
                 Text("打扫")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.foreground)
-                    .frame(height: 30)
-                    .padding(.horizontal, 12)
+                    .frame(height: 26)
+                    .padding(.horizontal, 9)
             }
             .buttonStyle(.plain)
             .disabled(!canClear)
@@ -224,8 +230,8 @@ struct CanvasHistoryControls: View {
                 action: onRedo
             )
         }
-        .padding(.horizontal, 10)
-        .frame(height: 36)
+        .padding(.horizontal, 8)
+        .frame(height: 30)
         .background(
             RoundedRectangle(cornerRadius: BottomSheetPanel.topCornerRadius, style: .continuous)
                 .fill(Color.popover)
@@ -240,8 +246,8 @@ struct CanvasHistoryControls: View {
     private var controlDivider: some View {
         Rectangle()
             .fill(Color.border)
-            .frame(width: 1, height: 22)
-            .padding(.horizontal, 4)
+            .frame(width: 1, height: 18)
+            .padding(.horizontal, 3)
     }
 
     private func historyButton(
@@ -255,9 +261,9 @@ struct CanvasHistoryControls: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
                 .foregroundStyle(Color.foreground)
-                .frame(width: 34, height: 30)
+                .frame(width: 30, height: 26)
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -271,6 +277,7 @@ private struct PanelContentCard: View {
     @Binding var dotCount: Double
     @Binding var dotScale: Double
     @Binding var selectedDotColor: Color
+    @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
     let onDrawDots: () -> Void
 
@@ -286,9 +293,9 @@ private struct PanelContentCard: View {
             case .draw:
                 DrawPanelControls(
                     dotCount: $dotCount,
+                    usesRandomDotColors: $usesRandomDotColors,
                     onDrawDots: onDrawDots
                 )
-                .background(panelFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             case .background:
                 PlaceholderPanelContent(title: tab.title)
                     .background(panelFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -305,37 +312,53 @@ private struct PanelContentCard: View {
 
 private struct DrawPanelControls: View {
     @Binding var dotCount: Double
+    @Binding var usesRandomDotColors: Bool
     let onDrawDots: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            StyledSlider(
-                title: "波点数量",
-                value: $dotCount,
-                range: 0...30,
-                step: 1
-            )
+        VStack(spacing: 8) {
+            VStack(spacing: 7) {
+                StyledSlider(
+                    title: "波点数量",
+                    value: $dotCount,
+                    range: 0...30,
+                    step: 1
+                )
 
-            Button(action: onDrawDots) {
-                HStack(spacing: 8) {
-                    Image("public/sparkles")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-
-                    Text("抽一张")
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .foregroundStyle(Color.primaryForeground)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(activeColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                Toggle("随机色彩", isOn: $usesRandomDotColors)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.foreground)
+                    .tint(activeColor)
+                    .frame(height: 31)
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 2)
+
+            Spacer(minLength: 0)
+
+            drawButton
         }
-        .padding(.horizontal, 13)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var drawButton: some View {
+        Button(action: onDrawDots) {
+            HStack(spacing: 6) {
+                Image("public/sparkles")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 15, height: 15)
+
+                Text("抽一张")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(Color.primaryForeground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .background(activeColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
     }
 
     private var activeColor: Color {
@@ -490,14 +513,16 @@ private struct DotShapeGrid: View {
     @State private var availableWidth: CGFloat = 361
 
     private let columnCount = 6
-    private let gridSpacing: CGFloat = 6
+    private let gridSpacing: CGFloat = 8
     private let gridPadding: CGFloat = 8
     private let visibleRowCount: CGFloat = 2
 
-    private let columns = Array(
-        repeating: GridItem(.flexible(), spacing: 6),
-        count: 6
-    )
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: gridSpacing),
+            count: columnCount
+        )
+    }
 
     var body: some View {
         ScrollView {
@@ -518,7 +543,6 @@ private struct DotShapeGrid: View {
         .frame(height: heightForTwoRows(availableWidth: availableWidth))
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.card)
                 .stroke(Color.border, lineWidth: 1.5)
         )
         .background(

@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var dotCount: Double = 10
     @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
     @State private var selectedDotColor: Color = .primary
+    @State private var usesRandomDotColors = false
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var puzzleDots: [PuzzleDot] = []
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
@@ -63,6 +64,7 @@ struct ContentView: View {
                     dotCount: $dotCount,
                     dotScale: $dotScale,
                     selectedDotColor: $selectedDotColor,
+                    usesRandomDotColors: $usesRandomDotColors,
                     selectedDotShape: $selectedDotShape,
                     bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
                     onDrawDots: drawPuzzleDots
@@ -86,6 +88,9 @@ struct ContentView: View {
         .task(id: selectedPhotoItem) {
             await loadSelectedPhoto()
         }
+        .onChange(of: dotCount) { _, newDotCount in
+            syncPuzzleDots(to: Int(newDotCount.rounded()))
+        }
         .sheet(item: $shareItem) { item in
             CanvasShareSheet(fileURL: item.fileURL)
                 .ignoresSafeArea()
@@ -107,6 +112,7 @@ struct ContentView: View {
                 dots: puzzleDots,
                 dotScale: CGFloat(dotScale),
                 dotColor: selectedDotColor,
+                usesRandomDotColors: usesRandomDotColors,
                 viewportScale: viewportScale * gestureScale,
                 viewportOffset: viewportOffset + gestureOffset,
                 onTapCanvas: addPuzzleDot(at:),
@@ -174,6 +180,18 @@ struct ContentView: View {
         )
         applyPuzzleDots(newDots)
         exportMessage = nil
+    }
+
+    @MainActor
+    private func syncPuzzleDots(to count: Int) {
+        guard canvasImage != nil else { return }
+
+        let syncedDots = PuzzleDotFactory.adjusting(
+            puzzleDots,
+            toCount: count,
+            shapeAssetName: selectedDotShape.name
+        )
+        applyPuzzleDots(syncedDots)
     }
 
     @MainActor
@@ -249,6 +267,7 @@ struct ContentView: View {
                 dots: puzzleDots,
                 dotScale: CGFloat(dotScale),
                 dotColor: selectedDotColor,
+                usesRandomDotColors: usesRandomDotColors,
                 size: exportSize
             )
         )
@@ -423,6 +442,7 @@ private struct CanvasExportView: View {
     let dots: [PuzzleDot]
     let dotScale: CGFloat
     let dotColor: Color
+    let usesRandomDotColors: Bool
     let size: CGSize
 
     var body: some View {
@@ -431,7 +451,8 @@ private struct CanvasExportView: View {
             extensionRatio: extensionRatio,
             dots: dots,
             dotScale: dotScale,
-            dotColor: dotColor
+            dotColor: dotColor,
+            usesRandomDotColors: usesRandomDotColors
         )
         .frame(width: size.width, height: size.height)
     }

@@ -7,6 +7,7 @@ struct PuzzleCanvasView: View {
     let dots: [PuzzleDot]
     var dotScale: CGFloat = 1
     var dotColor: Color = .primary
+    var usesRandomDotColors = false
     var viewportScale: CGFloat = 1
     var viewportOffset: CGSize = .zero
     var onTapCanvas: ((CGPoint) -> Void)?
@@ -54,6 +55,7 @@ struct PuzzleCanvasView: View {
                         dots: dots,
                         dotScale: dotScale,
                         dotColor: dotColor,
+                        usesRandomDotColors: usesRandomDotColors,
                         composedFrame: composedFrame
                     )
                 }
@@ -158,6 +160,7 @@ private struct PuzzleDotsCanvas: View {
     let dots: [PuzzleDot]
     let dotScale: CGFloat
     let dotColor: Color
+    let usesRandomDotColors: Bool
     let composedFrame: CGRect
 
     var body: some View {
@@ -188,7 +191,10 @@ private struct PuzzleDotsCanvas: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundStyle(dotColor)
+                .foregroundStyle(dot.displayColor(
+                    usesRandomColor: usesRandomDotColors,
+                    selectedColor: dotColor
+                ))
         } else {
             image
                 .renderingMode(.original)

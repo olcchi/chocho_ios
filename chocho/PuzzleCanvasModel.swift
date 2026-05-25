@@ -228,31 +228,46 @@ struct PuzzleDot: Identifiable, Equatable {
     var usesTemplateColor: Bool {
         !shapeAssetName.contains(".")
     }
+
+    func displayColor(usesRandomColor: Bool, selectedColor: Color) -> Color {
+        usesRandomColor ? color : selectedColor
+    }
 }
 
 enum PuzzleDotFactory {
     private static let unitSize: CGFloat = 1
+    static let randomColorPaletteHexStrings = [
+        "#FF9EEA",
+        "#A8F7FF",
+        "#FFF38A",
+        "#B7FF9D",
+        "#CDB4FF",
+        "#FFB86B"
+    ]
+
+    static var randomColorPalette: [Color] {
+        [
+            Color(.sRGB, red: 1.00, green: 0.62, blue: 0.92, opacity: 1),
+            Color(.sRGB, red: 0.66, green: 0.97, blue: 1.00, opacity: 1),
+            Color(.sRGB, red: 1.00, green: 0.95, blue: 0.54, opacity: 1),
+            Color(.sRGB, red: 0.72, green: 1.00, blue: 0.62, opacity: 1),
+            Color(.sRGB, red: 0.80, green: 0.71, blue: 1.00, opacity: 1),
+            Color(.sRGB, red: 1.00, green: 0.72, blue: 0.42, opacity: 1)
+        ]
+    }
 
     static func makeDot(
         position: CGPoint,
         index: Int,
         shapeAssetName: String = DotShapeAsset.defaultSelection.name
     ) -> PuzzleDot {
-        let palette: [Color] = [
-            Color.chart1,
-            Color.chart2,
-            Color.chart3,
-            Color.chart4,
-            Color.chart5
-        ]
-
         return PuzzleDot(
             id: UUID(),
             position: CGPoint(
                 x: min(max(position.x, 0), 1),
                 y: min(max(position.y, 0), 1)
             ),
-            color: palette[max(index, 0) % palette.count],
+            color: randomColorPalette[max(index, 0) % randomColorPalette.count],
             size: unitSize,
             shapeAssetName: shapeAssetName
         )
@@ -272,5 +287,32 @@ enum PuzzleDotFactory {
                 shapeAssetName: shapeAssetName
             )
         }
+    }
+
+    static func adjusting(
+        _ dots: [PuzzleDot],
+        toCount count: Int,
+        shapeAssetName: String = DotShapeAsset.defaultSelection.name
+    ) -> [PuzzleDot] {
+        let normalizedCount = max(count, 0)
+
+        if dots.count > normalizedCount {
+            return Array(dots.prefix(normalizedCount))
+        }
+
+        guard dots.count < normalizedCount else { return dots }
+
+        let newDots = (dots.count..<normalizedCount).map { index in
+            makeDot(
+                position: CGPoint(
+                    x: CGFloat.random(in: 0...1),
+                    y: CGFloat.random(in: 0...1)
+                ),
+                index: index,
+                shapeAssetName: shapeAssetName
+            )
+        }
+
+        return dots + newDots
     }
 }

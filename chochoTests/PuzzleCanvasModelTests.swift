@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import Testing
 @testable import chocho
 
@@ -51,6 +52,42 @@ struct PuzzleCanvasModelTests {
 
         #expect(dot.shapeAssetName == "花束.小物")
         #expect(dot.position == CGPoint(x: 0.25, y: 0.75))
+    }
+
+    @Test func adjustedDotsGrowAndShrinkToRequestedCount() {
+        let originalDots = PuzzleDotFactory.makeDots(count: 2, shapeAssetName: "眼睛.小物")
+
+        let grownDots = PuzzleDotFactory.adjusting(originalDots, toCount: 4, shapeAssetName: "花束.小物")
+        let shrunkDots = PuzzleDotFactory.adjusting(grownDots, toCount: 1, shapeAssetName: "花束.小物")
+
+        #expect(grownDots.count == 4)
+        #expect(grownDots.prefix(2).map(\.id) == originalDots.map(\.id))
+        #expect(grownDots.suffix(2).allSatisfy { $0.shapeAssetName == "花束.小物" })
+        #expect(shrunkDots.count == 1)
+        #expect(shrunkDots.first?.id == originalDots.first?.id)
+    }
+
+    @Test func generatedDotPaletteUsesLightCandyColors() {
+        #expect(PuzzleDotFactory.randomColorPaletteHexStrings == [
+            "#FF9EEA",
+            "#A8F7FF",
+            "#FFF38A",
+            "#B7FF9D",
+            "#CDB4FF",
+            "#FFB86B"
+        ])
+    }
+
+    @Test func dotDisplayColorUsesGeneratedColorOnlyWhenRandomColorsAreEnabled() {
+        let selectedColor = Color(red: 0.1, green: 0.2, blue: 0.3)
+        let dot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.25, y: 0.75),
+            index: 1,
+            shapeAssetName: "星1"
+        )
+
+        #expect(dot.displayColor(usesRandomColor: false, selectedColor: selectedColor) == selectedColor)
+        #expect(dot.displayColor(usesRandomColor: true, selectedColor: selectedColor) == dot.color)
     }
 
     @Test func normalizedPointUsesInverseViewportTransform() {
