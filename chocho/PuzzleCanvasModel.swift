@@ -8,6 +8,85 @@ struct PuzzleCanvasLayoutResult: Equatable {
     let composedSize: CGSize
 }
 
+enum PuzzleCanvasSide: Equatable {
+    case photo
+    case background
+}
+
+struct PuzzleCanvasTracePoint: Equatable {
+    let side: PuzzleCanvasSide
+    let point: CGPoint
+    let startsNewStroke: Bool
+
+    init(
+        side: PuzzleCanvasSide,
+        point: CGPoint,
+        startsNewStroke: Bool = false
+    ) {
+        self.side = side
+        self.point = point
+        self.startsNewStroke = startsNewStroke
+    }
+}
+
+enum PuzzleCanvasDragMode: Equatable {
+    case viewport
+    case trace
+
+    static func current(isTraceDrawingEnabled: Bool) -> PuzzleCanvasDragMode {
+        isTraceDrawingEnabled ? .trace : .viewport
+    }
+}
+
+struct PuzzleCanvasTraceSegment: Equatable {
+    let start: CGPoint
+    let end: CGPoint
+
+    var length: CGFloat {
+        hypot(end.x - start.x, end.y - start.y)
+    }
+}
+
+enum PuzzleCanvasTracePath {
+    static func segments(
+        from tracePoints: [PuzzleCanvasTracePoint],
+        extensionRatio: CGFloat
+    ) -> [PuzzleCanvasTraceSegment] {
+        var segments: [PuzzleCanvasTraceSegment] = []
+        var previousPosition: CGPoint?
+
+        for tracePoint in tracePoints {
+            guard let position = PuzzleCanvasCoordinate.composedPosition(
+                for: tracePoint,
+                extensionRatio: extensionRatio
+            ) else {
+                previousPosition = nil
+                continue
+            }
+
+            if tracePoint.startsNewStroke {
+                previousPosition = position
+                continue
+            }
+
+            if let previousPosition {
+                let segment = PuzzleCanvasTraceSegment(
+                    start: previousPosition,
+                    end: position
+                )
+
+                if segment.length > 0 {
+                    segments.append(segment)
+                }
+            }
+
+            previousPosition = position
+        }
+
+        return segments
+    }
+}
+
 enum PuzzleCanvasLayout {
     static func layout(
         imageSize: CGSize,
@@ -80,6 +159,49 @@ enum PuzzleCanvasCoordinate {
         ) == nil
     }
 
+    static func canvasLocation(
+        for location: CGPoint,
+        availableSize: CGSize,
+        layout: PuzzleCanvasLayoutResult,
+        scale: CGFloat,
+        offset: CGSize
+    ) -> PuzzleCanvasTracePoint? {
+        guard let unscaledLocation = unscaledLocation(
+            for: location,
+            availableSize: availableSize,
+            scale: scale,
+            offset: offset
+        ) else {
+            return nil
+        }
+
+        if layout.photoFrame.contains(unscaledLocation),
+           layout.photoFrame.width > 0,
+           layout.photoFrame.height > 0 {
+            return PuzzleCanvasTracePoint(
+                side: .photo,
+                point: CGPoint(
+                    x: (unscaledLocation.x - layout.photoFrame.minX) / layout.photoFrame.width,
+                    y: (unscaledLocation.y - layout.photoFrame.minY) / layout.photoFrame.height
+                )
+            )
+        }
+
+        if layout.extensionFrame.contains(unscaledLocation),
+           layout.extensionFrame.width > 0,
+           layout.extensionFrame.height > 0 {
+            return PuzzleCanvasTracePoint(
+                side: .background,
+                point: CGPoint(
+                    x: (unscaledLocation.x - layout.extensionFrame.minX) / layout.extensionFrame.width,
+                    y: (unscaledLocation.y - layout.extensionFrame.minY) / layout.extensionFrame.height
+                )
+            )
+        }
+
+        return nil
+    }
+
     static func normalizedPoint(
         for location: CGPoint,
         availableSize: CGSize,
@@ -95,14 +217,14 @@ enum PuzzleCanvasCoordinate {
             return nil
         }
 
-        let viewportCenter = CGPoint(
-            x: availableSize.width / 2,
-            y: availableSize.height / 2
-        )
-        let unscaledLocation = CGPoint(
-            x: viewportCenter.x + (location.x - offset.width - viewportCenter.x) / scale,
-            y: viewportCenter.y + (location.y - offset.height - viewportCenter.y) / scale
-        )
+        guard let unscaledLocation = unscaledLocation(
+            for: location,
+            availableSize: availableSize,
+            scale: scale,
+            offset: offset
+        ) else {
+            return nil
+        }
         let composedFrame = CGRect(
             x: layout.photoFrame.minX,
             y: layout.photoFrame.minY,
@@ -115,6 +237,50 @@ enum PuzzleCanvasCoordinate {
         return CGPoint(
             x: (unscaledLocation.x - composedFrame.minX) / composedFrame.width,
             y: (unscaledLocation.y - composedFrame.minY) / composedFrame.height
+        )
+    }
+
+    static func composedPosition(
+        for tracePoint: PuzzleCanvasTracePoint,
+        extensionRatio: CGFloat
+    ) -> CGPoint? {
+        let clampedRatio = min(max(extensionRatio, 0), 1)
+        let photoWidthFraction = 1 / (1 + clampedRatio)
+        let backgroundWidthFraction = clampedRatio / (1 + clampedRatio)
+
+        switch tracePoint.side {
+        case .photo:
+            return CGPoint(
+                x: tracePoint.point.x * photoWidthFraction,
+                y: tracePoint.point.y
+            )
+        case .background:
+            guard backgroundWidthFraction > 0 else { return nil }
+
+            return CGPoint(
+                x: photoWidthFraction + tracePoint.point.x * backgroundWidthFraction,
+                y: tracePoint.point.y
+            )
+        }
+    }
+
+    static func composedCanvasPoint(
+        for tracePoint: PuzzleCanvasTracePoint,
+        extensionRatio: CGFloat,
+        canvasSize: CGSize
+    ) -> CGPoint? {
+        guard canvasSize.width > 0,
+              canvasSize.height > 0,
+              let position = composedPosition(
+                for: tracePoint,
+                extensionRatio: extensionRatio
+              ) else {
+            return nil
+        }
+
+        return CGPoint(
+            x: position.x * canvasSize.width,
+            y: position.y * canvasSize.height
         )
     }
 
@@ -136,6 +302,29 @@ enum PuzzleCanvasCoordinate {
         return CGPoint(
             x: min(max(center.x, insetFrame.minX), insetFrame.maxX),
             y: min(max(center.y, insetFrame.minY), insetFrame.maxY)
+        )
+    }
+
+    private static func unscaledLocation(
+        for location: CGPoint,
+        availableSize: CGSize,
+        scale: CGFloat,
+        offset: CGSize
+    ) -> CGPoint? {
+        guard scale > 0,
+              availableSize.width > 0,
+              availableSize.height > 0 else {
+            return nil
+        }
+
+        let viewportCenter = CGPoint(
+            x: availableSize.width / 2,
+            y: availableSize.height / 2
+        )
+
+        return CGPoint(
+            x: viewportCenter.x + (location.x - offset.width - viewportCenter.x) / scale,
+            y: viewportCenter.y + (location.y - offset.height - viewportCenter.y) / scale
         )
     }
 }
@@ -160,6 +349,18 @@ enum DotSizeControl {
         let progress = (clampedScale - minRenderedScale) / (maxRenderedScale - minRenderedScale)
 
         return minControlValue + progress * (maxControlValue - minControlValue)
+    }
+}
+
+enum PuzzleCanvasUploadDefaults {
+    static func initialDots(
+        dotCount: Double,
+        shapeAssetName: String = DotShapeAsset.defaultSelection.name
+    ) -> [PuzzleDot] {
+        PuzzleDotFactory.makeDots(
+            count: Int(dotCount.rounded()),
+            shapeAssetName: shapeAssetName
+        )
     }
 }
 
@@ -229,6 +430,10 @@ struct PuzzleDot: Identifiable, Equatable {
         !shapeAssetName.contains(".")
     }
 
+    var builtInShape: BuiltInDotShape? {
+        BuiltInDotShape(rawValue: shapeAssetName)
+    }
+
     func displayColor(usesRandomColor: Bool, selectedColor: Color) -> Color {
         usesRandomColor ? color : selectedColor
     }
@@ -289,6 +494,59 @@ enum PuzzleDotFactory {
         }
     }
 
+    static func makeDots(
+        count: Int,
+        along tracePoints: [PuzzleCanvasTracePoint],
+        extensionRatio: CGFloat,
+        shapeAssetName: String = DotShapeAsset.defaultSelection.name
+    ) -> [PuzzleDot] {
+        var generator = SystemRandomNumberGenerator()
+
+        return makeDots(
+            count: count,
+            along: tracePoints,
+            extensionRatio: extensionRatio,
+            shapeAssetName: shapeAssetName,
+            using: &generator
+        )
+    }
+
+    static func makeDots<Generator: RandomNumberGenerator>(
+        count: Int,
+        along tracePoints: [PuzzleCanvasTracePoint],
+        extensionRatio: CGFloat,
+        shapeAssetName: String = DotShapeAsset.defaultSelection.name,
+        using generator: inout Generator
+    ) -> [PuzzleDot] {
+        let segments = PuzzleCanvasTracePath.segments(
+            from: tracePoints,
+            extensionRatio: extensionRatio
+        )
+        let positions = tracePoints.compactMap {
+            PuzzleCanvasCoordinate.composedPosition(
+                for: $0,
+                extensionRatio: extensionRatio
+            )
+        }
+        let normalizedCount = max(count, 0)
+
+        guard normalizedCount > 0, !positions.isEmpty else { return [] }
+
+        return (0..<normalizedCount).map { index in
+            return makeDot(
+                position: randomPosition(
+                    along: segments,
+                    fallbackPositions: positions,
+                    dotIndex: index,
+                    dotCount: normalizedCount,
+                    using: &generator
+                ),
+                index: index,
+                shapeAssetName: shapeAssetName
+            )
+        }
+    }
+
     static func adjusting(
         _ dots: [PuzzleDot],
         toCount count: Int,
@@ -314,5 +572,53 @@ enum PuzzleDotFactory {
         }
 
         return dots + newDots
+    }
+
+    private static func randomPosition<Generator: RandomNumberGenerator>(
+        along segments: [PuzzleCanvasTraceSegment],
+        fallbackPositions: [CGPoint],
+        dotIndex: Int,
+        dotCount: Int,
+        using generator: inout Generator
+    ) -> CGPoint {
+        let totalLength = segments.reduce(CGFloat.zero) { $0 + $1.length }
+
+        guard totalLength > 0, dotCount > 0 else {
+            return fallbackPositions.randomElement(using: &generator) ?? .zero
+        }
+
+        let bucketLength = totalLength / CGFloat(dotCount)
+        let distance = min(
+            totalLength,
+            CGFloat(dotIndex) * bucketLength + CGFloat.random(in: 0...bucketLength, using: &generator)
+        )
+
+        return position(at: distance, along: segments) ?? segments.last?.end ?? .zero
+    }
+
+    private static func position(
+        at distance: CGFloat,
+        along segments: [PuzzleCanvasTraceSegment]
+    ) -> CGPoint? {
+        var remainingDistance = distance
+
+        for segment in segments {
+            let segmentLength = segment.length
+
+            guard segmentLength > 0 else { continue }
+
+            if remainingDistance <= segmentLength {
+                let progress = remainingDistance / segmentLength
+
+                return CGPoint(
+                    x: segment.start.x + (segment.end.x - segment.start.x) * progress,
+                    y: segment.start.y + (segment.end.y - segment.start.y) * progress
+                )
+            }
+
+            remainingDistance -= segmentLength
+        }
+
+        return segments.last?.end
     }
 }

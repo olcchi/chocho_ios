@@ -47,6 +47,7 @@ struct BottomSheetPanel: View {
     static let topCornerRadius: CGFloat = 24
     private static let contentHorizontalInset: CGFloat = 16
     private static let contentBottomInset: CGFloat = 4
+    private static let contentToTabGap: CGFloat = 10
     private static let maxVisibleBottomSafeAreaInset: CGFloat = 0
     private static let handleTouchHeight: CGFloat = 28
     private static let collapseDragThreshold: CGFloat = 28
@@ -62,6 +63,7 @@ struct BottomSheetPanel: View {
     @Binding var selectedDotColor: Color
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
+    @Binding var isTraceDrawingEnabled: Bool
     var bottomSafeAreaInset: CGFloat = 0
     let onDrawDots: () -> Void
 
@@ -72,7 +74,7 @@ struct BottomSheetPanel: View {
             panelContent
 
             panelTabBar
-                .padding(.top, isExpanded ? 6 : 4)
+                .padding(.top, isExpanded ? Self.contentToTabGap : 4)
         }
         .padding(.horizontal, Self.contentHorizontalInset)
         .padding(.bottom, Self.contentBottomInset + visibleBottomSafeAreaInset)
@@ -93,6 +95,7 @@ struct BottomSheetPanel: View {
             selectedDotColor: $selectedDotColor,
             usesRandomDotColors: $usesRandomDotColors,
             selectedDotShape: $selectedDotShape,
+            isTraceDrawingEnabled: $isTraceDrawingEnabled,
             onDrawDots: onDrawDots
         )
         .padding(.top, isExpanded ? 8 : 0)
@@ -279,6 +282,7 @@ private struct PanelContentCard: View {
     @Binding var selectedDotColor: Color
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
+    @Binding var isTraceDrawingEnabled: Bool
     let onDrawDots: () -> Void
 
     var body: some View {
@@ -294,6 +298,7 @@ private struct PanelContentCard: View {
                 DrawPanelControls(
                     dotCount: $dotCount,
                     usesRandomDotColors: $usesRandomDotColors,
+                    isTraceDrawingEnabled: $isTraceDrawingEnabled,
                     onDrawDots: onDrawDots
                 )
             case .background:
@@ -313,11 +318,12 @@ private struct PanelContentCard: View {
 private struct DrawPanelControls: View {
     @Binding var dotCount: Double
     @Binding var usesRandomDotColors: Bool
+    @Binding var isTraceDrawingEnabled: Bool
     let onDrawDots: () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
-            VStack(spacing: 7) {
+            VStack(spacing: 6) {
                 StyledSlider(
                     title: "波点数量",
                     value: $dotCount,
@@ -325,11 +331,24 @@ private struct DrawPanelControls: View {
                     step: 1
                 )
 
-                Toggle("随机色彩", isOn: $usesRandomDotColors)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Color.foreground)
-                    .tint(activeColor)
-                    .frame(height: 31)
+                HStack(spacing: 10) {
+                    compactToggleButton(
+                        title: "随机色彩",
+                        isOn: usesRandomDotColors
+                    ) {
+                        usesRandomDotColors.toggle()
+                    }
+
+                    controlSeparator
+
+                    compactToggleButton(
+                        title: "手绘轨迹",
+                        isOn: isTraceDrawingEnabled
+                    ) {
+                        isTraceDrawingEnabled.toggle()
+                    }
+                }
+                .frame(height: 30)
             }
             .padding(.horizontal, 2)
 
@@ -363,6 +382,46 @@ private struct DrawPanelControls: View {
 
     private var activeColor: Color {
         Color.primary
+    }
+
+    private var inactiveColor: Color {
+        Color.input
+    }
+
+    private var separatorColor: Color {
+        Color.appAccent.opacity(0.22)
+    }
+
+    private var controlSeparator: some View {
+        Capsule(style: .continuous)
+            .fill(separatorColor)
+            .frame(width: 1.5, height: 18)
+    }
+
+    private func compactToggleButton(
+        title: String,
+        isOn: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isOn ? Color.primaryForeground : Color.foreground)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(isOn ? activeColor : inactiveColor)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(isOn ? activeColor.opacity(0.75) : Color.border, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .accessibilityLabel(title)
+        .accessibilityValue(isOn ? "已开启" : "已关闭")
     }
 }
 
@@ -584,9 +643,7 @@ private struct DotShapeTile: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(tileBackground)
 
-                Image(shape.previewAssetName)
-                    .resizable()
-                    .scaledToFit()
+                shapePreview
                     .padding(shape.previewTilePadding)
             }
             .aspectRatio(1, contentMode: .fit)
@@ -599,6 +656,20 @@ private struct DotShapeTile: View {
         .buttonStyle(.plain)
         .accessibilityLabel(shape.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private var shapePreview: some View {
+        if let builtInShape = shape.builtInShape {
+            DotShapeDrawing(
+                shape: builtInShape,
+                color: isSelected ? Color.primaryForeground : Color.foreground
+            )
+        } else {
+            Image(shape.previewAssetName)
+                .resizable()
+                .scaledToFit()
+        }
     }
 
     private var tileBackground: Color {
@@ -705,6 +776,10 @@ struct DotShapeAsset: Identifiable, Equatable {
         category == "基础" ? 16 : 9
     }
 
+    var builtInShape: BuiltInDotShape? {
+        BuiltInDotShape(rawValue: name)
+    }
+
     func matches(category: DotShapeCategory) -> Bool {
         switch category {
         case .recent:
@@ -731,9 +806,13 @@ struct DotShapeAsset: Identifiable, Equatable {
         all.first { $0.name == name }
     }
 
-    static let defaultSelection = DotShapeAsset(name: "眼睛.小物", previewName: "眼睛.小物.preview")
+    static let defaultSelection = DotShapeAsset(name: BuiltInDotShape.circle.rawValue, previewName: nil)
 
     static let all: [DotShapeAsset] = [
+        DotShapeAsset(name: BuiltInDotShape.circle.rawValue, previewName: nil),
+        DotShapeAsset(name: BuiltInDotShape.square.rawValue, previewName: nil),
+        DotShapeAsset(name: BuiltInDotShape.triangle.rawValue, previewName: nil),
+        DotShapeAsset(name: BuiltInDotShape.star.rawValue, previewName: nil),
         DotShapeAsset(name: "丝带.彩纸", previewName: "丝带.彩纸.preview"),
         DotShapeAsset(name: "乱七八糟.贴纸", previewName: "乱七八糟.贴纸.preview"),
         DotShapeAsset(name: "云1.布", previewName: "云1.布.preview"),

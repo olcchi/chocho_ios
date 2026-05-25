@@ -22,6 +22,8 @@ struct ContentView: View {
     @State private var selectedDotColor: Color = .primary
     @State private var usesRandomDotColors = false
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
+    @State private var isTraceDrawingEnabled = false
+    @State private var tracePoints: [PuzzleCanvasTracePoint] = []
     @State private var puzzleDots: [PuzzleDot] = []
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
     @State private var showsClearCanvasConfirmation = false
@@ -66,6 +68,7 @@ struct ContentView: View {
                     selectedDotColor: $selectedDotColor,
                     usesRandomDotColors: $usesRandomDotColors,
                     selectedDotShape: $selectedDotShape,
+                    isTraceDrawingEnabled: $isTraceDrawingEnabled,
                     bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
                     onDrawDots: drawPuzzleDots
                 )
@@ -106,7 +109,7 @@ struct ContentView: View {
     @ViewBuilder
     private var canvasArea: some View {
         if let canvasImage {
-            PuzzleCanvasView(
+            let canvas = PuzzleCanvasView(
                 image: canvasImage,
                 extensionRatio: extensionRatio,
                 dots: puzzleDots,
@@ -115,10 +118,18 @@ struct ContentView: View {
                 usesRandomDotColors: usesRandomDotColors,
                 viewportScale: viewportScale * gestureScale,
                 viewportOffset: viewportOffset + gestureOffset,
+                tracePoints: tracePoints,
+                isTraceDrawingEnabled: isTraceDrawingEnabled,
                 onTapCanvas: addPuzzleDot(at:),
-                onDoubleTapBackground: resetCanvasViewport
+                onDoubleTapBackground: resetCanvasViewport,
+                onTraceChanged: updateTracePoints
             )
-            .gesture(canvasGesture)
+
+            if isTraceDrawingEnabled {
+                canvas
+            } else {
+                canvas.gesture(canvasGesture)
+            }
         } else {
             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                 CanvasUploadPlaceholder()
@@ -159,8 +170,13 @@ struct ContentView: View {
             canvasImage = image
             puzzleDots = []
             canvasHistory.reset(to: [])
+            tracePoints = []
             viewportScale = 1
             viewportOffset = .zero
+            applyPuzzleDots(PuzzleCanvasUploadDefaults.initialDots(
+                dotCount: dotCount,
+                shapeAssetName: selectedDotShape.name
+            ))
             exportMessage = nil
         } catch {
             exportMessage = "上传失败"
@@ -176,9 +192,29 @@ struct ContentView: View {
 
         let newDots = PuzzleDotFactory.makeDots(
             count: Int(dotCount.rounded()),
+            along: tracePoints,
+            extensionRatio: extensionRatio,
             shapeAssetName: selectedDotShape.name
         )
-        applyPuzzleDots(newDots)
+        if isTraceDrawingEnabled {
+            guard !tracePoints.isEmpty else {
+                exportMessage = "先画一条轨迹"
+                return
+            }
+
+            guard !newDots.isEmpty else {
+                exportMessage = "右侧背景太窄"
+                return
+            }
+        }
+
+        let fallbackDots = isTraceDrawingEnabled
+            ? newDots
+            : PuzzleDotFactory.makeDots(
+                count: Int(dotCount.rounded()),
+                shapeAssetName: selectedDotShape.name
+            )
+        applyPuzzleDots(fallbackDots)
         exportMessage = nil
     }
 
@@ -186,11 +222,21 @@ struct ContentView: View {
     private func syncPuzzleDots(to count: Int) {
         guard canvasImage != nil else { return }
 
-        let syncedDots = PuzzleDotFactory.adjusting(
-            puzzleDots,
-            toCount: count,
-            shapeAssetName: selectedDotShape.name
-        )
+        let syncedDots: [PuzzleDot]
+        if isTraceDrawingEnabled, !tracePoints.isEmpty {
+            syncedDots = PuzzleDotFactory.makeDots(
+                count: count,
+                along: tracePoints,
+                extensionRatio: extensionRatio,
+                shapeAssetName: selectedDotShape.name
+            )
+        } else {
+            syncedDots = PuzzleDotFactory.adjusting(
+                puzzleDots,
+                toCount: count,
+                shapeAssetName: selectedDotShape.name
+            )
+        }
         applyPuzzleDots(syncedDots)
     }
 
@@ -203,6 +249,12 @@ struct ContentView: View {
             shapeAssetName: selectedDotShape.name
         ))
         applyPuzzleDots(newDots)
+        exportMessage = nil
+    }
+
+    @MainActor
+    private func updateTracePoints(_ points: [PuzzleCanvasTracePoint]) {
+        tracePoints = points
         exportMessage = nil
     }
 
@@ -224,7 +276,7 @@ struct ContentView: View {
     @MainActor
     private func undoCanvasChange() {
         guard let previousDots = canvasHistory.undo() else { return }
-
+	
         puzzleDots = previousDots
         exportMessage = nil
     }
