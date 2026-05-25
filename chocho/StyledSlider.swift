@@ -11,7 +11,7 @@ struct StyledSlider: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(title)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(Color.foreground)
 
             TrackTintedSlider(
@@ -23,7 +23,7 @@ struct StyledSlider: View {
             .frame(height: 31)
 
             Text(valueText(value))
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .font(.system(size: 13, weight: .regular, design: .monospaced))
                 .foregroundStyle(Color.mutedForeground)
                 .frame(width: 48, height: 28)
                 .background(Color.input, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

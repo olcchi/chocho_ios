@@ -32,6 +32,22 @@ enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
+enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equatable {
+    case grid
+    case stripes
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .grid:
+            "方格"
+        case .stripes:
+            "条纹"
+        }
+    }
+}
+
 struct PuzzleCanvasLayoutResult: Equatable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
@@ -313,8 +329,7 @@ enum PuzzleCanvasLayout {
 struct CanvasViewportResetKey: Equatable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
-    let availableSize: CGSize
-    let imageSize: CGSize
+    let imageViewportResetID: UUID
 }
 
 enum PuzzleCanvasViewport {
@@ -346,6 +361,71 @@ enum PuzzleCanvasViewport {
         )
 
         return (scale, offset)
+    }
+
+    /// Vertical offset delta when the bottom panel expands or collapses.
+    /// Keeps the composed canvas visually centered in the clipped viewport while
+    /// `BottomSheetPanel.layoutHeightBoost` preserves fit scale.
+    static func panelExpansionOffsetDelta(
+        scale: CGFloat,
+        panelHeightBoost: CGFloat,
+        isPanelExpanded: Bool
+    ) -> CGSize {
+        guard panelHeightBoost > 0, scale.isFinite, scale > 0 else {
+            return .zero
+        }
+
+        let verticalShift = -scale * panelHeightBoost / 2
+        return CGSize(width: 0, height: isPanelExpanded ? verticalShift : -verticalShift)
+    }
+
+    static let minScale: CGFloat = 0.4
+    static let maxScale: CGFloat = 6
+
+    static func clampedScale(_ scale: CGFloat) -> CGFloat {
+        min(max(scale, minScale), maxScale)
+    }
+
+    /// Keeps the canvas point under `anchor` fixed while multiplying scale by `scaleMultiplier`.
+    /// Matches `PuzzleCanvasCoordinate` transform: scale about available center, then offset.
+    static func adjustedOffset(
+        anchor: CGPoint,
+        availableSize: CGSize,
+        scaleMultiplier: CGFloat,
+        baseOffset: CGSize
+    ) -> CGSize {
+        let viewportCenter = CGPoint(
+            x: availableSize.width / 2,
+            y: availableSize.height / 2
+        )
+
+        return CGSize(
+            width: anchor.x - viewportCenter.x
+                - (anchor.x - baseOffset.width - viewportCenter.x) * scaleMultiplier,
+            height: anchor.y - viewportCenter.y
+                - (anchor.y - baseOffset.height - viewportCenter.y) * scaleMultiplier
+        )
+    }
+}
+
+enum PuzzleCanvasExport {
+    static func viewportTransform(
+        imageSize: CGSize,
+        exportSize: CGSize,
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> (scale: CGFloat, offset: CGSize) {
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: exportSize,
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide
+        )
+
+        return PuzzleCanvasViewport.resetTransform(
+            layout: layout,
+            availableSize: exportSize
+        )
     }
 }
 
@@ -545,13 +625,43 @@ enum PuzzleCanvasCoordinate {
         }
     }
 
+    /// Converts a tap on the photo or extension into the normalized photo-space dot position.
+    static func dotPosition(
+        for canvasLocation: PuzzleCanvasTracePoint,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGPoint {
+        switch canvasLocation.side {
+        case .photo:
+            return canvasLocation.point
+        case .background:
+            return photoDotPosition(
+                fromBackgroundLocal: canvasLocation.point,
+                extensionSide: extensionSide
+            )
+        }
+    }
+
+    /// Inverts the mirror mapping used by `dotCentersInReferenceFrame` for extension taps.
+    static func photoDotPosition(
+        fromBackgroundLocal background: CGPoint,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGPoint {
+        switch extensionSide {
+        case .right, .bottom:
+            return background
+        case .left:
+            return CGPoint(x: 1 - background.x, y: background.y)
+        case .top:
+            return CGPoint(x: background.x, y: 1 - background.y)
+        }
+    }
+
     /// Renders dots in the fixed reference canvas; narrowing extension only clips them.
     static func dotCentersInReferenceFrame(
         position: CGPoint,
         referenceFrame: CGRect,
         extensionSide: PuzzleCanvasExtensionSide = .right,
-        maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio,
-        radius: CGFloat
+        maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio
     ) -> [CGPoint] {
         let clampedMaxRatio = min(max(maxExtensionRatio, 0), PuzzleCanvasLayout.maxExtensionRatio)
         guard referenceFrame.width > 0, referenceFrame.height > 0 else { return [] }
@@ -638,20 +748,18 @@ enum PuzzleCanvasCoordinate {
         }
 
         var centers = [
-            clampedDotCenter(
+            dotCenter(
                 position: position,
-                in: photoFrame,
-                radius: radius
+                in: photoFrame
             )
         ]
 
         guard clampedMaxRatio > 0 else { return centers }
 
         centers.append(
-            clampedDotCenter(
+            dotCenter(
                 position: mirrorPosition,
-                in: mirrorFrame,
-                radius: radius
+                in: mirrorFrame
             )
         )
 
@@ -680,24 +788,15 @@ enum PuzzleCanvasCoordinate {
         )
     }
 
-    static func clampedDotCenter(
+    /// Maps a normalized dot position to a fixed center in `composedFrame`.
+    /// Size changes scale about this center; overflow is clipped by the canvas.
+    static func dotCenter(
         position: CGPoint,
-        in composedFrame: CGRect,
-        radius: CGFloat
+        in composedFrame: CGRect
     ) -> CGPoint {
-        let insetFrame = composedFrame.insetBy(dx: radius, dy: radius)
-        let center = CGPoint(
+        CGPoint(
             x: composedFrame.minX + position.x * composedFrame.width,
             y: composedFrame.minY + position.y * composedFrame.height
-        )
-
-        guard insetFrame.width >= 0, insetFrame.height >= 0 else {
-            return CGPoint(x: composedFrame.midX, y: composedFrame.midY)
-        }
-
-        return CGPoint(
-            x: min(max(center.x, insetFrame.minX), insetFrame.maxX),
-            y: min(max(center.y, insetFrame.minY), insetFrame.maxY)
         )
     }
 
@@ -728,8 +827,8 @@ enum PuzzleCanvasCoordinate {
 enum DotSizeControl {
     static let minControlValue: Double = 1
     static let maxControlValue: Double = 100
-    static let minRenderedScale: Double = 24
-    static let maxRenderedScale: Double = 96
+    static let minRenderedScale: Double = 8
+    static let maxRenderedScale: Double = 40
     static let defaultControlValue: Double = 23
     static let defaultRenderedScale = renderedScale(forControlValue: defaultControlValue)
     /// Matches a typical on-screen photo height so slider values stay intuitive.
@@ -755,6 +854,31 @@ enum DotSizeControl {
         let progress = (clampedScale - minRenderedScale) / (maxRenderedScale - minRenderedScale)
 
         return minControlValue + progress * (maxControlValue - minControlValue)
+    }
+}
+
+enum PuzzleBackgroundGridMetrics {
+    private static let referenceSpacing: CGFloat = 12
+    private static let referenceLineWidth: CGFloat = 1
+
+    static func spacing(photoFrameHeight: CGFloat) -> CGFloat {
+        scaledMetric(referenceSpacing, photoFrameHeight: photoFrameHeight)
+    }
+
+    static func lineWidth(photoFrameHeight: CGFloat) -> CGFloat {
+        scaledMetric(referenceLineWidth, photoFrameHeight: photoFrameHeight)
+    }
+
+    private static func scaledMetric(
+        _ value: CGFloat,
+        photoFrameHeight: CGFloat
+    ) -> CGFloat {
+        guard DotSizeControl.referencePhotoHeight > 0,
+              photoFrameHeight > 0 else {
+            return value
+        }
+
+        return value * (photoFrameHeight / DotSizeControl.referencePhotoHeight)
     }
 }
 

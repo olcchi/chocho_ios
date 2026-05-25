@@ -29,6 +29,53 @@ struct PuzzleCanvasModelTests {
         #expect(layout.extensionFrame.minX == layout.photoFrame.maxX)
     }
 
+    @Test func panelLayoutHeightBoostKeepsPhotoFitScaleStable() {
+        let boost = BottomSheetPanel.layoutHeightBoost(isExpanded: true)
+        #expect(boost > 0)
+
+        let collapsedViewport = CGSize(width: 390, height: 500)
+        let expandedViewport = CGSize(width: 390, height: 500 - boost)
+        let imageSize = CGSize(width: 1000, height: 500)
+
+        let collapsedLayout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: collapsedViewport,
+            extensionRatio: 0.5
+        )
+        let expandedLayout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: CGSize(
+                width: expandedViewport.width,
+                height: expandedViewport.height + boost
+            ),
+            extensionRatio: 0.5
+        )
+
+        #expect(collapsedLayout.photoFrame.size == expandedLayout.photoFrame.size)
+        #expect(collapsedLayout.photoFrame.origin == expandedLayout.photoFrame.origin)
+        #expect(BottomSheetPanel.layoutHeightBoost(isExpanded: false) == 0)
+    }
+
+    @Test func panelExpansionOffsetDeltaShiftsCanvasUpWhenPanelExpands() {
+        let boost = BottomSheetPanel.layoutHeightBoost(isExpanded: true)
+        let scale: CGFloat = 1.5
+
+        let expandedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
+            scale: scale,
+            panelHeightBoost: boost,
+            isPanelExpanded: true
+        )
+        let collapsedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
+            scale: scale,
+            panelHeightBoost: boost,
+            isPanelExpanded: false
+        )
+
+        #expect(expandedDelta.width == 0)
+        #expect(expandedDelta.height == -scale * boost / 2)
+        #expect(collapsedDelta.height == -expandedDelta.height)
+    }
+
     @Test func layoutKeepsPhotoSizeWhenExtensionRatioChanges() {
         let baseline = PuzzleCanvasLayout.layout(
             imageSize: CGSize(width: 1000, height: 500),
@@ -63,7 +110,7 @@ struct PuzzleCanvasModelTests {
         let visibleFrame = layout.visibleComposedFrame
         let scale = reset.scale
 
-        #expect(scale == 600.0 / 960.0)
+        #expect(isApproximatelyEqual(scale, 600.0 / 960.0))
         #expect(
             reset.offset.width
             == -viewportCenter.x - (visibleFrame.minX - viewportCenter.x) * scale
@@ -86,6 +133,34 @@ struct PuzzleCanvasModelTests {
         #expect(rightEdge == availableSize.width)
     }
 
+    @Test func magnifyAdjustedOffsetKeepsAnchorPointFixed() {
+        let availableSize = CGSize(width: 600, height: 400)
+        let anchor = CGPoint(x: 180, y: 260)
+        let baseOffset = CGSize(width: 24, height: -36)
+        let scaleMultiplier: CGFloat = 1.35
+        let viewportCenter = CGPoint(x: availableSize.width / 2, y: availableSize.height / 2)
+        let baseScale: CGFloat = 1.6
+
+        let adjustedOffset = PuzzleCanvasViewport.adjustedOffset(
+            anchor: anchor,
+            availableSize: availableSize,
+            scaleMultiplier: scaleMultiplier,
+            baseOffset: baseOffset
+        )
+        let nextScale = baseScale * scaleMultiplier
+        let contentPoint = CGPoint(
+            x: viewportCenter.x + (anchor.x - baseOffset.width - viewportCenter.x) / baseScale,
+            y: viewportCenter.y + (anchor.y - baseOffset.height - viewportCenter.y) / baseScale
+        )
+        let anchoredScreenPoint = CGPoint(
+            x: viewportCenter.x + (contentPoint.x - viewportCenter.x) * nextScale + adjustedOffset.width,
+            y: viewportCenter.y + (contentPoint.y - viewportCenter.y) * nextScale + adjustedOffset.height
+        )
+
+        #expect(anchoredScreenPoint.x == anchor.x)
+        #expect(anchoredScreenPoint.y == anchor.y)
+    }
+
     @Test func viewportResetScalesPhotoOnlyCanvasToScreenEdges() {
         let availableSize = CGSize(width: 600, height: 240)
         let layout = PuzzleCanvasLayout.layout(
@@ -98,8 +173,37 @@ struct PuzzleCanvasModelTests {
             availableSize: availableSize
         )
 
-        #expect(reset.scale == 600.0 / 480.0)
+        #expect(isApproximatelyEqual(reset.scale, 600.0 / 480.0))
         #expect(reset.offset == CGSize.zero)
+    }
+
+    @Test func exportViewportTransformAlignsVisibleCompositionToExportBounds() {
+        let exportSize = CGSize(width: 1200, height: 500)
+        let transform = PuzzleCanvasExport.viewportTransform(
+            imageSize: CGSize(width: 1000, height: 500),
+            exportSize: exportSize,
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: exportSize,
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+        let viewportCenter = CGPoint(x: exportSize.width / 2, y: exportSize.height / 2)
+        let visibleFrame = layout.visibleComposedFrame
+
+        let exportedLeftEdge = viewportCenter.x
+            + (visibleFrame.minX - viewportCenter.x) * transform.scale
+            + transform.offset.width
+        let exportedRightEdge = viewportCenter.x
+            + (visibleFrame.maxX - viewportCenter.x) * transform.scale
+            + transform.offset.width
+
+        #expect(transform.scale == 1)
+        #expect(exportedLeftEdge == 0)
+        #expect(exportedRightEdge == exportSize.width)
     }
 
     @Test func layoutAllowsZeroWidthExtensionCanvas() {
@@ -139,8 +243,7 @@ struct PuzzleCanvasModelTests {
         let referenceFrame = CGRect(x: 0, y: 0, width: 800, height: 200)
         let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
             position: CGPoint(x: 0.1, y: 0.25),
-            referenceFrame: referenceFrame,
-            radius: 12
+            referenceFrame: referenceFrame
         )
 
         #expect(centers == [
@@ -153,8 +256,7 @@ struct PuzzleCanvasModelTests {
         let referenceFrame = CGRect(x: 0, y: 0, width: 800, height: 200)
         let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
             position: CGPoint(x: 0.9, y: 0.25),
-            referenceFrame: referenceFrame,
-            radius: 12
+            referenceFrame: referenceFrame
         )
 
         #expect(centers == [
@@ -327,18 +429,82 @@ struct PuzzleCanvasModelTests {
         let rightCenters = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
             position: CGPoint(x: 0.1, y: 0.25),
             referenceFrame: referenceFrame,
-            extensionSide: .right,
-            radius: 12
+            extensionSide: .right
         )
         let leftCenters = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
             position: CGPoint(x: 0.1, y: 0.25),
             referenceFrame: referenceFrame,
-            extensionSide: .left,
-            radius: 12
+            extensionSide: .left
         )
 
         #expect(rightCenters == [CGPoint(x: 40, y: 50), CGPoint(x: 440, y: 50)])
         #expect(leftCenters == [CGPoint(x: 440, y: 50), CGPoint(x: 40, y: 50)])
+    }
+
+    @Test func dotPositionMapsBackgroundTapToMatchingPhotoCoordinate() {
+        let backgroundTap = PuzzleCanvasTracePoint(
+            side: .background,
+            point: CGPoint(x: 0.1, y: 0.5)
+        )
+
+        #expect(
+            PuzzleCanvasCoordinate.dotPosition(for: backgroundTap, extensionSide: .right)
+                == CGPoint(x: 0.1, y: 0.5)
+        )
+        #expect(
+            PuzzleCanvasCoordinate.dotPosition(for: backgroundTap, extensionSide: .bottom)
+                == CGPoint(x: 0.1, y: 0.5)
+        )
+    }
+
+    @Test func dotPositionMirrorsBackgroundTapForLeftAndTopExtensions() {
+        let backgroundTap = PuzzleCanvasTracePoint(
+            side: .background,
+            point: CGPoint(x: 0.9, y: 0.25)
+        )
+
+        #expect(
+            PuzzleCanvasCoordinate.dotPosition(for: backgroundTap, extensionSide: .left)
+                == CGPoint(x: 0.1, y: 0.25)
+        )
+        #expect(
+            PuzzleCanvasCoordinate.dotPosition(for: backgroundTap, extensionSide: .top)
+                == CGPoint(x: 0.9, y: 0.75)
+        )
+    }
+
+    @Test func dotPositionKeepsPhotoTapUnchanged() {
+        let photoTap = PuzzleCanvasTracePoint(
+            side: .photo,
+            point: CGPoint(x: 0.2, y: 0.5)
+        )
+
+        #expect(
+            PuzzleCanvasCoordinate.dotPosition(for: photoTap, extensionSide: .right)
+                == CGPoint(x: 0.2, y: 0.5)
+        )
+    }
+
+    @Test func backgroundTapDotRendersOnPhotoAndExtensionForRightExtension() {
+        let referenceFrame = CGRect(x: 0, y: 0, width: 800, height: 200)
+        let photoPosition = PuzzleCanvasCoordinate.dotPosition(
+            for: PuzzleCanvasTracePoint(
+                side: .background,
+                point: CGPoint(x: 0.1, y: 0.25)
+            ),
+            extensionSide: .right
+        )
+        let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
+            position: photoPosition,
+            referenceFrame: referenceFrame,
+            extensionSide: .right
+        )
+
+        #expect(photoPosition == CGPoint(x: 0.1, y: 0.25))
+        #expect(centers == [
+            CGPoint(x: 40, y: 50),
+            CGPoint(x: 440, y: 50)
+        ])
     }
 
     @Test func canvasLocationSeparatesPhotoAndBackgroundSides() {
@@ -496,15 +662,14 @@ struct PuzzleCanvasModelTests {
         #expect(outsideCanvas == true)
     }
 
-    @Test func dotCenterIsClampedInsideComposedCanvasByRadius() {
-        let center = PuzzleCanvasCoordinate.clampedDotCenter(
+    @Test func dotCenterStaysAtNormalizedPositionRegardlessOfSize() {
+        let center = PuzzleCanvasCoordinate.dotCenter(
             position: CGPoint(x: 1, y: 1),
-            in: CGRect(x: 100, y: 20, width: 300, height: 200),
-            radius: 24
+            in: CGRect(x: 100, y: 20, width: 300, height: 200)
         )
 
-        #expect(center.x == 376)
-        #expect(center.y == 196)
+        #expect(center.x == 400)
+        #expect(center.y == 220)
     }
 
     @Test func canvasHistoryUndoAndRedoMoveBetweenDotStates() {
@@ -548,27 +713,44 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func dotSizeControlMapsSmallestValueToUsableRenderedSize() {
-        #expect(DotSizeControl.renderedScale(forControlValue: 1) == 24)
-        #expect(DotSizeControl.renderedScale(forControlValue: 100) == 96)
+        #expect(DotSizeControl.renderedScale(forControlValue: 1) == 8)
+        #expect(DotSizeControl.renderedScale(forControlValue: 100) == 40)
     }
 
     @Test func dotSizeControlConvertsRenderedScaleBackToControlValue() {
-        #expect(DotSizeControl.controlValue(forRenderedScale: 24) == 1)
-        #expect(DotSizeControl.controlValue(forRenderedScale: 96) == 100)
+        #expect(DotSizeControl.controlValue(forRenderedScale: 8) == 1)
+        #expect(DotSizeControl.controlValue(forRenderedScale: 40) == 100)
     }
 
     @Test func dotSizeControlKeepsDefaultRenderedScaleWhenControlRangeChanges() {
-        #expect(DotSizeControl.defaultRenderedScale == 40)
+        #expect(DotSizeControl.defaultRenderedScale == 15.11111111111111)
     }
 
     @Test func dotDisplaySizeScalesWithPhotoFrameHeight() {
         #expect(
-            DotSizeControl.displaySize(renderedScale: 40, photoFrameHeight: 240)
-            == 40
+            DotSizeControl.displaySize(renderedScale: 16, photoFrameHeight: 240)
+            == 16
         )
         #expect(
-            DotSizeControl.displaySize(renderedScale: 40, photoFrameHeight: 120)
-            == 20
+            DotSizeControl.displaySize(renderedScale: 16, photoFrameHeight: 120)
+            == 8
+        )
+    }
+
+    @Test func backgroundGridMetricsScaleWithPhotoFrameHeight() {
+        #expect(
+            PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: 240)
+            == 12
+        )
+        #expect(
+            PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: 500)
+            == 25
+        )
+        #expect(
+            isApproximatelyEqual(
+                PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: 500),
+                500.0 / 240.0
+            )
         )
     }
 
@@ -619,4 +801,13 @@ private struct SeededRandomNumberGenerator: RandomNumberGenerator {
         state = 6364136223846793005 &* state &+ 1442695040888963407
         return state
     }
+}
+
+@discardableResult
+private func isApproximatelyEqual(
+    _ lhs: CGFloat,
+    _ rhs: CGFloat,
+    tolerance: CGFloat = 0.000001
+) -> Bool {
+    abs(lhs - rhs) <= tolerance
 }

@@ -72,6 +72,13 @@ struct BottomSheetPanel: View {
         collapsiblePanelHeight(isExpanded: isExpanded) + tabBarSectionHeight + contentBottomInset
     }
 
+    /// Extra height added to canvas layout when the panel is expanded so photo fit scale
+    /// stays the same as in the collapsed state; only the visible viewport shrinks.
+    static func layoutHeightBoost(isExpanded: Bool) -> CGFloat {
+        guard isExpanded else { return 0 }
+        return visibleHeight(isExpanded: true) - visibleHeight(isExpanded: false)
+    }
+
     @Binding var selectedTab: PanelTab
     @Binding var isExpanded: Bool
     @Binding var dotCount: Double
@@ -82,7 +89,9 @@ struct BottomSheetPanel: View {
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
+    @Binding var backgroundStyle: PuzzleBackgroundStyle
     var bottomSafeAreaInset: CGFloat = 0
+    var isPanelEnabled: Bool = true
     let onDrawDots: () -> Void
 
     var body: some View {
@@ -116,6 +125,8 @@ struct BottomSheetPanel: View {
         panelTabBar
             .padding(.top, Self.tabBarTopSpacing)
             .frame(height: Self.tabBarSectionHeight, alignment: .top)
+            .disabled(!isPanelEnabled)
+            .opacity(isPanelEnabled ? 1 : 0.42)
     }
 
     private var panelContent: some View {
@@ -129,14 +140,16 @@ struct BottomSheetPanel: View {
             isTraceDrawingEnabled: $isTraceDrawingEnabled,
             extensionRatio: $extensionRatio,
             extensionSide: $extensionSide,
+            backgroundStyle: $backgroundStyle,
             onDrawDots: onDrawDots
         )
         .padding(.top, isExpanded ? Self.panelContentTopPadding : 0)
         .padding(.bottom, isExpanded ? Self.expandedPanelContentBottomSpacing : 0)
         .frame(height: isExpanded ? PanelContentCard.contentHeight : 0, alignment: .top)
-        .opacity(isExpanded ? 1 : 0)
+        .opacity(isExpanded ? (isPanelEnabled ? 1 : 0.42) : 0)
         .accessibilityHidden(!isExpanded)
-        .allowsHitTesting(isExpanded)
+        .allowsHitTesting(isExpanded && isPanelEnabled)
+        .disabled(!isPanelEnabled)
     }
 
     private var panelBackground: some View {
@@ -186,7 +199,7 @@ struct BottomSheetPanel: View {
                             .frame(width: 18, height: 18)
 
                         Text(tab.title)
-                            .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                            .font(.system(size: 13, weight: .regular))
                     }
                     .foregroundStyle(isSelected ? activeTabColor : Color.mutedForeground)
                     .frame(maxWidth: .infinity)
@@ -245,7 +258,7 @@ struct CanvasHistoryControls: View {
         HStack(spacing: 0) {
             Button(action: onClear) {
                 Text("打扫")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(Color.foreground)
                     .frame(height: 26)
                     .padding(.horizontal, 9)
@@ -327,6 +340,7 @@ private struct PanelContentCard: View {
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
+    @Binding var backgroundStyle: PuzzleBackgroundStyle
     let onDrawDots: () -> Void
 
     var body: some View {
@@ -347,6 +361,7 @@ private struct PanelContentCard: View {
                 )
             case .background:
                 BackgroundPanelControls(
+                    backgroundStyle: $backgroundStyle,
                     extensionRatio: $extensionRatio,
                     extensionSide: $extensionSide
                 )
@@ -358,25 +373,16 @@ private struct PanelContentCard: View {
 }
 
 private struct BackgroundPanelControls: View {
+    @Binding var backgroundStyle: PuzzleBackgroundStyle
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("背景位置")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.foreground)
-
-                Spacer(minLength: 0)
-
-                Picker("背景位置", selection: $extensionSide) {
-                    ForEach(PuzzleCanvasExtensionSide.allCases) { side in
-                        Text(side.title).tag(side)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
+            HStack(spacing: 10) {
+                backgroundStyleControl
+                controlSeparator
+                backgroundPositionControl
             }
             .padding(.horizontal, 2)
 
@@ -394,6 +400,54 @@ private struct BackgroundPanelControls: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    private var controlLabelFont: Font {
+        .system(size: 13, weight: .regular)
+    }
+
+    private var backgroundStyleControl: some View {
+        HStack(spacing: 6) {
+            Text("背景样式")
+                .font(controlLabelFont)
+                .foregroundStyle(Color.foreground)
+
+            Spacer(minLength: 0)
+
+            PanelValueMenu(
+                accessibilityTitle: "背景样式",
+                selection: $backgroundStyle,
+                options: PuzzleBackgroundStyle.allCases,
+                title: { $0.title },
+                font: controlLabelFont
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var backgroundPositionControl: some View {
+        HStack(spacing: 6) {
+            Text("背景位置")
+                .font(controlLabelFont)
+                .foregroundStyle(Color.foreground)
+
+            Spacer(minLength: 0)
+
+            PanelValueMenu(
+                accessibilityTitle: "背景位置",
+                selection: $extensionSide,
+                options: PuzzleCanvasExtensionSide.allCases,
+                title: { $0.title },
+                font: controlLabelFont
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var controlSeparator: some View {
+        Capsule(style: .continuous)
+            .fill(Color.appAccent.opacity(0.22))
+            .frame(width: 1.5, height: 18)
+    }
+
     private var extensionSizeTitle: String {
         extensionSide.isHorizontal ? "背景宽度" : "背景高度"
     }
@@ -407,6 +461,45 @@ private struct BackgroundPanelControls: View {
                 extensionRatio = CGFloat(min(max(newValue / 100, 0), 1))
             }
         )
+    }
+}
+
+private struct PanelValueMenu<Value: Hashable & Equatable>: View {
+    let accessibilityTitle: String
+    @Binding var selection: Value
+    let options: [Value]
+    let title: (Value) -> String
+    let font: Font
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.self) { option in
+                Button {
+                    selection = option
+                } label: {
+                    if option == selection {
+                        Label(title(option), systemImage: "checkmark")
+                    } else {
+                        Text(title(option))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(title(selection))
+                    .font(font)
+                    .foregroundStyle(Color.foreground)
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.mutedForeground)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityValue(title(selection))
     }
 }
 
@@ -464,7 +557,7 @@ private struct DrawPanelControls: View {
                     .frame(width: 15, height: 15)
 
                 Text("抽一张")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .regular))
             }
             .foregroundStyle(Color.primaryForeground)
             .frame(maxWidth: .infinity)
@@ -500,7 +593,7 @@ private struct DrawPanelControls: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(isOn ? Color.primaryForeground : Color.foreground)
                 .frame(maxWidth: .infinity)
                 .frame(height: 30)
@@ -526,7 +619,7 @@ private struct PlaceholderPanelContent: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(Color.foreground)
                 .padding(.top, 10)
                 .padding(.leading, 10)
@@ -612,7 +705,7 @@ private struct DotColorPicker: View {
 
     var body: some View {
         ColorPicker("颜色", selection: $selectedDotColor, supportsOpacity: false)
-            .font(.system(size: 14, weight: .medium))
+            .font(.system(size: 14, weight: .regular))
             .foregroundStyle(Color.foreground)
             .frame(height: 30)
             .padding(.horizontal, 2)
@@ -630,7 +723,7 @@ private struct DotShapeCategoryTabs: View {
                         selectedCategory = category
                     } label: {
                         Text(category.title)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 14, weight: .regular))
                             .foregroundStyle(Color.foreground)
                             .frame(minWidth: 48)
                             .frame(height: 28)

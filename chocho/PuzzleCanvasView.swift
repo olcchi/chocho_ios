@@ -5,6 +5,10 @@ struct PuzzleCanvasView: View {
     let image: UIImage
     let extensionRatio: CGFloat
     var extensionSide: PuzzleCanvasExtensionSide = .right
+    var backgroundStyle: PuzzleBackgroundStyle = .grid
+    var imageViewportResetID: UUID = UUID()
+    /// Compensates for bottom-panel expansion so layout fit scale does not change.
+    var panelLayoutHeightBoost: CGFloat = 0
     let dots: [PuzzleDot]
     var dotScale: CGFloat = 1
     var dotColor: Color = .primary
@@ -13,7 +17,7 @@ struct PuzzleCanvasView: View {
     var viewportOffset: CGSize = .zero
     var tracePoints: [PuzzleCanvasTracePoint] = []
     var isTraceDrawingEnabled = false
-    var onTapCanvas: ((CGPoint) -> Void)?
+    var onTapCanvas: ((PuzzleCanvasTracePoint) -> Void)?
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onTraceChanged: (([PuzzleCanvasTracePoint]) -> Void)?
@@ -23,9 +27,13 @@ struct PuzzleCanvasView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let layoutAvailableSize = CGSize(
+                width: proxy.size.width,
+                height: proxy.size.height + panelLayoutHeightBoost
+            )
             let layout = PuzzleCanvasLayout.layout(
                 imageSize: image.size,
-                availableSize: proxy.size,
+                availableSize: layoutAvailableSize,
                 extensionRatio: extensionRatio,
                 extensionSide: extensionSide
             )
@@ -52,7 +60,7 @@ struct PuzzleCanvasView: View {
                                 y: referenceLocalPhotoFrame.midY
                             )
 
-                        PuzzleGridCanvas()
+                        extensionBackgroundView(photoFrameHeight: referenceLocalPhotoFrame.height)
                             .frame(
                                 width: extensionGridFrame.width,
                                 height: extensionGridFrame.height
@@ -108,10 +116,12 @@ struct PuzzleCanvasView: View {
                     )
                     .animation(.none, value: extensionRatio)
                     .animation(.none, value: extensionSide)
+                    .animation(.none, value: backgroundStyle)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .scaleEffect(viewportScale)
                 .offset(viewportOffset)
+                .animation(.smooth(duration: 0.24), value: panelLayoutHeightBoost)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .contentShape(Rectangle())
@@ -143,14 +153,23 @@ struct PuzzleCanvasView: View {
                     key: CanvasViewportResetKey(
                         extensionRatio: extensionRatio,
                         extensionSide: extensionSide,
-                        availableSize: proxy.size,
-                        imageSize: image.size
+                        imageViewportResetID: imageViewportResetID
                     ),
                     layout: layout,
                     availableSize: proxy.size,
                     onReset: onViewportReset
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private func extensionBackgroundView(photoFrameHeight: CGFloat) -> some View {
+        switch backgroundStyle {
+        case .grid:
+            PuzzleGridCanvas(photoFrameHeight: photoFrameHeight)
+        case .stripes:
+            PuzzleStripesCanvas(photoFrameHeight: photoFrameHeight)
         }
     }
 
@@ -172,7 +191,7 @@ struct PuzzleCanvasView: View {
                     return
                 }
 
-                onTapCanvas?(canvasLocation.point)
+                onTapCanvas?(canvasLocation)
             }
     }
 
@@ -262,16 +281,36 @@ private struct ViewportResetObserver: View {
     let availableSize: CGSize
     let onReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
 
+    @State private var awaitingLayoutReset = false
+
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .onChange(of: key, initial: true) { _, _ in
-                let reset = PuzzleCanvasViewport.resetTransform(
-                    layout: layout,
-                    availableSize: availableSize
-                )
-                onReset?(reset.scale, reset.offset)
+                awaitingLayoutReset = true
+                attemptReset()
             }
+            .onChange(of: availableSize) { _, _ in
+                guard awaitingLayoutReset else { return }
+                attemptReset()
+            }
+    }
+
+    private func attemptReset() {
+        guard awaitingLayoutReset,
+              availableSize.width > 0,
+              availableSize.height > 0,
+              layout.visibleComposedFrame.width > 0,
+              layout.visibleComposedFrame.height > 0 else {
+            return
+        }
+
+        let reset = PuzzleCanvasViewport.resetTransform(
+            layout: layout,
+            availableSize: availableSize
+        )
+        onReset?(reset.scale, reset.offset)
+        awaitingLayoutReset = false
     }
 }
 
@@ -291,38 +330,101 @@ private struct TraceGestureModifier<Trace: Gesture>: ViewModifier {
 }
 
 private struct PuzzleGridCanvas: View {
+    let photoFrameHeight: CGFloat
+
     var body: some View {
         Canvas { context, size in
             guard size.width > 0, size.height > 0 else { return }
 
-            context.fill(
-                Path(CGRect(origin: .zero, size: size)),
-                with: .color(Color.secondary)
-            )
-
-            let spacing: CGFloat = 12
-            var path = Path()
-
-            var x: CGFloat = 0
-            while x <= size.width {
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
-                x += spacing
-            }
-
-            var y: CGFloat = 0
-            while y <= size.height {
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                y += spacing
-            }
-
-            context.stroke(
-                path,
-                with: .color(Color.border),
-                lineWidth: 1
+            PuzzleBackgroundCanvasDrawing.fillBase(in: &context, size: size)
+            PuzzleBackgroundCanvasDrawing.strokeGrid(
+                in: &context,
+                size: size,
+                photoFrameHeight: photoFrameHeight
             )
         }
+    }
+}
+
+private struct PuzzleStripesCanvas: View {
+    let photoFrameHeight: CGFloat
+
+    var body: some View {
+        Canvas { context, size in
+            guard size.width > 0, size.height > 0 else { return }
+
+            PuzzleBackgroundCanvasDrawing.fillStripes(
+                in: &context,
+                size: size,
+                photoFrameHeight: photoFrameHeight
+            )
+        }
+    }
+}
+
+private enum PuzzleBackgroundCanvasDrawing {
+    static func fillBase(in context: inout GraphicsContext, size: CGSize) {
+        context.fill(
+            Path(CGRect(origin: .zero, size: size)),
+            with: .color(Color.secondary)
+        )
+    }
+
+    static func strokeGrid(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        photoFrameHeight: CGFloat
+    ) {
+        let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
+        var path = Path()
+
+        var x: CGFloat = 0
+        while x <= size.width {
+            path.move(to: CGPoint(x: x, y: 0))
+            path.addLine(to: CGPoint(x: x, y: size.height))
+            x += spacing
+        }
+
+        var y: CGFloat = 0
+        while y <= size.height {
+            path.move(to: CGPoint(x: 0, y: y))
+            path.addLine(to: CGPoint(x: size.width, y: y))
+            y += spacing
+        }
+
+        stroke(path, in: &context, photoFrameHeight: photoFrameHeight)
+    }
+
+    static func fillStripes(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        photoFrameHeight: CGFloat
+    ) {
+        let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
+        var y: CGFloat = 0
+        var usesPrimaryStripe = true
+
+        while y < size.height {
+            let bandHeight = min(spacing, size.height - y)
+            context.fill(
+                Path(CGRect(x: 0, y: y, width: size.width, height: bandHeight)),
+                with: .color(usesPrimaryStripe ? Color.secondary : Color.background)
+            )
+            y += spacing
+            usesPrimaryStripe.toggle()
+        }
+    }
+
+    private static func stroke(
+        _ path: Path,
+        in context: inout GraphicsContext,
+        photoFrameHeight: CGFloat
+    ) {
+        context.stroke(
+            path,
+            with: .color(Color.border),
+            lineWidth: PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: photoFrameHeight)
+        )
     }
 }
 
@@ -342,12 +444,10 @@ private struct PuzzleDotsCanvas: View {
                     renderedScale: dot.size * dotScale,
                     photoFrameHeight: photoFrame.height
                 )
-                let radius = size / 2
                 let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
                     position: dot.position,
                     referenceFrame: referenceFrame,
-                    extensionSide: extensionSide,
-                    radius: radius
+                    extensionSide: extensionSide
                 )
 
                 ForEach(Array(centers.enumerated()), id: \.offset) { _, center in

@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var canvasImage: UIImage?
     @State private var extensionRatio: CGFloat = 0.2
     @State private var extensionSide: PuzzleCanvasExtensionSide = .right
+    @State private var backgroundStyle: PuzzleBackgroundStyle = .grid
+    @State private var imageViewportResetID = UUID()
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
     @State private var isPanelExpanded = true
@@ -30,8 +32,8 @@ struct ContentView: View {
     @State private var showsClearCanvasConfirmation = false
     @State private var exportMessage: String?
     @State private var shareItem: CanvasShareItem?
-    @GestureState private var gestureScale: CGFloat = 1
     @GestureState private var gestureOffset: CGSize = .zero
+    @State private var lastMagnification: CGFloat = 1
 
     var body: some View {
         GeometryReader { proxy in
@@ -72,7 +74,9 @@ struct ContentView: View {
                     isTraceDrawingEnabled: $isTraceDrawingEnabled,
                     extensionRatio: $extensionRatio,
                     extensionSide: $extensionSide,
+                    backgroundStyle: $backgroundStyle,
                     bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
+                    isPanelEnabled: canvasImage != nil,
                     onDrawDots: drawPuzzleDots
                 )
                     .padding(.bottom, -proxy.safeAreaInsets.bottom)
@@ -87,6 +91,7 @@ struct ContentView: View {
                 )
                 .padding(.trailing, 20)
                 .padding(.bottom, historyControlsBottomPadding(for: proxy))
+                .animation(.smooth(duration: 0.24), value: isPanelExpanded)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .zIndex(2)
             }
@@ -96,6 +101,9 @@ struct ContentView: View {
         }
         .onChange(of: dotCount) { _, newDotCount in
             syncPuzzleDots(to: Int(newDotCount.rounded()))
+        }
+        .onChange(of: isPanelExpanded) { _, isExpanded in
+            dodgeCanvasForPanelExpansion(isExpanded: isExpanded)
         }
         .sheet(item: $shareItem) { item in
             CanvasShareSheet(fileURL: item.fileURL)
@@ -112,28 +120,35 @@ struct ContentView: View {
     @ViewBuilder
     private var canvasArea: some View {
         if let canvasImage {
-            let canvas = PuzzleCanvasView(
-                image: canvasImage,
-                extensionRatio: extensionRatio,
-                extensionSide: extensionSide,
-                dots: puzzleDots,
-                dotScale: CGFloat(dotScale),
-                dotColor: selectedDotColor,
-                usesRandomDotColors: usesRandomDotColors,
-                viewportScale: viewportScale * gestureScale,
-                viewportOffset: viewportOffset + gestureOffset,
-                tracePoints: tracePoints,
-                isTraceDrawingEnabled: isTraceDrawingEnabled,
-                onTapCanvas: addPuzzleDot(at:),
-                onDoubleTapBackground: applyCanvasViewportReset,
-                onViewportReset: applyCanvasViewportReset,
-                onTraceChanged: updateTracePoints
-            )
+            GeometryReader { canvasProxy in
+                let canvas = PuzzleCanvasView(
+                    image: canvasImage,
+                    extensionRatio: extensionRatio,
+                    extensionSide: extensionSide,
+                    backgroundStyle: backgroundStyle,
+                    imageViewportResetID: imageViewportResetID,
+                    panelLayoutHeightBoost: BottomSheetPanel.layoutHeightBoost(
+                        isExpanded: isPanelExpanded
+                    ),
+                    dots: puzzleDots,
+                    dotScale: CGFloat(dotScale),
+                    dotColor: selectedDotColor,
+                    usesRandomDotColors: usesRandomDotColors,
+                    viewportScale: viewportScale,
+                    viewportOffset: viewportOffset + gestureOffset,
+                    tracePoints: tracePoints,
+                    isTraceDrawingEnabled: isTraceDrawingEnabled,
+                    onTapCanvas: addPuzzleDot(at:),
+                    onDoubleTapBackground: applyCanvasViewportReset,
+                    onViewportReset: applyCanvasViewportReset,
+                    onTraceChanged: updateTracePoints
+                )
 
-            if isTraceDrawingEnabled {
-                canvas
-            } else {
-                canvas.gesture(canvasGesture)
+                if isTraceDrawingEnabled {
+                    canvas
+                } else {
+                    canvas.gesture(canvasGesture(availableSize: canvasProxy.size))
+                }
             }
         } else {
             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
@@ -166,13 +181,25 @@ struct ContentView: View {
         guard let selectedPhotoItem else { return }
 
         do {
-            guard let data = try await selectedPhotoItem.loadTransferable(type: Data.self),
-                  let image = UIImage(data: data) else {
+            guard let data = try await selectedPhotoItem.loadTransferable(type: Data.self) else {
+                exportMessage = "无法读取照片"
+                return
+            }
+
+            let image = await Task.detached(priority: .userInitiated) {
+                CanvasImageLoader.makeUIImage(from: data)
+            }.value
+
+            guard let image else {
                 exportMessage = "无法读取照片"
                 return
             }
 
             canvasImage = image
+            imageViewportResetID = UUID()
+            viewportScale = 1
+            viewportOffset = .zero
+            lastMagnification = 1
             puzzleDots = []
             canvasHistory.reset(to: [])
             tracePoints = []
@@ -244,7 +271,11 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func addPuzzleDot(at position: CGPoint) {
+    private func addPuzzleDot(at location: PuzzleCanvasTracePoint) {
+        let position = PuzzleCanvasCoordinate.dotPosition(
+            for: location,
+            extensionSide: extensionSide
+        )
         var newDots = puzzleDots
         newDots.append(PuzzleDotFactory.makeDot(
             position: position,
@@ -308,6 +339,23 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func dodgeCanvasForPanelExpansion(isExpanded: Bool) {
+        guard canvasImage != nil else { return }
+
+        let panelHeightBoost = BottomSheetPanel.layoutHeightBoost(isExpanded: true)
+        let delta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
+            scale: viewportScale,
+            panelHeightBoost: panelHeightBoost,
+            isPanelExpanded: isExpanded
+        )
+        guard delta != .zero else { return }
+
+        withAnimation(.smooth(duration: 0.24)) {
+            viewportOffset = viewportOffset + delta
+        }
+    }
+
+    @MainActor
     private func shareCanvas() {
         guard let canvasImage else {
             exportMessage = "请先上传图片"
@@ -320,6 +368,7 @@ struct ContentView: View {
                 image: canvasImage,
                 extensionRatio: extensionRatio,
                 extensionSide: extensionSide,
+                backgroundStyle: backgroundStyle,
                 dots: puzzleDots,
                 dotScale: CGFloat(dotScale),
                 dotColor: selectedDotColor,
@@ -377,7 +426,7 @@ struct ContentView: View {
         }
     }
 
-    private var canvasGesture: some Gesture {
+    private func canvasGesture(availableSize: CGSize) -> some Gesture {
         SimultaneousGesture(
             DragGesture()
                 .updating($gestureOffset) { value, state, _ in
@@ -387,11 +436,28 @@ struct ContentView: View {
                     viewportOffset = viewportOffset + value.translation
                 },
             MagnifyGesture()
-                .updating($gestureScale) { value, state, _ in
-                    state = value.magnification
+                .onChanged { value in
+                    let magnificationDelta = value.magnification / lastMagnification
+                    guard magnificationDelta.isFinite, magnificationDelta > 0 else { return }
+
+                    let anchor = value.startLocation
+                    let nextScale = PuzzleCanvasViewport.clampedScale(
+                        viewportScale * magnificationDelta
+                    )
+                    let appliedMultiplier = nextScale / viewportScale
+                    guard appliedMultiplier.isFinite, appliedMultiplier > 0 else { return }
+
+                    viewportOffset = PuzzleCanvasViewport.adjustedOffset(
+                        anchor: anchor,
+                        availableSize: availableSize,
+                        scaleMultiplier: appliedMultiplier,
+                        baseOffset: viewportOffset
+                    )
+                    viewportScale = nextScale
+                    lastMagnification = value.magnification
                 }
-                .onEnded { value in
-                    viewportScale = min(max(viewportScale * value.magnification, 0.4), 6)
+                .onEnded { _ in
+                    lastMagnification = 1
                 }
         )
     }
@@ -504,6 +570,7 @@ private struct CanvasExportView: View {
     let image: UIImage
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
+    let backgroundStyle: PuzzleBackgroundStyle
     let dots: [PuzzleDot]
     let dotScale: CGFloat
     let dotColor: Color
@@ -511,14 +578,24 @@ private struct CanvasExportView: View {
     let size: CGSize
 
     var body: some View {
+        let viewportTransform = PuzzleCanvasExport.viewportTransform(
+            imageSize: image.size,
+            exportSize: size,
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide
+        )
+
         PuzzleCanvasView(
             image: image,
             extensionRatio: extensionRatio,
             extensionSide: extensionSide,
+            backgroundStyle: backgroundStyle,
             dots: dots,
             dotScale: dotScale,
             dotColor: dotColor,
-            usesRandomDotColors: usesRandomDotColors
+            usesRandomDotColors: usesRandomDotColors,
+            viewportScale: viewportTransform.scale,
+            viewportOffset: viewportTransform.offset
         )
         .frame(width: size.width, height: size.height)
     }
