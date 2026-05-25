@@ -1,7 +1,7 @@
 import CoreGraphics
 import SwiftUI
 
-enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, Equatable {
+nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, Equatable {
     case top
     case bottom
     case left
@@ -32,7 +32,7 @@ enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
-enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equatable {
+nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equatable {
     case grid
     case stripes
 
@@ -48,7 +48,7 @@ enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
-struct PuzzleCanvasLayoutResult: Equatable {
+nonisolated struct PuzzleCanvasLayoutResult: Equatable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
     let photoFrame: CGRect
@@ -113,12 +113,12 @@ struct PuzzleCanvasLayoutResult: Equatable {
     }
 }
 
-enum PuzzleCanvasSide: Equatable {
+nonisolated enum PuzzleCanvasSide: Equatable {
     case photo
     case background
 }
 
-struct PuzzleCanvasTracePoint: Equatable {
+nonisolated struct PuzzleCanvasTracePoint: Equatable {
     let side: PuzzleCanvasSide
     let point: CGPoint
     let startsNewStroke: Bool
@@ -185,7 +185,7 @@ enum PuzzleCanvasTracePath {
     }
 }
 
-enum PuzzleCanvasLayout {
+nonisolated enum PuzzleCanvasLayout {
     static let maxExtensionRatio: CGFloat = 1
 
     static func layout(
@@ -429,7 +429,7 @@ enum PuzzleCanvasExport {
     }
 }
 
-enum PuzzleCanvasCoordinate {
+nonisolated enum PuzzleCanvasCoordinate {
     static func isBackgroundTap(
         at location: CGPoint,
         availableSize: CGSize,
@@ -824,7 +824,7 @@ enum PuzzleCanvasCoordinate {
     }
 }
 
-enum DotSizeControl {
+nonisolated enum DotSizeControl {
     static let minControlValue: Double = 1
     static let maxControlValue: Double = 100
     static let minRenderedScale: Double = 8
@@ -857,7 +857,7 @@ enum DotSizeControl {
     }
 }
 
-enum PuzzleBackgroundGridMetrics {
+nonisolated enum PuzzleBackgroundGridMetrics {
     private static let referenceSpacing: CGFloat = 12
     private static let referenceLineWidth: CGFloat = 1
 
@@ -949,7 +949,7 @@ extension CanvasHistory where Value: RangeReplaceableCollection {
     }
 }
 
-struct PuzzleDot: Identifiable, Equatable {
+nonisolated struct PuzzleDot: Identifiable, Equatable {
     let id: UUID
     let position: CGPoint
     let color: Color

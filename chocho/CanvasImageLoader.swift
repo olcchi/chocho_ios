@@ -4,9 +4,9 @@ import UIKit
 /// Prepares user photos for the puzzle canvas without decoding full-resolution originals.
 enum CanvasImageLoader {
     /// Longest edge cap for canvas work and export. Large camera photos are downsampled at decode time.
-    static let maxPixelDimension = 2048
+    nonisolated static let maxPixelDimension = 2048
 
-    static func makeUIImage(
+    nonisolated static func makeUIImage(
         from data: Data,
         maxPixelDimension: Int = maxPixelDimension
     ) -> UIImage? {
@@ -42,10 +42,59 @@ enum CanvasImageLoader {
         return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 
-    static func pixelSize(for image: UIImage) -> CGSize {
+    /// Decodes and prepares an image for on-screen rendering on a background queue.
+    nonisolated static func makeDisplayReadyUIImage(
+        from data: Data,
+        maxPixelDimension: Int = maxPixelDimension
+    ) async -> UIImage? {
+        let image = await Task.detached(priority: .userInitiated) {
+            makeUIImage(from: data, maxPixelDimension: maxPixelDimension)
+        }.value
+
+        guard let image else { return nil }
+
+        return await Task.detached(priority: .userInitiated) {
+            image.preparingForDisplay()
+        }.value
+    }
+
+    nonisolated static func makeDisplayReadyUIImage(
+        from image: UIImage,
+        maxPixelDimension: Int = maxPixelDimension
+    ) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            let preparedImage = downsampleIfNeeded(
+                image,
+                maxPixelDimension: maxPixelDimension
+            )
+
+            return preparedImage.preparingForDisplay() ?? preparedImage
+        }.value
+    }
+
+    nonisolated static func pixelSize(for image: UIImage) -> CGSize {
         CGSize(
             width: CGFloat(image.cgImage?.width ?? Int(image.size.width * image.scale)),
             height: CGFloat(image.cgImage?.height ?? Int(image.size.height * image.scale))
         )
+    }
+
+    private nonisolated static func downsampleIfNeeded(
+        _ image: UIImage,
+        maxPixelDimension: Int
+    ) -> UIImage {
+        guard maxPixelDimension > 0 else { return image }
+
+        let pixelSize = pixelSize(for: image)
+        let longestEdge = max(pixelSize.width, pixelSize.height)
+        guard longestEdge > CGFloat(maxPixelDimension) else { return image }
+
+        let targetScale = CGFloat(maxPixelDimension) / longestEdge
+        let targetSize = CGSize(
+            width: pixelSize.width * targetScale,
+            height: pixelSize.height * targetScale
+        )
+
+        return image.preparingThumbnail(of: targetSize) ?? image
     }
 }

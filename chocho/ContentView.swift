@@ -31,7 +31,10 @@ struct ContentView: View {
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
     @State private var showsClearCanvasConfirmation = false
     @State private var exportMessage: String?
+    @State private var isPhotoLoading = false
+    @State private var isExporting = false
     @State private var shareItem: CanvasShareItem?
+    @State private var shareSheetDetent: PresentationDetent = .medium
     @GestureState private var gestureOffset: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
 
@@ -56,6 +59,7 @@ struct ContentView: View {
                     selectedPhotoItem: $selectedPhotoItem,
                     exportMessage: exportMessage,
                     canDownload: canvasImage != nil,
+                    isBusy: isPhotoLoading || isExporting,
                     onDownload: shareCanvas
                 )
                 .padding(.top, 4)
@@ -107,7 +111,11 @@ struct ContentView: View {
         }
         .sheet(item: $shareItem) { item in
             CanvasShareSheet(fileURL: item.fileURL)
-                .ignoresSafeArea()
+                .presentationDetents([.medium, .large], selection: $shareSheetDetent)
+                .presentationDragIndicator(.visible)
+                .onAppear {
+                    shareSheetDetent = .medium
+                }
         }
         .alert("打扫波点", isPresented: $showsClearCanvasConfirmation) {
             Button("取消", role: .cancel) {}
@@ -151,7 +159,7 @@ struct ContentView: View {
                 }
             }
         } else {
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+            PhotosPicker(selection: $selectedPhotoItem, matching: CanvasPhotoImport.pickerMatching) {
                 CanvasUploadPlaceholder()
                     .contentShape(Rectangle())
             }
@@ -180,33 +188,33 @@ struct ContentView: View {
     private func loadSelectedPhoto() async {
         guard let selectedPhotoItem else { return }
 
+        isPhotoLoading = true
+        exportMessage = "正在加载…"
+        defer {
+            isPhotoLoading = false
+        }
+
         do {
-            guard let data = try await selectedPhotoItem.loadTransferable(type: Data.self) else {
-                exportMessage = "无法读取照片"
-                return
-            }
+            let importResult = try await CanvasPhotoImport.importPhoto(from: selectedPhotoItem)
+            let image = importResult.source.keyPhoto
 
-            let image = await Task.detached(priority: .userInitiated) {
-                CanvasImageLoader.makeUIImage(from: data)
-            }.value
-
-            guard let image else {
-                exportMessage = "无法读取照片"
-                return
-            }
+            let initialDots = PuzzleCanvasUploadDefaults.initialDots(
+                dotCount: dotCount,
+                shapeAssetName: selectedDotShape.name
+            )
 
             canvasImage = image
             imageViewportResetID = UUID()
             viewportScale = 1
             viewportOffset = .zero
             lastMagnification = 1
-            puzzleDots = []
-            canvasHistory.reset(to: [])
             tracePoints = []
-            applyPuzzleDots(PuzzleCanvasUploadDefaults.initialDots(
-                dotCount: dotCount,
-                shapeAssetName: selectedDotShape.name
-            ))
+            canvasHistory.reset(to: [])
+            puzzleDots = []
+
+            await Task.yield()
+
+            applyPuzzleDots(initialDots)
             exportMessage = nil
         } catch {
             exportMessage = "上传失败"
@@ -362,48 +370,56 @@ struct ContentView: View {
             return
         }
 
-        let exportSize = exportCanvasSize(for: canvasImage)
-        let renderer = ImageRenderer(
-            content: CanvasExportView(
-                image: canvasImage,
-                extensionRatio: extensionRatio,
-                extensionSide: extensionSide,
-                backgroundStyle: backgroundStyle,
-                dots: puzzleDots,
-                dotScale: CGFloat(dotScale),
-                dotColor: selectedDotColor,
-                usesRandomDotColors: usesRandomDotColors,
-                size: exportSize
-            )
+        guard !isExporting else { return }
+
+        isExporting = true
+        exportMessage = "正在导出…"
+
+        let snapshot = CanvasExportSnapshot(
+            image: canvasImage,
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide,
+            backgroundStyle: backgroundStyle,
+            dots: puzzleDots,
+            dotScale: CGFloat(dotScale),
+            dotColor: selectedDotColor,
+            usesRandomDotColors: usesRandomDotColors
         )
-        renderer.scale = 1
 
-        guard let image = renderer.uiImage else {
-            exportMessage = "生成失败"
-            return
-        }
+        Task {
+            defer { isExporting = false }
 
-        guard let fileURL = exportCanvasImage(image) else {
-            exportMessage = "导出失败"
-            return
-        }
+            let exportSize = exportCanvasSize(for: snapshot.image)
+            let renderedImage = await Task.detached(priority: .userInitiated) {
+                CanvasRasterExporter.render(
+                    image: snapshot.image,
+                    exportSize: exportSize,
+                    extensionRatio: snapshot.extensionRatio,
+                    extensionSide: snapshot.extensionSide,
+                    backgroundStyle: snapshot.backgroundStyle,
+                    dots: snapshot.dots,
+                    dotScale: snapshot.dotScale,
+                    dotColor: snapshot.dotColor,
+                    usesRandomDotColors: snapshot.usesRandomDotColors
+                )
+            }.value
 
-        exportMessage = nil
-        shareItem = CanvasShareItem(fileURL: fileURL)
-    }
+            guard let renderedImage else {
+                exportMessage = "生成失败"
+                return
+            }
 
-    private func exportCanvasImage(_ image: UIImage) -> URL? {
-        guard let data = image.pngData() else { return nil }
+            let fileURL = await Task.detached(priority: .utility) {
+                CanvasExportWriter.writeTemporaryJPEG(renderedImage)
+            }.value
 
-        let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("chocho-canvas-\(UUID().uuidString)")
-            .appendingPathExtension("png")
+            guard let fileURL else {
+                exportMessage = "导出失败"
+                return
+            }
 
-        do {
-            try data.write(to: fileURL, options: .atomic)
-            return fileURL
-        } catch {
-            return nil
+            exportMessage = nil
+            shareItem = CanvasShareItem(fileURL: fileURL)
         }
     }
 
@@ -506,13 +522,25 @@ private struct CanvasShareSheet: UIViewControllerRepresentable {
     let fileURL: URL
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(
+        let controller = UIActivityViewController(
             activityItems: [fileURL],
             applicationActivities: [SaveCanvasToPhotosActivity(fileURL: fileURL)]
         )
+        controller.modalPresentationStyle = .pageSheet
+        configureSheetPresentation(for: controller)
+        return controller
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        configureSheetPresentation(for: uiViewController)
+    }
+
+    private func configureSheetPresentation(for controller: UIActivityViewController) {
+        guard let sheet = controller.sheetPresentationController else { return }
+        sheet.detents = [.medium(), .large()]
+        sheet.selectedDetentIdentifier = .medium
+        sheet.prefersGrabberVisible = true
+    }
 }
 
 private final class SaveCanvasToPhotosActivity: UIActivity {
@@ -544,29 +572,14 @@ private final class SaveCanvasToPhotosActivity: UIActivity {
     }
 
     override func perform() {
-        guard let image = UIImage(contentsOfFile: fileURL.path) else {
-            activityDidFinish(false)
-            return
+        Task { @MainActor in
+            let didSave = await CanvasPhotoLibrarySaver.save(fileURL: fileURL)
+            activityDidFinish(didSave)
         }
-
-        UIImageWriteToSavedPhotosAlbum(
-            image,
-            self,
-            #selector(saveCompleted(_:didFinishSavingWithError:contextInfo:)),
-            nil
-        )
-    }
-
-    @objc private func saveCompleted(
-        _ image: UIImage,
-        didFinishSavingWithError error: Error?,
-        contextInfo: UnsafeRawPointer
-    ) {
-        activityDidFinish(error == nil)
     }
 }
 
-private struct CanvasExportView: View {
+private struct CanvasExportSnapshot {
     let image: UIImage
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
@@ -575,28 +588,4 @@ private struct CanvasExportView: View {
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
-    let size: CGSize
-
-    var body: some View {
-        let viewportTransform = PuzzleCanvasExport.viewportTransform(
-            imageSize: image.size,
-            exportSize: size,
-            extensionRatio: extensionRatio,
-            extensionSide: extensionSide
-        )
-
-        PuzzleCanvasView(
-            image: image,
-            extensionRatio: extensionRatio,
-            extensionSide: extensionSide,
-            backgroundStyle: backgroundStyle,
-            dots: dots,
-            dotScale: dotScale,
-            dotColor: dotColor,
-            usesRandomDotColors: usesRandomDotColors,
-            viewportScale: viewportTransform.scale,
-            viewportOffset: viewportTransform.offset
-        )
-        .frame(width: size.width, height: size.height)
-    }
 }

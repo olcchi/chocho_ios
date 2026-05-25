@@ -21,6 +21,8 @@ struct PuzzleCanvasView: View {
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onTraceChanged: (([PuzzleCanvasTracePoint]) -> Void)?
+    /// Screen preview uses a lighter filter; export keeps high quality when needed.
+    var photoInterpolation: Image.Interpolation = .medium
 
     @State private var isTracingCurrentStroke = false
     @State private var activeTracePoints: [PuzzleCanvasTracePoint] = []
@@ -50,7 +52,7 @@ struct PuzzleCanvasView: View {
                     ZStack(alignment: .topLeading) {
                         Image(uiImage: image)
                             .resizable()
-                            .interpolation(.high)
+                            .interpolation(photoInterpolation)
                             .frame(
                                 width: layout.photoFrame.width,
                                 height: layout.photoFrame.height

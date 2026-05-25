@@ -12,23 +12,25 @@ struct CanvasHeader: View {
     @Binding var selectedPhotoItem: PhotosPickerItem?
     let exportMessage: String?
     let canDownload: Bool
+    var isBusy = false
     let onDownload: () -> Void
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             HStack(spacing: 10) {
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                PhotosPicker(selection: $selectedPhotoItem, matching: CanvasPhotoImport.pickerMatching) {
                     CanvasActionLabel(title: "上传", iconAssetName: "public/upload")
                 }
+                .disabled(isBusy)
 
                 Button(action: onDownload) {
                     CanvasActionLabel(
                         title: "下载",
                         iconAssetName: "public/download",
-                        isEnabled: canDownload
+                        isEnabled: canDownload && !isBusy
                     )
                 }
-                .disabled(!canDownload)
+                .disabled(!canDownload || isBusy)
             }
 
             if let exportMessage {

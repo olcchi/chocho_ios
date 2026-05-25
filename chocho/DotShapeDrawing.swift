@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum BuiltInDotShape: String, CaseIterable, Identifiable {
+nonisolated enum BuiltInDotShape: String, CaseIterable, Identifiable {
     case circle = "圆形"
     case square = "正方形"
     case triangle = "等边三角形"
