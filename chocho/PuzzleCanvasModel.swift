@@ -6,6 +6,17 @@ struct PuzzleCanvasLayoutResult: Equatable {
     let photoFrame: CGRect
     let extensionFrame: CGRect
     let composedSize: CGSize
+    /// Full photo + max extension area; dot/trace positions are stable in this space.
+    let referenceComposedFrame: CGRect
+
+    var visibleComposedFrame: CGRect {
+        CGRect(
+            x: referenceComposedFrame.minX,
+            y: referenceComposedFrame.minY,
+            width: composedSize.width,
+            height: referenceComposedFrame.height
+        )
+    }
 }
 
 enum PuzzleCanvasSide: Equatable {
@@ -53,26 +64,19 @@ enum PuzzleCanvasTracePath {
         extensionRatio: CGFloat
     ) -> [PuzzleCanvasTraceSegment] {
         var segments: [PuzzleCanvasTraceSegment] = []
-        var previousPosition: CGPoint?
+        var previousTracePoint: PuzzleCanvasTracePoint?
 
         for tracePoint in tracePoints {
-            guard let position = PuzzleCanvasCoordinate.composedPosition(
-                for: tracePoint,
-                extensionRatio: extensionRatio
-            ) else {
-                previousPosition = nil
-                continue
-            }
-
             if tracePoint.startsNewStroke {
-                previousPosition = position
+                previousTracePoint = tracePoint
                 continue
             }
 
-            if let previousPosition {
+            if let previousTracePoint,
+               previousTracePoint.side == tracePoint.side {
                 let segment = PuzzleCanvasTraceSegment(
-                    start: previousPosition,
-                    end: position
+                    start: previousTracePoint.point,
+                    end: tracePoint.point
                 )
 
                 if segment.length > 0 {
@@ -80,7 +84,7 @@ enum PuzzleCanvasTracePath {
                 }
             }
 
-            previousPosition = position
+            previousTracePoint = tracePoint
         }
 
         return segments
@@ -88,12 +92,14 @@ enum PuzzleCanvasTracePath {
 }
 
 enum PuzzleCanvasLayout {
+    static let maxExtensionRatio: CGFloat = 1
+
     static func layout(
         imageSize: CGSize,
         availableSize: CGSize,
         extensionRatio: CGFloat
     ) -> PuzzleCanvasLayoutResult {
-        let clampedRatio = min(max(extensionRatio, 0), 1)
+        let clampedRatio = min(max(extensionRatio, 0), maxExtensionRatio)
 
         guard imageSize.width > 0,
               imageSize.height > 0,
@@ -103,42 +109,84 @@ enum PuzzleCanvasLayout {
                 extensionRatio: clampedRatio,
                 photoFrame: .zero,
                 extensionFrame: .zero,
-                composedSize: .zero
+                composedSize: .zero,
+                referenceComposedFrame: .zero
             )
         }
 
+        // Photo scale is independent of extension width so existing dots stay fixed on the image.
         let fitScale = min(
-            availableSize.width / (imageSize.width * (1 + clampedRatio)),
+            availableSize.width / imageSize.width,
             availableSize.height / imageSize.height
         )
         let photoSize = CGSize(
             width: imageSize.width * fitScale,
             height: imageSize.height * fitScale
         )
-        let extensionSize = CGSize(
-            width: photoSize.width * clampedRatio,
-            height: photoSize.height
+        let photoOrigin = CGPoint(
+            x: (availableSize.width - photoSize.width) / 2,
+            y: (availableSize.height - photoSize.height) / 2
         )
-        let composedSize = CGSize(
-            width: photoSize.width + extensionSize.width,
+        let visibleExtensionWidth = photoSize.width * clampedRatio
+        let referenceComposedWidth = photoSize.width * (1 + maxExtensionRatio)
+        let visibleComposedWidth = photoSize.width + visibleExtensionWidth
+        let referenceComposedFrame = CGRect(
+            x: photoOrigin.x,
+            y: photoOrigin.y,
+            width: referenceComposedWidth,
             height: photoSize.height
-        )
-        let origin = CGPoint(
-            x: (availableSize.width - composedSize.width) / 2,
-            y: (availableSize.height - composedSize.height) / 2
         )
 
         return PuzzleCanvasLayoutResult(
             extensionRatio: clampedRatio,
-            photoFrame: CGRect(origin: origin, size: photoSize),
+            photoFrame: CGRect(origin: photoOrigin, size: photoSize),
             extensionFrame: CGRect(
-                x: origin.x + photoSize.width,
-                y: origin.y,
-                width: extensionSize.width,
-                height: extensionSize.height
+                x: photoOrigin.x + photoSize.width,
+                y: photoOrigin.y,
+                width: visibleExtensionWidth,
+                height: photoSize.height
             ),
-            composedSize: composedSize
+            composedSize: CGSize(width: visibleComposedWidth, height: photoSize.height),
+            referenceComposedFrame: referenceComposedFrame
         )
+    }
+}
+
+struct CanvasViewportResetKey: Equatable {
+    let extensionRatio: CGFloat
+    let availableSize: CGSize
+    let imageSize: CGSize
+}
+
+enum PuzzleCanvasViewport {
+    /// Fits the visible photo + background width to the screen edges and centers vertically.
+    /// Matches `PuzzleCanvasCoordinate` viewport transform: scale about available center, then offset.
+    static func resetTransform(
+        layout: PuzzleCanvasLayoutResult,
+        availableSize: CGSize
+    ) -> (scale: CGFloat, offset: CGSize) {
+        let visibleFrame = layout.visibleComposedFrame
+
+        guard visibleFrame.width > 0,
+              visibleFrame.height > 0,
+              availableSize.width > 0,
+              availableSize.height > 0 else {
+            return (1, .zero)
+        }
+
+        let viewportCenter = CGPoint(
+            x: availableSize.width / 2,
+            y: availableSize.height / 2
+        )
+        let scale = availableSize.width / visibleFrame.width
+        let offset = CGSize(
+            width: -viewportCenter.x - (visibleFrame.minX - viewportCenter.x) * scale,
+            height: availableSize.height / 2
+                - viewportCenter.y
+                - (visibleFrame.midY - viewportCenter.y) * scale
+        )
+
+        return (scale, offset)
     }
 }
 
@@ -189,11 +237,12 @@ enum PuzzleCanvasCoordinate {
 
         if layout.extensionFrame.contains(unscaledLocation),
            layout.extensionFrame.width > 0,
-           layout.extensionFrame.height > 0 {
+           layout.extensionFrame.height > 0,
+           layout.photoFrame.width > 0 {
             return PuzzleCanvasTracePoint(
                 side: .background,
                 point: CGPoint(
-                    x: (unscaledLocation.x - layout.extensionFrame.minX) / layout.extensionFrame.width,
+                    x: (unscaledLocation.x - layout.extensionFrame.minX) / layout.photoFrame.width,
                     y: (unscaledLocation.y - layout.extensionFrame.minY) / layout.extensionFrame.height
                 )
             )
@@ -225,28 +274,25 @@ enum PuzzleCanvasCoordinate {
         ) else {
             return nil
         }
-        let composedFrame = CGRect(
-            x: layout.photoFrame.minX,
-            y: layout.photoFrame.minY,
-            width: layout.composedSize.width,
-            height: layout.composedSize.height
-        )
+        let visibleFrame = layout.visibleComposedFrame
 
-        guard composedFrame.contains(unscaledLocation) else { return nil }
+        guard visibleFrame.contains(unscaledLocation) else { return nil }
+
+        let referenceFrame = layout.referenceComposedFrame
+        guard referenceFrame.width > 0, referenceFrame.height > 0 else { return nil }
 
         return CGPoint(
-            x: (unscaledLocation.x - composedFrame.minX) / composedFrame.width,
-            y: (unscaledLocation.y - composedFrame.minY) / composedFrame.height
+            x: (unscaledLocation.x - referenceFrame.minX) / referenceFrame.width,
+            y: (unscaledLocation.y - referenceFrame.minY) / referenceFrame.height
         )
     }
 
     static func composedPosition(
         for tracePoint: PuzzleCanvasTracePoint,
-        extensionRatio: CGFloat
+        maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio
     ) -> CGPoint? {
-        let clampedRatio = min(max(extensionRatio, 0), 1)
+        let clampedRatio = min(max(maxExtensionRatio, 0), PuzzleCanvasLayout.maxExtensionRatio)
         let photoWidthFraction = 1 / (1 + clampedRatio)
-        let backgroundWidthFraction = clampedRatio / (1 + clampedRatio)
 
         switch tracePoint.side {
         case .photo:
@@ -255,25 +301,76 @@ enum PuzzleCanvasCoordinate {
                 y: tracePoint.point.y
             )
         case .background:
-            guard backgroundWidthFraction > 0 else { return nil }
+            guard clampedRatio > 0,
+                  tracePoint.point.x >= 0,
+                  tracePoint.point.x <= clampedRatio else {
+                return nil
+            }
 
             return CGPoint(
-                x: photoWidthFraction + tracePoint.point.x * backgroundWidthFraction,
+                x: photoWidthFraction + tracePoint.point.x / (1 + clampedRatio),
                 y: tracePoint.point.y
             )
         }
     }
 
+    /// Renders dots in the fixed reference canvas; narrowing extension only clips them.
+    static func dotCentersInReferenceFrame(
+        position: CGPoint,
+        referenceFrame: CGRect,
+        maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio,
+        radius: CGFloat
+    ) -> [CGPoint] {
+        let clampedMaxRatio = min(max(maxExtensionRatio, 0), PuzzleCanvasLayout.maxExtensionRatio)
+        guard referenceFrame.width > 0, referenceFrame.height > 0 else { return [] }
+
+        let photoWidth = referenceFrame.width / (1 + clampedMaxRatio)
+        let photoFrame = CGRect(
+            x: referenceFrame.minX,
+            y: referenceFrame.minY,
+            width: photoWidth,
+            height: referenceFrame.height
+        )
+        var centers = [
+            clampedDotCenter(
+                position: position,
+                in: photoFrame,
+                radius: radius
+            )
+        ]
+
+        guard clampedMaxRatio > 0 else { return centers }
+
+        let mirrorFrame = CGRect(
+            x: photoFrame.maxX,
+            y: photoFrame.minY,
+            width: photoWidth * clampedMaxRatio,
+            height: photoFrame.height
+        )
+        centers.append(
+            clampedDotCenter(
+                position: CGPoint(
+                    x: position.x / clampedMaxRatio,
+                    y: position.y
+                ),
+                in: mirrorFrame,
+                radius: radius
+            )
+        )
+
+        return centers
+    }
+
     static func composedCanvasPoint(
         for tracePoint: PuzzleCanvasTracePoint,
-        extensionRatio: CGFloat,
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio
     ) -> CGPoint? {
         guard canvasSize.width > 0,
               canvasSize.height > 0,
               let position = composedPosition(
                 for: tracePoint,
-                extensionRatio: extensionRatio
+                maxExtensionRatio: maxExtensionRatio
               ) else {
             return nil
         }
@@ -336,6 +433,16 @@ enum DotSizeControl {
     static let maxRenderedScale: Double = 96
     static let defaultControlValue: Double = 23
     static let defaultRenderedScale = renderedScale(forControlValue: defaultControlValue)
+    /// Matches a typical on-screen photo height so slider values stay intuitive.
+    static let referencePhotoHeight: CGFloat = 240
+
+    static func displaySize(renderedScale: CGFloat, photoFrameHeight: CGFloat) -> CGFloat {
+        guard referencePhotoHeight > 0, photoFrameHeight > 0 else {
+            return renderedScale
+        }
+
+        return renderedScale * (photoFrameHeight / referencePhotoHeight)
+    }
 
     static func renderedScale(forControlValue value: Double) -> Double {
         let clampedValue = min(max(value, minControlValue), maxControlValue)
@@ -522,12 +629,7 @@ enum PuzzleDotFactory {
             from: tracePoints,
             extensionRatio: extensionRatio
         )
-        let positions = tracePoints.compactMap {
-            PuzzleCanvasCoordinate.composedPosition(
-                for: $0,
-                extensionRatio: extensionRatio
-            )
-        }
+        let positions = tracePoints.map(\.point)
         let normalizedCount = max(count, 0)
 
         guard normalizedCount > 0, !positions.isEmpty else { return [] }

@@ -20,13 +20,86 @@ struct PuzzleCanvasModelTests {
         )
 
         #expect(layout.extensionRatio == 1)
-        #expect(layout.photoFrame.size.width == 300)
-        #expect(layout.photoFrame.size.height == 150)
-        #expect(layout.extensionFrame.size.width == 300)
-        #expect(layout.extensionFrame.size.height == 150)
-        #expect(layout.composedSize.width == 600)
-        #expect(layout.composedSize.height == 150)
+        #expect(layout.photoFrame.size.width == 480)
+        #expect(layout.photoFrame.size.height == 240)
+        #expect(layout.extensionFrame.size.width == 480)
+        #expect(layout.extensionFrame.size.height == 240)
+        #expect(layout.composedSize.width == 960)
+        #expect(layout.composedSize.height == 240)
         #expect(layout.extensionFrame.minX == layout.photoFrame.maxX)
+    }
+
+    @Test func layoutKeepsPhotoSizeWhenExtensionRatioChanges() {
+        let baseline = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 240),
+            extensionRatio: 0
+        )
+        let extended = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 240),
+            extensionRatio: 0.8
+        )
+
+        #expect(baseline.photoFrame.size == extended.photoFrame.size)
+        #expect(baseline.photoFrame.origin == extended.photoFrame.origin)
+        #expect(extended.composedSize.width > baseline.composedSize.width)
+        #expect(extended.extensionFrame.width == baseline.photoFrame.width * 0.8)
+        #expect(extended.referenceComposedFrame == baseline.referenceComposedFrame)
+    }
+
+    @Test func viewportResetFitsComposedWidthToScreenEdges() {
+        let availableSize = CGSize(width: 600, height: 240)
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: availableSize,
+            extensionRatio: 1
+        )
+        let reset = PuzzleCanvasViewport.resetTransform(
+            layout: layout,
+            availableSize: availableSize
+        )
+        let viewportCenter = CGPoint(x: availableSize.width / 2, y: availableSize.height / 2)
+        let visibleFrame = layout.visibleComposedFrame
+        let scale = reset.scale
+
+        #expect(scale == 600.0 / 960.0)
+        #expect(
+            reset.offset.width
+            == -viewportCenter.x - (visibleFrame.minX - viewportCenter.x) * scale
+        )
+        #expect(
+            reset.offset.height
+            == availableSize.height / 2
+                - viewportCenter.y
+                - (visibleFrame.midY - viewportCenter.y) * scale
+        )
+
+        let leftEdge = viewportCenter.x
+            + (visibleFrame.minX - viewportCenter.x) * scale
+            + reset.offset.width
+        let rightEdge = viewportCenter.x
+            + (visibleFrame.maxX - viewportCenter.x) * scale
+            + reset.offset.width
+
+        #expect(leftEdge == 0)
+        #expect(rightEdge == availableSize.width)
+    }
+
+    @Test func viewportResetScalesPhotoOnlyCanvasToScreenEdges() {
+        let availableSize = CGSize(width: 600, height: 240)
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: availableSize,
+            extensionRatio: 0
+        )
+        let reset = PuzzleCanvasViewport.resetTransform(
+            layout: layout,
+            availableSize: availableSize
+        )
+
+        #expect(reset.scale == 600.0 / 480.0)
+        #expect(reset.offset == CGSize.zero)
     }
 
     @Test func layoutAllowsZeroWidthExtensionCanvas() {
@@ -60,6 +133,34 @@ struct PuzzleCanvasModelTests {
 
         #expect(dot.shapeAssetName == "花束.小物")
         #expect(dot.position == CGPoint(x: 0.25, y: 0.75))
+    }
+
+    @Test func dotCentersUseFixedReferencePositionsForMirroredCopies() {
+        let referenceFrame = CGRect(x: 0, y: 0, width: 800, height: 200)
+        let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
+            position: CGPoint(x: 0.1, y: 0.25),
+            referenceFrame: referenceFrame,
+            radius: 12
+        )
+
+        #expect(centers == [
+            CGPoint(x: 40, y: 50),
+            CGPoint(x: 440, y: 50)
+        ])
+    }
+
+    @Test func dotCentersKeepMirrorAtReferenceEdgeForRightPhotoPositions() {
+        let referenceFrame = CGRect(x: 0, y: 0, width: 800, height: 200)
+        let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
+            position: CGPoint(x: 0.9, y: 0.25),
+            referenceFrame: referenceFrame,
+            radius: 12
+        )
+
+        #expect(centers == [
+            CGPoint(x: 360, y: 50),
+            CGPoint(x: 760, y: 50)
+        ])
     }
 
     @Test func adjustedDotsGrowAndShrinkToRequestedCount() {
@@ -143,7 +244,7 @@ struct PuzzleCanvasModelTests {
             offset: CGSize(width: 100, height: 0)
         )
 
-        #expect(point?.x == 0.5)
+        #expect(point?.x == 0.25)
         #expect(point?.y == 0.5)
     }
 
@@ -180,7 +281,7 @@ struct PuzzleCanvasModelTests {
             offset: .zero
         )
         let backgroundLocation = PuzzleCanvasCoordinate.canvasLocation(
-            for: CGPoint(x: 540, y: 120),
+            for: CGPoint(x: 588, y: 120),
             availableSize: CGSize(width: 600, height: 240),
             layout: layout,
             scale: 1,
@@ -188,10 +289,10 @@ struct PuzzleCanvasModelTests {
         )
 
         #expect(photoLocation?.side == .photo)
-        #expect(photoLocation?.point.x == 0.3)
+        #expect(photoLocation?.point.x == 0.2)
         #expect(photoLocation?.point.y == 0.5)
         #expect(backgroundLocation?.side == .background)
-        #expect(backgroundLocation?.point.x == 0.5)
+        #expect(backgroundLocation?.point.x == 0.1)
         #expect(backgroundLocation?.point.y == 0.5)
     }
 
@@ -209,9 +310,29 @@ struct PuzzleCanvasModelTests {
         )
 
         #expect(dots.count == 2)
-        #expect(dots.allSatisfy { 0.20833333333333334...0.9583333333333334 ~= $0.position.x })
+        #expect(dots.allSatisfy { 0.25...0.75 ~= $0.position.x })
         #expect(dots.allSatisfy { 0.4...0.6 ~= $0.position.y })
         #expect(dots.allSatisfy { $0.shapeAssetName == "星1" })
+    }
+
+    @Test func traceDotsUseSideLocalCoordinates() {
+        let trace = [
+            PuzzleCanvasTracePoint(side: .photo, point: CGPoint(x: 0.8, y: 0.2)),
+            PuzzleCanvasTracePoint(side: .photo, point: CGPoint(x: 1.0, y: 0.2))
+        ]
+        var generator = SeededRandomNumberGenerator(seed: 3)
+
+        let dots = PuzzleDotFactory.makeDots(
+            count: 8,
+            along: trace,
+            extensionRatio: 0.2,
+            shapeAssetName: "星1",
+            using: &generator
+        )
+
+        #expect(dots.count == 8)
+        #expect(dots.allSatisfy { 0.8...1.0 ~= $0.position.x })
+        #expect(dots.allSatisfy { $0.position.y == 0.2 })
     }
 
     @Test func traceSegmentsSkipLiftedStrokeBreaks() {
@@ -240,8 +361,8 @@ struct PuzzleCanvasModelTests {
             PuzzleCanvasTracePoint(side: .photo, point: CGPoint(x: 0.2, y: 0.3)),
             PuzzleCanvasTracePoint(side: .photo, point: CGPoint(x: 0.3, y: 0.4)),
             PuzzleCanvasTracePoint(side: .background, point: CGPoint(x: 0.4, y: 0.5)),
-            PuzzleCanvasTracePoint(side: .background, point: CGPoint(x: 0.5, y: 0.6)),
-            PuzzleCanvasTracePoint(side: .background, point: CGPoint(x: 0.6, y: 0.7))
+            PuzzleCanvasTracePoint(side: .background, point: CGPoint(x: 0.1, y: 0.6)),
+            PuzzleCanvasTracePoint(side: .background, point: CGPoint(x: 0.2, y: 0.7))
         ]
         var firstGenerator = SeededRandomNumberGenerator(seed: 1)
         var secondGenerator = SeededRandomNumberGenerator(seed: 2)
@@ -264,14 +385,13 @@ struct PuzzleCanvasModelTests {
         #expect(firstPositions != secondPositions)
     }
 
-    @Test func traceDisplayPointUsesComposedCanvasLocalCoordinates() {
+    @Test func traceDisplayPointUsesReferenceComposedCoordinates() {
         let point = PuzzleCanvasCoordinate.composedCanvasPoint(
-            for: PuzzleCanvasTracePoint(side: .background, point: CGPoint(x: 0.5, y: 0.25)),
-            extensionRatio: 0.2,
+            for: PuzzleCanvasTracePoint(side: .background, point: CGPoint(x: 0.1, y: 0.25)),
             canvasSize: CGSize(width: 600, height: 300)
         )
 
-        #expect(point?.x == 550)
+        #expect(point?.x == 330)
         #expect(point?.y == 75)
     }
 
@@ -364,6 +484,17 @@ struct PuzzleCanvasModelTests {
 
     @Test func dotSizeControlKeepsDefaultRenderedScaleWhenControlRangeChanges() {
         #expect(DotSizeControl.defaultRenderedScale == 40)
+    }
+
+    @Test func dotDisplaySizeScalesWithPhotoFrameHeight() {
+        #expect(
+            DotSizeControl.displaySize(renderedScale: 40, photoFrameHeight: 240)
+            == 40
+        )
+        #expect(
+            DotSizeControl.displaySize(renderedScale: 40, photoFrameHeight: 120)
+            == 20
+        )
     }
 
     @Test func dotShapeCatalogGroupsItemsByPanelCategory() {

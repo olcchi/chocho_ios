@@ -64,6 +64,7 @@ struct BottomSheetPanel: View {
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
     @Binding var isTraceDrawingEnabled: Bool
+    @Binding var extensionRatio: CGFloat
     var bottomSafeAreaInset: CGFloat = 0
     let onDrawDots: () -> Void
 
@@ -96,6 +97,7 @@ struct BottomSheetPanel: View {
             usesRandomDotColors: $usesRandomDotColors,
             selectedDotShape: $selectedDotShape,
             isTraceDrawingEnabled: $isTraceDrawingEnabled,
+            extensionRatio: $extensionRatio,
             onDrawDots: onDrawDots
         )
         .padding(.top, isExpanded ? 8 : 0)
@@ -283,6 +285,7 @@ private struct PanelContentCard: View {
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
     @Binding var isTraceDrawingEnabled: Bool
+    @Binding var extensionRatio: CGFloat
     let onDrawDots: () -> Void
 
     var body: some View {
@@ -302,7 +305,7 @@ private struct PanelContentCard: View {
                     onDrawDots: onDrawDots
                 )
             case .background:
-                PlaceholderPanelContent(title: tab.title)
+                BackgroundPanelControls(extensionRatio: $extensionRatio)
                     .background(panelFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
@@ -312,6 +315,38 @@ private struct PanelContentCard: View {
 
     private var panelFill: Color {
         Color.muted
+    }
+}
+
+private struct BackgroundPanelControls: View {
+    @Binding var extensionRatio: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            StyledSlider(
+                title: "背景宽度",
+                value: extensionRatioPercent,
+                range: 0...100,
+                step: 1,
+                valueText: { "\(Int($0.rounded()))%" }
+            )
+            .padding(.horizontal, 2)
+            .padding(.top, 10)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var extensionRatioPercent: Binding<Double> {
+        Binding(
+            get: {
+                Double(min(max(extensionRatio, 0), 1) * 100)
+            },
+            set: { newValue in
+                extensionRatio = CGFloat(min(max(newValue / 100, 0), 1))
+            }
+        )
     }
 }
 

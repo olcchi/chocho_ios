@@ -13,7 +13,8 @@ struct PuzzleCanvasView: View {
     var tracePoints: [PuzzleCanvasTracePoint] = []
     var isTraceDrawingEnabled = false
     var onTapCanvas: ((CGPoint) -> Void)?
-    var onDoubleTapBackground: (() -> Void)?
+    var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
+    var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onTraceChanged: (([PuzzleCanvasTracePoint]) -> Void)?
 
     @State private var isTracingCurrentStroke = false
@@ -26,60 +27,87 @@ struct PuzzleCanvasView: View {
                 availableSize: proxy.size,
                 extensionRatio: extensionRatio
             )
-            let composedFrame = CGRect(
-                x: layout.photoFrame.minX,
-                y: layout.photoFrame.minY,
-                width: layout.composedSize.width,
-                height: layout.composedSize.height
+            let referenceFrame = layout.referenceComposedFrame
+            let referenceLocalPhotoFrame = CGRect(
+                origin: .zero,
+                size: layout.photoFrame.size
             )
+            let referenceLocalFrame = CGRect(
+                origin: .zero,
+                size: referenceFrame.size
+            )
+            let maxExtensionWidth = layout.photoFrame.width * PuzzleCanvasLayout.maxExtensionRatio
 
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .interpolation(.high)
+                    ZStack(alignment: .topLeading) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(
+                                width: layout.photoFrame.width,
+                                height: layout.photoFrame.height
+                            )
+                            .position(
+                                x: layout.photoFrame.width / 2,
+                                y: layout.photoFrame.height / 2
+                            )
+
+                        PuzzleGridCanvas()
+                            .frame(
+                                width: maxExtensionWidth,
+                                height: layout.photoFrame.height
+                            )
+                            .position(
+                                x: layout.photoFrame.width + maxExtensionWidth / 2,
+                                y: layout.photoFrame.height / 2
+                            )
+
+                        PuzzleTraceCanvas(
+                            tracePoints: tracePoints,
+                            canvasSize: referenceFrame.size
+                        )
                         .frame(
-                            width: layout.photoFrame.width,
-                            height: layout.photoFrame.height
+                            width: referenceFrame.width,
+                            height: referenceFrame.height
                         )
                         .position(
-                            x: layout.photoFrame.midX,
-                            y: layout.photoFrame.midY
+                            x: referenceFrame.width / 2,
+                            y: referenceFrame.height / 2
                         )
+                        .opacity(isTraceDrawingEnabled ? 1 : 0)
 
-                    PuzzleGridCanvas()
+                        PuzzleDotsCanvas(
+                            dots: dots,
+                            dotScale: dotScale,
+                            dotColor: dotColor,
+                            usesRandomDotColors: usesRandomDotColors,
+                            photoFrame: referenceLocalPhotoFrame,
+                            referenceFrame: referenceLocalFrame
+                        )
                         .frame(
-                            width: layout.extensionFrame.width,
-                            height: layout.extensionFrame.height
+                            width: referenceFrame.width,
+                            height: referenceFrame.height
                         )
-                        .position(
-                            x: layout.extensionFrame.midX,
-                            y: layout.extensionFrame.midY
-                        )
-
-                    PuzzleTraceCanvas(
-                        tracePoints: tracePoints,
-                        extensionRatio: extensionRatio,
-                        canvasSize: layout.composedSize
+                    }
+                    .frame(
+                        width: referenceFrame.width,
+                        height: referenceFrame.height,
+                        alignment: .topLeading
                     )
                     .frame(
                         width: layout.composedSize.width,
-                        height: layout.composedSize.height
+                        height: referenceFrame.height,
+                        alignment: .topLeading
                     )
+                    .clipped()
                     .position(
-                        x: composedFrame.midX,
-                        y: composedFrame.midY
+                        x: referenceFrame.minX + layout.composedSize.width / 2,
+                        y: referenceFrame.midY
                     )
-                    .opacity(isTraceDrawingEnabled ? 1 : 0)
-
-                    PuzzleDotsCanvas(
-                        dots: dots,
-                        dotScale: dotScale,
-                        dotColor: dotColor,
-                        usesRandomDotColors: usesRandomDotColors,
-                        composedFrame: composedFrame
-                    )
+                    .animation(.none, value: extensionRatio)
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .scaleEffect(viewportScale)
                 .offset(viewportOffset)
             }
@@ -108,6 +136,18 @@ struct PuzzleCanvasView: View {
                     )
                 )
             )
+            .background {
+                ViewportResetObserver(
+                    key: CanvasViewportResetKey(
+                        extensionRatio: extensionRatio,
+                        availableSize: proxy.size,
+                        imageSize: image.size
+                    ),
+                    layout: layout,
+                    availableSize: proxy.size,
+                    onReset: onViewportReset
+                )
+            }
         }
     }
 
@@ -119,7 +159,7 @@ struct PuzzleCanvasView: View {
             .onEnded { value in
                 guard !isTraceDrawingEnabled else { return }
 
-                guard let point = PuzzleCanvasCoordinate.normalizedPoint(
+                guard let canvasLocation = PuzzleCanvasCoordinate.canvasLocation(
                     for: value.location,
                     availableSize: availableSize,
                     layout: layout,
@@ -129,7 +169,7 @@ struct PuzzleCanvasView: View {
                     return
                 }
 
-                onTapCanvas?(point)
+                onTapCanvas?(canvasLocation.point)
             }
     }
 
@@ -149,7 +189,11 @@ struct PuzzleCanvasView: View {
                     return
                 }
 
-                onDoubleTapBackground?()
+                let reset = PuzzleCanvasViewport.resetTransform(
+                    layout: layout,
+                    availableSize: availableSize
+                )
+                onDoubleTapBackground?(reset.scale, reset.offset)
             }
     }
 
@@ -209,6 +253,25 @@ struct PuzzleCanvasView: View {
     }
 }
 
+private struct ViewportResetObserver: View {
+    let key: CanvasViewportResetKey
+    let layout: PuzzleCanvasLayoutResult
+    let availableSize: CGSize
+    let onReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onChange(of: key, initial: true) { _, _ in
+                let reset = PuzzleCanvasViewport.resetTransform(
+                    layout: layout,
+                    availableSize: availableSize
+                )
+                onReset?(reset.scale, reset.offset)
+            }
+    }
+}
+
 private struct TraceGestureModifier<Trace: Gesture>: ViewModifier {
     let dragMode: PuzzleCanvasDragMode
     let gesture: Trace
@@ -265,22 +328,28 @@ private struct PuzzleDotsCanvas: View {
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
-    let composedFrame: CGRect
+    let photoFrame: CGRect
+    let referenceFrame: CGRect
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(dots) { dot in
-                let size = dot.size * dotScale
+                let size = DotSizeControl.displaySize(
+                    renderedScale: dot.size * dotScale,
+                    photoFrameHeight: photoFrame.height
+                )
                 let radius = size / 2
-                let center = PuzzleCanvasCoordinate.clampedDotCenter(
+                let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
                     position: dot.position,
-                    in: composedFrame,
+                    referenceFrame: referenceFrame,
                     radius: radius
                 )
 
-                dotImage(for: dot)
-                    .frame(width: size, height: size)
-                    .position(center)
+                ForEach(Array(centers.enumerated()), id: \.offset) { _, center in
+                    dotImage(for: dot)
+                        .frame(width: size, height: size)
+                        .position(center)
+                }
             }
         }
         .allowsHitTesting(false)
@@ -320,7 +389,6 @@ private struct PuzzleDotsCanvas: View {
 
 private struct PuzzleTraceCanvas: View {
     let tracePoints: [PuzzleCanvasTracePoint]
-    let extensionRatio: CGFloat
     let canvasSize: CGSize
 
     var body: some View {
@@ -328,13 +396,13 @@ private struct PuzzleTraceCanvas: View {
             let displayPoints: [PuzzleTraceDisplayPoint] = tracePoints.compactMap { tracePoint in
                 guard let point = PuzzleCanvasCoordinate.composedCanvasPoint(
                     for: tracePoint,
-                    extensionRatio: extensionRatio,
                     canvasSize: canvasSize
                 ) else {
                     return nil
                 }
 
                 return PuzzleTraceDisplayPoint(
+                    side: tracePoint.side,
                     point: point,
                     startsNewStroke: tracePoint.startsNewStroke
                 )
@@ -344,13 +412,16 @@ private struct PuzzleTraceCanvas: View {
 
             var path = Path()
             path.move(to: displayPoints[0].point)
+            var previousSide = displayPoints[0].side
 
             for displayPoint in displayPoints.dropFirst() {
-                if displayPoint.startsNewStroke {
+                if displayPoint.startsNewStroke || displayPoint.side != previousSide {
                     path.move(to: displayPoint.point)
                 } else {
                     path.addLine(to: displayPoint.point)
                 }
+
+                previousSide = displayPoint.side
             }
 
             context.stroke(
@@ -369,6 +440,7 @@ private struct PuzzleTraceCanvas: View {
 }
 
 private struct PuzzleTraceDisplayPoint {
+    let side: PuzzleCanvasSide
     let point: CGPoint
     let startsNewStroke: Bool
 }

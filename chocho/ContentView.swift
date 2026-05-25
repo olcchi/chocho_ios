@@ -69,6 +69,7 @@ struct ContentView: View {
                     usesRandomDotColors: $usesRandomDotColors,
                     selectedDotShape: $selectedDotShape,
                     isTraceDrawingEnabled: $isTraceDrawingEnabled,
+                    extensionRatio: $extensionRatio,
                     bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
                     onDrawDots: drawPuzzleDots
                 )
@@ -121,7 +122,8 @@ struct ContentView: View {
                 tracePoints: tracePoints,
                 isTraceDrawingEnabled: isTraceDrawingEnabled,
                 onTapCanvas: addPuzzleDot(at:),
-                onDoubleTapBackground: resetCanvasViewport,
+                onDoubleTapBackground: applyCanvasViewportReset,
+                onViewportReset: applyCanvasViewportReset,
                 onTraceChanged: updateTracePoints
             )
 
@@ -171,8 +173,6 @@ struct ContentView: View {
             puzzleDots = []
             canvasHistory.reset(to: [])
             tracePoints = []
-            viewportScale = 1
-            viewportOffset = .zero
             applyPuzzleDots(PuzzleCanvasUploadDefaults.initialDots(
                 dotCount: dotCount,
                 shapeAssetName: selectedDotShape.name
@@ -297,10 +297,10 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func resetCanvasViewport() {
+    private func applyCanvasViewportReset(scale: CGFloat, offset: CGSize) {
         withAnimation(.easeInOut(duration: 0.24)) {
-            viewportScale = 1
-            viewportOffset = .zero
+            viewportScale = scale
+            viewportOffset = offset
         }
     }
 
