@@ -1,21 +1,99 @@
 import CoreGraphics
 import SwiftUI
 
+enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, Equatable {
+    case top
+    case bottom
+    case left
+    case right
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .top:
+            "在上"
+        case .bottom:
+            "在下"
+        case .left:
+            "在左"
+        case .right:
+            "在右"
+        }
+    }
+
+    var isHorizontal: Bool {
+        switch self {
+        case .left, .right:
+            true
+        case .top, .bottom:
+            false
+        }
+    }
+}
+
 struct PuzzleCanvasLayoutResult: Equatable {
     let extensionRatio: CGFloat
+    let extensionSide: PuzzleCanvasExtensionSide
     let photoFrame: CGRect
     let extensionFrame: CGRect
     let composedSize: CGSize
     /// Full photo + max extension area; dot/trace positions are stable in this space.
     let referenceComposedFrame: CGRect
+    /// Photo bounds inside the reference-local coordinate space.
+    let referenceLocalPhotoFrame: CGRect
+    /// Extension grid bounds inside the reference-local coordinate space.
+    let referenceLocalExtensionGridFrame: CGRect
 
     var visibleComposedFrame: CGRect {
-        CGRect(
-            x: referenceComposedFrame.minX,
-            y: referenceComposedFrame.minY,
-            width: composedSize.width,
-            height: referenceComposedFrame.height
-        )
+        switch extensionSide {
+        case .right:
+            CGRect(
+                x: referenceComposedFrame.minX,
+                y: referenceComposedFrame.minY,
+                width: composedSize.width,
+                height: referenceComposedFrame.height
+            )
+        case .left:
+            CGRect(
+                x: referenceComposedFrame.maxX - composedSize.width,
+                y: referenceComposedFrame.minY,
+                width: composedSize.width,
+                height: referenceComposedFrame.height
+            )
+        case .bottom:
+            CGRect(
+                x: referenceComposedFrame.minX,
+                y: referenceComposedFrame.minY,
+                width: referenceComposedFrame.width,
+                height: composedSize.height
+            )
+        case .top:
+            CGRect(
+                x: referenceComposedFrame.minX,
+                y: referenceComposedFrame.maxY - composedSize.height,
+                width: referenceComposedFrame.width,
+                height: composedSize.height
+            )
+        }
+    }
+
+    var visibleComposedClipAlignment: Alignment {
+        switch extensionSide {
+        case .right:
+            .topLeading
+        case .left:
+            .topTrailing
+        case .bottom:
+            .topLeading
+        case .top:
+            .bottomLeading
+        }
+    }
+
+    var visibleComposedClipPosition: CGPoint {
+        let frame = visibleComposedFrame
+        return CGPoint(x: frame.midX, y: frame.midY)
     }
 }
 
@@ -97,7 +175,8 @@ enum PuzzleCanvasLayout {
     static func layout(
         imageSize: CGSize,
         availableSize: CGSize,
-        extensionRatio: CGFloat
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide = .right
     ) -> PuzzleCanvasLayoutResult {
         let clampedRatio = min(max(extensionRatio, 0), maxExtensionRatio)
 
@@ -107,10 +186,13 @@ enum PuzzleCanvasLayout {
               availableSize.height > 0 else {
             return PuzzleCanvasLayoutResult(
                 extensionRatio: clampedRatio,
+                extensionSide: extensionSide,
                 photoFrame: .zero,
                 extensionFrame: .zero,
                 composedSize: .zero,
-                referenceComposedFrame: .zero
+                referenceComposedFrame: .zero,
+                referenceLocalPhotoFrame: .zero,
+                referenceLocalExtensionGridFrame: .zero
             )
         }
 
@@ -127,33 +209,110 @@ enum PuzzleCanvasLayout {
             x: (availableSize.width - photoSize.width) / 2,
             y: (availableSize.height - photoSize.height) / 2
         )
-        let visibleExtensionWidth = photoSize.width * clampedRatio
-        let referenceComposedWidth = photoSize.width * (1 + maxExtensionRatio)
-        let visibleComposedWidth = photoSize.width + visibleExtensionWidth
-        let referenceComposedFrame = CGRect(
-            x: photoOrigin.x,
-            y: photoOrigin.y,
-            width: referenceComposedWidth,
-            height: photoSize.height
+        let visibleExtensionLength = extensionSide.isHorizontal
+            ? photoSize.width * clampedRatio
+            : photoSize.height * clampedRatio
+        let maxExtensionLength = extensionSide.isHorizontal
+            ? photoSize.width * maxExtensionRatio
+            : photoSize.height * maxExtensionRatio
+        let referenceComposedSize = extensionSide.isHorizontal
+            ? CGSize(
+                width: photoSize.width + maxExtensionLength,
+                height: photoSize.height
+            )
+            : CGSize(
+                width: photoSize.width,
+                height: photoSize.height + maxExtensionLength
+            )
+        let referenceOrigin = CGPoint(
+            x: extensionSide == .left ? photoOrigin.x - maxExtensionLength : photoOrigin.x,
+            y: extensionSide == .top ? photoOrigin.y - maxExtensionLength : photoOrigin.y
         )
+        let referenceComposedFrame = CGRect(
+            origin: referenceOrigin,
+            size: referenceComposedSize
+        )
+        let referenceLocalPhotoFrame = CGRect(
+            origin: CGPoint(
+                x: extensionSide == .left ? maxExtensionLength : 0,
+                y: extensionSide == .top ? maxExtensionLength : 0
+            ),
+            size: photoSize
+        )
+        let referenceLocalExtensionGridFrame = CGRect(
+            origin: CGPoint(
+                x: extensionSide == .right ? photoSize.width : 0,
+                y: extensionSide == .bottom ? photoSize.height : 0
+            ),
+            size: CGSize(
+                width: extensionSide.isHorizontal ? maxExtensionLength : photoSize.width,
+                height: extensionSide.isHorizontal ? photoSize.height : maxExtensionLength
+            )
+        )
+        let extensionFrame = extensionFrameInScreenSpace(
+            photoOrigin: photoOrigin,
+            photoSize: photoSize,
+            visibleExtensionLength: visibleExtensionLength,
+            extensionSide: extensionSide
+        )
+        let composedSize = extensionSide.isHorizontal
+            ? CGSize(width: photoSize.width + visibleExtensionLength, height: photoSize.height)
+            : CGSize(width: photoSize.width, height: photoSize.height + visibleExtensionLength)
 
         return PuzzleCanvasLayoutResult(
             extensionRatio: clampedRatio,
+            extensionSide: extensionSide,
             photoFrame: CGRect(origin: photoOrigin, size: photoSize),
-            extensionFrame: CGRect(
+            extensionFrame: extensionFrame,
+            composedSize: composedSize,
+            referenceComposedFrame: referenceComposedFrame,
+            referenceLocalPhotoFrame: referenceLocalPhotoFrame,
+            referenceLocalExtensionGridFrame: referenceLocalExtensionGridFrame
+        )
+    }
+
+    private static func extensionFrameInScreenSpace(
+        photoOrigin: CGPoint,
+        photoSize: CGSize,
+        visibleExtensionLength: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGRect {
+        switch extensionSide {
+        case .right:
+            CGRect(
                 x: photoOrigin.x + photoSize.width,
                 y: photoOrigin.y,
-                width: visibleExtensionWidth,
+                width: visibleExtensionLength,
                 height: photoSize.height
-            ),
-            composedSize: CGSize(width: visibleComposedWidth, height: photoSize.height),
-            referenceComposedFrame: referenceComposedFrame
-        )
+            )
+        case .left:
+            CGRect(
+                x: photoOrigin.x - visibleExtensionLength,
+                y: photoOrigin.y,
+                width: visibleExtensionLength,
+                height: photoSize.height
+            )
+        case .bottom:
+            CGRect(
+                x: photoOrigin.x,
+                y: photoOrigin.y + photoSize.height,
+                width: photoSize.width,
+                height: visibleExtensionLength
+            )
+        case .top:
+            CGRect(
+                x: photoOrigin.x,
+                y: photoOrigin.y - visibleExtensionLength,
+                width: photoSize.width,
+                height: visibleExtensionLength
+            )
+        }
     }
 }
 
 struct CanvasViewportResetKey: Equatable {
     let extensionRatio: CGFloat
+    let extensionSide: PuzzleCanvasExtensionSide
     let availableSize: CGSize
     let imageSize: CGSize
 }
@@ -238,17 +397,51 @@ enum PuzzleCanvasCoordinate {
         if layout.extensionFrame.contains(unscaledLocation),
            layout.extensionFrame.width > 0,
            layout.extensionFrame.height > 0,
-           layout.photoFrame.width > 0 {
+           layout.photoFrame.width > 0,
+           layout.photoFrame.height > 0 {
             return PuzzleCanvasTracePoint(
                 side: .background,
-                point: CGPoint(
-                    x: (unscaledLocation.x - layout.extensionFrame.minX) / layout.photoFrame.width,
-                    y: (unscaledLocation.y - layout.extensionFrame.minY) / layout.extensionFrame.height
+                point: backgroundLocalPoint(
+                    unscaledLocation: unscaledLocation,
+                    layout: layout
                 )
             )
         }
 
         return nil
+    }
+
+    /// Background-local coordinates match the right-side baseline: 0 on the edge that touches the photo,
+    /// increasing away from the photo (right / left / down / up depending on `extensionSide`).
+    static func backgroundLocalPoint(
+        unscaledLocation: CGPoint,
+        layout: PuzzleCanvasLayoutResult
+    ) -> CGPoint {
+        let extensionFrame = layout.extensionFrame
+        let photoFrame = layout.photoFrame
+
+        switch layout.extensionSide {
+        case .right:
+            return CGPoint(
+                x: (unscaledLocation.x - extensionFrame.minX) / photoFrame.width,
+                y: (unscaledLocation.y - extensionFrame.minY) / photoFrame.height
+            )
+        case .left:
+            return CGPoint(
+                x: (extensionFrame.maxX - unscaledLocation.x) / photoFrame.width,
+                y: (unscaledLocation.y - extensionFrame.minY) / photoFrame.height
+            )
+        case .bottom:
+            return CGPoint(
+                x: (unscaledLocation.x - extensionFrame.minX) / photoFrame.width,
+                y: (unscaledLocation.y - extensionFrame.minY) / photoFrame.height
+            )
+        case .top:
+            return CGPoint(
+                x: (unscaledLocation.x - extensionFrame.minX) / photoFrame.width,
+                y: (extensionFrame.maxY - unscaledLocation.y) / photoFrame.height
+            )
+        }
     }
 
     static func normalizedPoint(
@@ -289,28 +482,66 @@ enum PuzzleCanvasCoordinate {
 
     static func composedPosition(
         for tracePoint: PuzzleCanvasTracePoint,
+        extensionSide: PuzzleCanvasExtensionSide = .right,
         maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio
     ) -> CGPoint? {
         let clampedRatio = min(max(maxExtensionRatio, 0), PuzzleCanvasLayout.maxExtensionRatio)
-        let photoWidthFraction = 1 / (1 + clampedRatio)
+        let photoSpan = 1 / (1 + clampedRatio)
+        let extensionSpan = clampedRatio / (1 + clampedRatio)
 
         switch tracePoint.side {
         case .photo:
-            return CGPoint(
-                x: tracePoint.point.x * photoWidthFraction,
-                y: tracePoint.point.y
-            )
-        case .background:
-            guard clampedRatio > 0,
-                  tracePoint.point.x >= 0,
-                  tracePoint.point.x <= clampedRatio else {
-                return nil
+            switch extensionSide {
+            case .right:
+                return CGPoint(
+                    x: tracePoint.point.x * photoSpan,
+                    y: tracePoint.point.y
+                )
+            case .left:
+                return CGPoint(
+                    x: extensionSpan + tracePoint.point.x * photoSpan,
+                    y: tracePoint.point.y
+                )
+            case .bottom:
+                return CGPoint(
+                    x: tracePoint.point.x,
+                    y: tracePoint.point.y * photoSpan
+                )
+            case .top:
+                return CGPoint(
+                    x: tracePoint.point.x,
+                    y: extensionSpan + tracePoint.point.y * photoSpan
+                )
             }
+        case .background:
+            guard clampedRatio > 0 else { return nil }
 
-            return CGPoint(
-                x: photoWidthFraction + tracePoint.point.x / (1 + clampedRatio),
-                y: tracePoint.point.y
-            )
+            switch extensionSide {
+            case .right:
+                guard tracePoint.point.x >= 0, tracePoint.point.x <= clampedRatio else { return nil }
+                return CGPoint(
+                    x: photoSpan + tracePoint.point.x / (1 + clampedRatio),
+                    y: tracePoint.point.y
+                )
+            case .left:
+                guard tracePoint.point.x >= 0, tracePoint.point.x <= clampedRatio else { return nil }
+                return CGPoint(
+                    x: extensionSpan - tracePoint.point.x / (1 + clampedRatio),
+                    y: tracePoint.point.y
+                )
+            case .bottom:
+                guard tracePoint.point.y >= 0, tracePoint.point.y <= clampedRatio else { return nil }
+                return CGPoint(
+                    x: tracePoint.point.x,
+                    y: photoSpan + tracePoint.point.y / (1 + clampedRatio)
+                )
+            case .top:
+                guard tracePoint.point.y >= 0, tracePoint.point.y <= clampedRatio else { return nil }
+                return CGPoint(
+                    x: tracePoint.point.x,
+                    y: extensionSpan - tracePoint.point.y / (1 + clampedRatio)
+                )
+            }
         }
     }
 
@@ -318,19 +549,94 @@ enum PuzzleCanvasCoordinate {
     static func dotCentersInReferenceFrame(
         position: CGPoint,
         referenceFrame: CGRect,
+        extensionSide: PuzzleCanvasExtensionSide = .right,
         maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio,
         radius: CGFloat
     ) -> [CGPoint] {
         let clampedMaxRatio = min(max(maxExtensionRatio, 0), PuzzleCanvasLayout.maxExtensionRatio)
         guard referenceFrame.width > 0, referenceFrame.height > 0 else { return [] }
 
-        let photoWidth = referenceFrame.width / (1 + clampedMaxRatio)
-        let photoFrame = CGRect(
-            x: referenceFrame.minX,
-            y: referenceFrame.minY,
-            width: photoWidth,
-            height: referenceFrame.height
-        )
+        let photoSpan = 1 / (1 + clampedMaxRatio)
+        let extensionSpan = clampedMaxRatio / (1 + clampedMaxRatio)
+        let photoFrame: CGRect
+        let mirrorFrame: CGRect
+        let mirrorPosition: CGPoint
+
+        switch extensionSide {
+        case .right:
+            let photoWidth = referenceFrame.width * photoSpan
+            photoFrame = CGRect(
+                x: referenceFrame.minX,
+                y: referenceFrame.minY,
+                width: photoWidth,
+                height: referenceFrame.height
+            )
+            mirrorFrame = CGRect(
+                x: photoFrame.maxX,
+                y: photoFrame.minY,
+                width: referenceFrame.width * extensionSpan,
+                height: referenceFrame.height
+            )
+            mirrorPosition = CGPoint(
+                x: position.x / max(clampedMaxRatio, .leastNonzeroMagnitude),
+                y: position.y
+            )
+        case .left:
+            let photoWidth = referenceFrame.width * photoSpan
+            photoFrame = CGRect(
+                x: referenceFrame.minX + referenceFrame.width * extensionSpan,
+                y: referenceFrame.minY,
+                width: photoWidth,
+                height: referenceFrame.height
+            )
+            mirrorFrame = CGRect(
+                x: referenceFrame.minX,
+                y: referenceFrame.minY,
+                width: referenceFrame.width * extensionSpan,
+                height: referenceFrame.height
+            )
+            mirrorPosition = CGPoint(
+                x: position.x / max(clampedMaxRatio, .leastNonzeroMagnitude),
+                y: position.y
+            )
+        case .bottom:
+            let photoHeight = referenceFrame.height * photoSpan
+            photoFrame = CGRect(
+                x: referenceFrame.minX,
+                y: referenceFrame.minY,
+                width: referenceFrame.width,
+                height: photoHeight
+            )
+            mirrorFrame = CGRect(
+                x: referenceFrame.minX,
+                y: photoFrame.maxY,
+                width: referenceFrame.width,
+                height: referenceFrame.height * extensionSpan
+            )
+            mirrorPosition = CGPoint(
+                x: position.x,
+                y: position.y / max(clampedMaxRatio, .leastNonzeroMagnitude)
+            )
+        case .top:
+            let photoHeight = referenceFrame.height * photoSpan
+            photoFrame = CGRect(
+                x: referenceFrame.minX,
+                y: referenceFrame.minY + referenceFrame.height * extensionSpan,
+                width: referenceFrame.width,
+                height: photoHeight
+            )
+            mirrorFrame = CGRect(
+                x: referenceFrame.minX,
+                y: referenceFrame.minY,
+                width: referenceFrame.width,
+                height: referenceFrame.height * extensionSpan
+            )
+            mirrorPosition = CGPoint(
+                x: position.x,
+                y: position.y / max(clampedMaxRatio, .leastNonzeroMagnitude)
+            )
+        }
+
         var centers = [
             clampedDotCenter(
                 position: position,
@@ -341,18 +647,9 @@ enum PuzzleCanvasCoordinate {
 
         guard clampedMaxRatio > 0 else { return centers }
 
-        let mirrorFrame = CGRect(
-            x: photoFrame.maxX,
-            y: photoFrame.minY,
-            width: photoWidth * clampedMaxRatio,
-            height: photoFrame.height
-        )
         centers.append(
             clampedDotCenter(
-                position: CGPoint(
-                    x: position.x / clampedMaxRatio,
-                    y: position.y
-                ),
+                position: mirrorPosition,
                 in: mirrorFrame,
                 radius: radius
             )
@@ -364,12 +661,14 @@ enum PuzzleCanvasCoordinate {
     static func composedCanvasPoint(
         for tracePoint: PuzzleCanvasTracePoint,
         canvasSize: CGSize,
+        extensionSide: PuzzleCanvasExtensionSide = .right,
         maxExtensionRatio: CGFloat = PuzzleCanvasLayout.maxExtensionRatio
     ) -> CGPoint? {
         guard canvasSize.width > 0,
               canvasSize.height > 0,
               let position = composedPosition(
                 for: tracePoint,
+                extensionSide: extensionSide,
                 maxExtensionRatio: maxExtensionRatio
               ) else {
             return nil

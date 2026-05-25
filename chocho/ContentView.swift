@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var canvasImage: UIImage?
     @State private var extensionRatio: CGFloat = 0.2
+    @State private var extensionSide: PuzzleCanvasExtensionSide = .right
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
     @State private var isPanelExpanded = true
@@ -70,6 +71,7 @@ struct ContentView: View {
                     selectedDotShape: $selectedDotShape,
                     isTraceDrawingEnabled: $isTraceDrawingEnabled,
                     extensionRatio: $extensionRatio,
+                    extensionSide: $extensionSide,
                     bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
                     onDrawDots: drawPuzzleDots
                 )
@@ -113,6 +115,7 @@ struct ContentView: View {
             let canvas = PuzzleCanvasView(
                 image: canvasImage,
                 extensionRatio: extensionRatio,
+                extensionSide: extensionSide,
                 dots: puzzleDots,
                 dotScale: CGFloat(dotScale),
                 dotColor: selectedDotColor,
@@ -316,6 +319,7 @@ struct ContentView: View {
             content: CanvasExportView(
                 image: canvasImage,
                 extensionRatio: extensionRatio,
+                extensionSide: extensionSide,
                 dots: puzzleDots,
                 dotScale: CGFloat(dotScale),
                 dotColor: selectedDotColor,
@@ -359,10 +363,18 @@ struct ContentView: View {
         let sourceHeight = CGFloat(image.cgImage?.height ?? Int(image.size.height * image.scale))
         let clampedRatio = min(max(extensionRatio, 0), 1)
 
-        return CGSize(
-            width: sourceWidth * (1 + clampedRatio),
-            height: sourceHeight
-        )
+        switch extensionSide {
+        case .left, .right:
+            return CGSize(
+                width: sourceWidth * (1 + clampedRatio),
+                height: sourceHeight
+            )
+        case .top, .bottom:
+            return CGSize(
+                width: sourceWidth,
+                height: sourceHeight * (1 + clampedRatio)
+            )
+        }
     }
 
     private var canvasGesture: some Gesture {
@@ -491,6 +503,7 @@ private final class SaveCanvasToPhotosActivity: UIActivity {
 private struct CanvasExportView: View {
     let image: UIImage
     let extensionRatio: CGFloat
+    let extensionSide: PuzzleCanvasExtensionSide
     let dots: [PuzzleDot]
     let dotScale: CGFloat
     let dotColor: Color
@@ -501,6 +514,7 @@ private struct CanvasExportView: View {
         PuzzleCanvasView(
             image: image,
             extensionRatio: extensionRatio,
+            extensionSide: extensionSide,
             dots: dots,
             dotScale: dotScale,
             dotColor: dotColor,

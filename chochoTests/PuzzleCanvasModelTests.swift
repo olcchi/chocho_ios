@@ -266,6 +266,81 @@ struct PuzzleCanvasModelTests {
         #expect(point == nil)
     }
 
+    @Test func backgroundLocalPointUsesContactEdgeAsOriginForEachSide() {
+        let imageSize = CGSize(width: 1000, height: 500)
+        let availableSize = CGSize(width: 600, height: 240)
+
+        let rightLayout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: availableSize,
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+        let leftLayout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: availableSize,
+            extensionRatio: 0.2,
+            extensionSide: .left
+        )
+        let topLayout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: availableSize,
+            extensionRatio: 0.2,
+            extensionSide: .top
+        )
+
+        let rightContact = CGPoint(
+            x: rightLayout.extensionFrame.minX,
+            y: rightLayout.extensionFrame.midY
+        )
+        let leftContact = CGPoint(
+            x: leftLayout.extensionFrame.maxX,
+            y: leftLayout.extensionFrame.midY
+        )
+        let topContact = CGPoint(
+            x: topLayout.extensionFrame.midX,
+            y: topLayout.extensionFrame.maxY
+        )
+
+        #expect(
+            PuzzleCanvasCoordinate.backgroundLocalPoint(
+                unscaledLocation: rightContact,
+                layout: rightLayout
+            ).x == 0
+        )
+        #expect(
+            PuzzleCanvasCoordinate.backgroundLocalPoint(
+                unscaledLocation: leftContact,
+                layout: leftLayout
+            ).x == 0
+        )
+        #expect(
+            PuzzleCanvasCoordinate.backgroundLocalPoint(
+                unscaledLocation: topContact,
+                layout: topLayout
+            ).y == 0
+        )
+    }
+
+    @Test func dotMirrorOnLeftKeepsSameLocalOffsetFromContactAsRight() {
+        let referenceFrame = CGRect(x: 0, y: 0, width: 800, height: 200)
+        let rightCenters = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
+            position: CGPoint(x: 0.1, y: 0.25),
+            referenceFrame: referenceFrame,
+            extensionSide: .right,
+            radius: 12
+        )
+        let leftCenters = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
+            position: CGPoint(x: 0.1, y: 0.25),
+            referenceFrame: referenceFrame,
+            extensionSide: .left,
+            radius: 12
+        )
+
+        #expect(rightCenters == [CGPoint(x: 40, y: 50), CGPoint(x: 440, y: 50)])
+        #expect(leftCenters == [CGPoint(x: 440, y: 50), CGPoint(x: 40, y: 50)])
+    }
+
     @Test func canvasLocationSeparatesPhotoAndBackgroundSides() {
         let layout = PuzzleCanvasLayout.layout(
             imageSize: CGSize(width: 1000, height: 500),

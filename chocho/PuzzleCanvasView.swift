@@ -4,6 +4,7 @@ import UIKit
 struct PuzzleCanvasView: View {
     let image: UIImage
     let extensionRatio: CGFloat
+    var extensionSide: PuzzleCanvasExtensionSide = .right
     let dots: [PuzzleDot]
     var dotScale: CGFloat = 1
     var dotColor: Color = .primary
@@ -25,18 +26,16 @@ struct PuzzleCanvasView: View {
             let layout = PuzzleCanvasLayout.layout(
                 imageSize: image.size,
                 availableSize: proxy.size,
-                extensionRatio: extensionRatio
+                extensionRatio: extensionRatio,
+                extensionSide: extensionSide
             )
             let referenceFrame = layout.referenceComposedFrame
-            let referenceLocalPhotoFrame = CGRect(
-                origin: .zero,
-                size: layout.photoFrame.size
-            )
+            let referenceLocalPhotoFrame = layout.referenceLocalPhotoFrame
             let referenceLocalFrame = CGRect(
                 origin: .zero,
                 size: referenceFrame.size
             )
-            let maxExtensionWidth = layout.photoFrame.width * PuzzleCanvasLayout.maxExtensionRatio
+            let extensionGridFrame = layout.referenceLocalExtensionGridFrame
 
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
@@ -49,23 +48,24 @@ struct PuzzleCanvasView: View {
                                 height: layout.photoFrame.height
                             )
                             .position(
-                                x: layout.photoFrame.width / 2,
-                                y: layout.photoFrame.height / 2
+                                x: referenceLocalPhotoFrame.midX,
+                                y: referenceLocalPhotoFrame.midY
                             )
 
                         PuzzleGridCanvas()
                             .frame(
-                                width: maxExtensionWidth,
-                                height: layout.photoFrame.height
+                                width: extensionGridFrame.width,
+                                height: extensionGridFrame.height
                             )
                             .position(
-                                x: layout.photoFrame.width + maxExtensionWidth / 2,
-                                y: layout.photoFrame.height / 2
+                                x: extensionGridFrame.midX,
+                                y: extensionGridFrame.midY
                             )
 
                         PuzzleTraceCanvas(
                             tracePoints: tracePoints,
-                            canvasSize: referenceFrame.size
+                            canvasSize: referenceFrame.size,
+                            extensionSide: extensionSide
                         )
                         .frame(
                             width: referenceFrame.width,
@@ -83,7 +83,8 @@ struct PuzzleCanvasView: View {
                             dotColor: dotColor,
                             usesRandomDotColors: usesRandomDotColors,
                             photoFrame: referenceLocalPhotoFrame,
-                            referenceFrame: referenceLocalFrame
+                            referenceFrame: referenceLocalFrame,
+                            extensionSide: extensionSide
                         )
                         .frame(
                             width: referenceFrame.width,
@@ -97,15 +98,16 @@ struct PuzzleCanvasView: View {
                     )
                     .frame(
                         width: layout.composedSize.width,
-                        height: referenceFrame.height,
-                        alignment: .topLeading
+                        height: layout.composedSize.height,
+                        alignment: layout.visibleComposedClipAlignment
                     )
                     .clipped()
                     .position(
-                        x: referenceFrame.minX + layout.composedSize.width / 2,
-                        y: referenceFrame.midY
+                        x: layout.visibleComposedClipPosition.x,
+                        y: layout.visibleComposedClipPosition.y
                     )
                     .animation(.none, value: extensionRatio)
+                    .animation(.none, value: extensionSide)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .scaleEffect(viewportScale)
@@ -140,6 +142,7 @@ struct PuzzleCanvasView: View {
                 ViewportResetObserver(
                     key: CanvasViewportResetKey(
                         extensionRatio: extensionRatio,
+                        extensionSide: extensionSide,
                         availableSize: proxy.size,
                         imageSize: image.size
                     ),
@@ -330,6 +333,7 @@ private struct PuzzleDotsCanvas: View {
     let usesRandomDotColors: Bool
     let photoFrame: CGRect
     let referenceFrame: CGRect
+    let extensionSide: PuzzleCanvasExtensionSide
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -342,6 +346,7 @@ private struct PuzzleDotsCanvas: View {
                 let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
                     position: dot.position,
                     referenceFrame: referenceFrame,
+                    extensionSide: extensionSide,
                     radius: radius
                 )
 
@@ -390,13 +395,15 @@ private struct PuzzleDotsCanvas: View {
 private struct PuzzleTraceCanvas: View {
     let tracePoints: [PuzzleCanvasTracePoint]
     let canvasSize: CGSize
+    let extensionSide: PuzzleCanvasExtensionSide
 
     var body: some View {
         Canvas { context, _ in
             let displayPoints: [PuzzleTraceDisplayPoint] = tracePoints.compactMap { tracePoint in
                 guard let point = PuzzleCanvasCoordinate.composedCanvasPoint(
                     for: tracePoint,
-                    canvasSize: canvasSize
+                    canvasSize: canvasSize,
+                    extensionSide: extensionSide
                 ) else {
                     return nil
                 }

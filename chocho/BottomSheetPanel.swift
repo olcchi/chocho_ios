@@ -43,17 +43,33 @@ enum PanelTab: String, CaseIterable, Identifiable {
 
 struct BottomSheetPanel: View {
     static let height: CGFloat = 320
-    static let collapsedHeight: CGFloat = 78
     static let topCornerRadius: CGFloat = 24
     private static let contentHorizontalInset: CGFloat = 16
     private static let contentBottomInset: CGFloat = 4
-    private static let contentToTabGap: CGFloat = 10
-    private static let maxVisibleBottomSafeAreaInset: CGFloat = 0
+    private static let tabBarTopSpacing: CGFloat = 8
+    private static let tabBarItemHeight: CGFloat = 42
     private static let handleTouchHeight: CGFloat = 28
+    private static let panelContentTopPadding: CGFloat = 8
     private static let collapseDragThreshold: CGFloat = 28
 
+    private static var tabBarSectionHeight: CGFloat {
+        tabBarTopSpacing + tabBarItemHeight
+    }
+
+    static var collapsedHeight: CGFloat {
+        visibleHeight(isExpanded: false)
+    }
+
+    static func collapsiblePanelHeight(isExpanded: Bool) -> CGFloat {
+        if isExpanded {
+            height - tabBarSectionHeight - contentBottomInset
+        } else {
+            handleTouchHeight
+        }
+    }
+
     static func visibleHeight(isExpanded: Bool) -> CGFloat {
-        isExpanded ? height : collapsedHeight
+        collapsiblePanelHeight(isExpanded: isExpanded) + tabBarSectionHeight + contentBottomInset
     }
 
     @Binding var selectedTab: PanelTab
@@ -65,27 +81,41 @@ struct BottomSheetPanel: View {
     @Binding var selectedDotShape: DotShapeAsset
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var extensionRatio: CGFloat
+    @Binding var extensionSide: PuzzleCanvasExtensionSide
     var bottomSafeAreaInset: CGFloat = 0
     let onDrawDots: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            panelHandleArea
+            collapsiblePanelSection
 
-            panelContent
-
-            panelTabBar
-                .padding(.top, isExpanded ? Self.contentToTabGap : 4)
+            fixedTabBarSection
         }
         .padding(.horizontal, Self.contentHorizontalInset)
-        .padding(.bottom, Self.contentBottomInset + visibleBottomSafeAreaInset)
+        .padding(.bottom, Self.contentBottomInset + bottomSafeAreaInset)
         .frame(maxWidth: .infinity)
-        .frame(height: Self.visibleHeight(isExpanded: isExpanded) + bottomSafeAreaInset, alignment: .top)
+        .frame(height: Self.visibleHeight(isExpanded: isExpanded) + bottomSafeAreaInset, alignment: .bottom)
         .background(panelBackground)
         .clipped()
         .compositingGroup()
         .shadow(color: Color.black.opacity(0.10), radius: 28, x: 0, y: -5)
         .animation(.smooth(duration: 0.24), value: isExpanded)
+    }
+
+    private var collapsiblePanelSection: some View {
+        VStack(spacing: 0) {
+            panelHandleArea
+
+            panelContent
+        }
+        .frame(height: Self.collapsiblePanelHeight(isExpanded: isExpanded), alignment: .top)
+        .clipped()
+    }
+
+    private var fixedTabBarSection: some View {
+        panelTabBar
+            .padding(.top, Self.tabBarTopSpacing)
+            .frame(height: Self.tabBarSectionHeight, alignment: .top)
     }
 
     private var panelContent: some View {
@@ -98,10 +128,12 @@ struct BottomSheetPanel: View {
             selectedDotShape: $selectedDotShape,
             isTraceDrawingEnabled: $isTraceDrawingEnabled,
             extensionRatio: $extensionRatio,
+            extensionSide: $extensionSide,
             onDrawDots: onDrawDots
         )
-        .padding(.top, isExpanded ? 8 : 0)
-        .frame(height: isExpanded ? nil : 0, alignment: .top)
+        .padding(.top, isExpanded ? Self.panelContentTopPadding : 0)
+        .padding(.bottom, isExpanded ? Self.expandedPanelContentBottomSpacing : 0)
+        .frame(height: isExpanded ? PanelContentCard.contentHeight : 0, alignment: .top)
         .opacity(isExpanded ? 1 : 0)
         .accessibilityHidden(!isExpanded)
         .allowsHitTesting(isExpanded)
@@ -118,10 +150,6 @@ struct BottomSheetPanel: View {
             style: .continuous
         )
         .fill(Color.popover)
-    }
-
-    private var visibleBottomSafeAreaInset: CGFloat {
-        min(bottomSafeAreaInset, Self.maxVisibleBottomSafeAreaInset)
     }
 
     private var panelHandle: some View {
@@ -162,7 +190,7 @@ struct BottomSheetPanel: View {
                     }
                     .foregroundStyle(isSelected ? activeTabColor : Color.mutedForeground)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 42)
+                    .frame(height: Self.tabBarItemHeight)
                     .scaleEffect(isSelected ? 1.1 : 1)
                     .contentShape(Rectangle())
                     .animation(.smooth(duration: 0.18), value: isSelected)
@@ -171,6 +199,16 @@ struct BottomSheetPanel: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
+    }
+
+    private static var expandedPanelContentBottomSpacing: CGFloat {
+        max(
+            0,
+            collapsiblePanelHeight(isExpanded: true)
+                - handleTouchHeight
+                - panelContentTopPadding
+                - PanelContentCard.contentHeight
+        )
     }
 
     private var activeTabColor: Color {
@@ -278,6 +316,8 @@ struct CanvasHistoryControls: View {
 }
 
 private struct PanelContentCard: View {
+    static let contentHeight: CGFloat = 228
+
     let tab: PanelTab
     @Binding var dotCount: Double
     @Binding var dotScale: Double
@@ -286,6 +326,7 @@ private struct PanelContentCard: View {
     @Binding var selectedDotShape: DotShapeAsset
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var extensionRatio: CGFloat
+    @Binding var extensionSide: PuzzleCanvasExtensionSide
     let onDrawDots: () -> Void
 
     var body: some View {
@@ -305,37 +346,56 @@ private struct PanelContentCard: View {
                     onDrawDots: onDrawDots
                 )
             case .background:
-                BackgroundPanelControls(extensionRatio: $extensionRatio)
-                    .background(panelFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                BackgroundPanelControls(
+                    extensionRatio: $extensionRatio,
+                    extensionSide: $extensionSide
+                )
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 232)
-    }
-
-    private var panelFill: Color {
-        Color.muted
+        .frame(height: Self.contentHeight)
     }
 }
 
 private struct BackgroundPanelControls: View {
     @Binding var extensionRatio: CGFloat
+    @Binding var extensionSide: PuzzleCanvasExtensionSide
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("背景位置")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.foreground)
+
+                Spacer(minLength: 0)
+
+                Picker("背景位置", selection: $extensionSide) {
+                    ForEach(PuzzleCanvasExtensionSide.allCases) { side in
+                        Text(side.title).tag(side)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+            .padding(.horizontal, 2)
+
             StyledSlider(
-                title: "背景宽度",
+                title: extensionSizeTitle,
                 value: extensionRatioPercent,
                 range: 0...100,
                 step: 1,
                 valueText: { "\(Int($0.rounded()))%" }
             )
             .padding(.horizontal, 2)
-            .padding(.top, 10)
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var extensionSizeTitle: String {
+        extensionSide.isHorizontal ? "背景宽度" : "背景高度"
     }
 
     private var extensionRatioPercent: Binding<Double> {
@@ -611,6 +671,18 @@ private struct DotShapeGrid: View {
     private let gridPadding: CGFloat = 8
     private let visibleRowCount: CGFloat = 2
 
+    private var tileSide: CGFloat {
+        let horizontalGaps = CGFloat(columnCount - 1) * gridSpacing
+        let contentWidth = availableWidth - gridPadding * 2 - horizontalGaps
+        guard contentWidth > 0 else { return 0 }
+        return contentWidth / CGFloat(columnCount)
+    }
+
+    private var gridViewportHeight: CGFloat {
+        let rowGaps = (visibleRowCount - 1) * gridSpacing
+        return tileSide * visibleRowCount + rowGaps + gridPadding * 2
+    }
+
     private var columns: [GridItem] {
         Array(
             repeating: GridItem(.flexible(), spacing: gridSpacing),
@@ -634,7 +706,8 @@ private struct DotShapeGrid: View {
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity)
-        .frame(height: heightForTwoRows(availableWidth: availableWidth))
+        .frame(height: gridViewportHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.border, lineWidth: 1.5)
@@ -647,15 +720,6 @@ private struct DotShapeGrid: View {
         .onPreferenceChange(DotShapeGridWidthKey.self) { width in
             availableWidth = width
         }
-    }
-
-    private func heightForTwoRows(availableWidth width: CGFloat) -> CGFloat {
-        let horizontalGaps = CGFloat(columnCount - 1) * gridSpacing
-        let contentWidth = width - gridPadding * 2 - horizontalGaps
-        let tileSide = floor(contentWidth / CGFloat(columnCount))
-        let rowGaps = (visibleRowCount - 1) * gridSpacing
-
-        return tileSide * visibleRowCount + rowGaps + gridPadding * 2
     }
 }
 
