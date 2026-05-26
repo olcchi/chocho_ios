@@ -41,10 +41,6 @@ struct PuzzleCanvasView: View {
             )
             let referenceFrame = layout.referenceComposedFrame
             let referenceLocalPhotoFrame = layout.referenceLocalPhotoFrame
-            let referenceLocalFrame = CGRect(
-                origin: .zero,
-                size: referenceFrame.size
-            )
             let extensionGridFrame = layout.referenceLocalExtensionGridFrame
 
             ZStack(alignment: .topLeading) {
@@ -88,13 +84,14 @@ struct PuzzleCanvasView: View {
                         .opacity(isTraceDrawingEnabled ? 1 : 0)
 
                         PuzzleDotsCanvas(
+                            image: image,
                             dots: dots,
                             dotScale: dotScale,
                             dotColor: dotColor,
                             usesRandomDotColors: usesRandomDotColors,
+                            backgroundStyle: backgroundStyle,
                             photoFrame: referenceLocalPhotoFrame,
-                            referenceFrame: referenceLocalFrame,
-                            extensionSide: extensionSide
+                            layout: layout
                         )
                         .frame(
                             width: referenceFrame.width,
@@ -123,7 +120,7 @@ struct PuzzleCanvasView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .scaleEffect(viewportScale)
                 .offset(viewportOffset)
-                .animation(.smooth(duration: 0.24), value: panelLayoutHeightBoost)
+                .animation(BottomSheetPanel.panelMotion, value: panelLayoutHeightBoost)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .contentShape(Rectangle())
@@ -431,66 +428,166 @@ private enum PuzzleBackgroundCanvasDrawing {
 }
 
 private struct PuzzleDotsCanvas: View {
+    let image: UIImage
     let dots: [PuzzleDot]
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
+    let backgroundStyle: PuzzleBackgroundStyle
     let photoFrame: CGRect
-    let referenceFrame: CGRect
-    let extensionSide: PuzzleCanvasExtensionSide
+    let layout: PuzzleCanvasLayoutResult
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(dots) { dot in
                 let size = DotSizeControl.displaySize(
-                    renderedScale: dot.size * dotScale,
+                    renderedScale: dot.size * dotScale * dot.displaySizeScale,
                     photoFrameHeight: photoFrame.height
                 )
-                let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
-                    position: dot.position,
-                    referenceFrame: referenceFrame,
-                    extensionSide: extensionSide
-                )
+                let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
 
-                ForEach(Array(centers.enumerated()), id: \.offset) { _, center in
-                    dotImage(for: dot)
+                ForEach(Array(centers.enumerated()), id: \.offset) { centerIndex, center in
+                    Color.clear
                         .frame(width: size, height: size)
+                        .overlay {
+                            dotImage(for: dot, centerIndex: centerIndex, size: size)
+                                .frame(width: size, height: size, alignment: .topLeading)
+                                .clipped()
+                        }
                         .position(center)
                 }
             }
         }
         .allowsHitTesting(false)
+        .animation(.none, value: dots.count)
     }
 
     @ViewBuilder
-    private func dotImage(for dot: PuzzleDot) -> some View {
+    private func dotImage(for dot: PuzzleDot, centerIndex: Int, size: CGFloat) -> some View {
         if let builtInShape = dot.builtInShape {
-            DotShapeDrawing(
-                shape: builtInShape,
-                color: dot.displayColor(
-                    usesRandomColor: usesRandomDotColors,
-                    selectedColor: dotColor
+            if PuzzleDotCollageColor.shouldRenderCollageContent(
+                for: dot,
+                usesRandomDotColors: usesRandomDotColors,
+                extensionRatio: layout.extensionRatio,
+                selectedDotColor: dotColor
+            ) {
+                PuzzleDotCollageBasicShapeView(
+                    shape: builtInShape,
+                    centerIndex: centerIndex,
+                    dot: dot,
+                    image: image,
+                    backgroundStyle: backgroundStyle,
+                    photoFrame: photoFrame,
+                    layout: layout,
+                    dotSize: size
                 )
-            )
-        } else {
-            let image = Image("public/shapes/\(dot.shapeAssetName)")
-
-            if dot.usesTemplateColor {
-                image
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(dot.displayColor(
+            } else {
+                DotShapeDrawing(
+                    shape: builtInShape,
+                    color: dot.displayColor(
                         usesRandomColor: usesRandomDotColors,
                         selectedColor: dotColor
-                    ))
-            } else {
-                image
-                    .renderingMode(.original)
-                    .resizable()
-                    .scaledToFit()
+                    )
+                )
+            }
+        } else {
+            let stickerColor = dot.displayColor(
+                usesRandomColor: usesRandomDotColors,
+                selectedColor: dotColor
+            )
+
+            DotShapeAssetImageView(
+                assetName: "public/\(dot.shapeAssetName)",
+                renderingMode: dot.usesTemplateColor ? .template : .original,
+                tintColor: dot.usesTemplateColor ? stickerColor : nil
+            )
+        }
+    }
+}
+
+private struct PuzzleDotCollageBasicShapeView: View {
+    let shape: BuiltInDotShape
+    let centerIndex: Int
+    let dot: PuzzleDot
+    let image: UIImage
+    let backgroundStyle: PuzzleBackgroundStyle
+    let photoFrame: CGRect
+    let layout: PuzzleCanvasLayoutResult
+    let dotSize: CGFloat
+
+    var body: some View {
+        collageFill
+            .mask {
+                DotShapeDrawing(shape: shape, color: .white)
+            }
+    }
+
+    @ViewBuilder
+    private var collageFill: some View {
+        let extensionFrame = layout.referenceLocalExtensionGridFrame
+
+        if centerIndex == 0 {
+            let mirrorPosition = PuzzleDotCollageColor.referenceExtensionMirrorPosition(
+                forPhotoPosition: dot.position,
+                extensionSide: layout.extensionSide
+            )
+            let samplePoint = PuzzleDotCollageColor.clampedExtensionSamplePoint(mirrorPosition)
+            let offset = PuzzleDotCollageColor.contentOffsetInDot(
+                dotSize: dotSize,
+                normalizedPoint: samplePoint,
+                contentSize: extensionFrame.size
+            )
+
+            PuzzleDotCollageBackgroundFill(
+                style: backgroundStyle,
+                extensionSize: extensionFrame.size,
+                photoFrameHeight: photoFrame.height
+            )
+            .frame(width: extensionFrame.width, height: extensionFrame.height, alignment: .topLeading)
+            .offset(x: offset.width, y: offset.height)
+            .frame(width: dotSize, height: dotSize, alignment: .topLeading)
+            .clipped()
+        } else {
+            let offset = PuzzleDotCollageColor.contentOffsetInDot(
+                dotSize: dotSize,
+                normalizedPoint: dot.position,
+                contentSize: photoFrame.size
+            )
+
+            Image(uiImage: image)
+                .resizable()
+                .frame(width: photoFrame.width, height: photoFrame.height, alignment: .topLeading)
+                .offset(x: offset.width, y: offset.height)
+                .frame(width: dotSize, height: dotSize, alignment: .topLeading)
+                .clipped()
+        }
+    }
+}
+
+private struct PuzzleDotCollageBackgroundFill: View {
+    let style: PuzzleBackgroundStyle
+    let extensionSize: CGSize
+    let photoFrameHeight: CGFloat
+
+    var body: some View {
+        Canvas { context, _ in
+            switch style {
+            case .grid:
+                PuzzleBackgroundCanvasDrawing.fillBase(in: &context, size: extensionSize)
+                PuzzleBackgroundCanvasDrawing.strokeGrid(
+                    in: &context,
+                    size: extensionSize,
+                    photoFrameHeight: photoFrameHeight
+                )
+            case .stripes:
+                PuzzleBackgroundCanvasDrawing.fillStripes(
+                    in: &context,
+                    size: extensionSize,
+                    photoFrameHeight: photoFrameHeight
+                )
             }
         }
+        .frame(width: extensionSize.width, height: extensionSize.height)
     }
 }
 

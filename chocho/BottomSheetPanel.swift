@@ -11,6 +11,7 @@ enum PanelTab: String, CaseIterable, Identifiable {
     case dots
     case draw
     case background
+    case livePhoto = "live"
 
     var id: Self { self }
 
@@ -22,6 +23,8 @@ enum PanelTab: String, CaseIterable, Identifiable {
             "抽卡"
         case .background:
             "背景"
+        case .livePhoto:
+            "实况"
         }
     }
 
@@ -37,14 +40,49 @@ enum PanelTab: String, CaseIterable, Identifiable {
             "public/random"
         case .background:
             "public/bg"
+        case .livePhoto:
+            "public/sparkles"
+        }
+    }
+
+    var tabIcon: Image {
+        switch self {
+        case .livePhoto:
+            Image(systemName: "livephoto")
+        case .dots, .draw, .background:
+            Image(iconAssetName)
         }
     }
 }
 
+struct PanelLayoutMetrics: Equatable {
+    var layoutHeightBoost: CGFloat
+    var contentHeight: CGFloat
+
+    static let initial = PanelLayoutMetrics(
+        layoutHeightBoost: BottomSheetPanel.layoutHeightBoost(
+            isExpanded: true,
+            contentHeight: BottomSheetPanel.fallbackContentHeight
+        ),
+        contentHeight: BottomSheetPanel.fallbackContentHeight
+    )
+}
+
+struct PanelLayoutMetricsKey: PreferenceKey {
+    static let defaultValue = PanelLayoutMetrics.initial
+
+    static func reduce(value: inout PanelLayoutMetrics, nextValue: () -> PanelLayoutMetrics) {
+        value = nextValue()
+    }
+}
+
 struct BottomSheetPanel: View {
-    static let height: CGFloat = 320
     static let topCornerRadius: CGFloat = 24
-    private static let contentHorizontalInset: CGFloat = 16
+    static let panelMotion: Animation = .smooth(duration: 0.24)
+    /// Used until the first content-height measurement arrives.
+    static let fallbackContentHeight: CGFloat = 228
+    /// Horizontal inset for panel content; also used for header and history controls aligned to the panel edge.
+    static let contentHorizontalInset: CGFloat = 16
     private static let contentBottomInset: CGFloat = 4
     private static let tabBarTopSpacing: CGFloat = 8
     private static let tabBarItemHeight: CGFloat = 42
@@ -57,27 +95,35 @@ struct BottomSheetPanel: View {
     }
 
     static var collapsedHeight: CGFloat {
-        visibleHeight(isExpanded: false)
+        visibleHeight(isExpanded: false, contentHeight: 0)
     }
 
-    static func collapsiblePanelHeight(isExpanded: Bool) -> CGFloat {
+    static func collapsiblePanelHeight(isExpanded: Bool, contentHeight: CGFloat) -> CGFloat {
         if isExpanded {
-            height - tabBarSectionHeight - contentBottomInset
+            handleTouchHeight
+                + panelContentTopPadding
+                + contentHeight
+                + tabBarTopSpacing
         } else {
             handleTouchHeight
         }
     }
 
-    static func visibleHeight(isExpanded: Bool) -> CGFloat {
-        collapsiblePanelHeight(isExpanded: isExpanded) + tabBarSectionHeight + contentBottomInset
+    static func visibleHeight(isExpanded: Bool, contentHeight: CGFloat) -> CGFloat {
+        collapsiblePanelHeight(isExpanded: isExpanded, contentHeight: contentHeight)
+            + tabBarSectionHeight
+            + contentBottomInset
     }
 
     /// Extra height added to canvas layout when the panel is expanded so photo fit scale
     /// stays the same as in the collapsed state; only the visible viewport shrinks.
-    static func layoutHeightBoost(isExpanded: Bool) -> CGFloat {
+    static func layoutHeightBoost(isExpanded: Bool, contentHeight: CGFloat) -> CGFloat {
         guard isExpanded else { return 0 }
-        return visibleHeight(isExpanded: true) - visibleHeight(isExpanded: false)
+        return visibleHeight(isExpanded: true, contentHeight: contentHeight)
+            - visibleHeight(isExpanded: false, contentHeight: contentHeight)
     }
+
+    @State private var measuredContentHeights: [PanelTab: CGFloat] = [:]
 
     @Binding var selectedTab: PanelTab
     @Binding var isExpanded: Bool
@@ -94,6 +140,33 @@ struct BottomSheetPanel: View {
     var isPanelEnabled: Bool = true
     let onDrawDots: () -> Void
 
+    /// Vertical offset for history controls anchored to the panel top edge.
+    static let historyControlsClearance: CGFloat = 40
+
+    private var layoutContentHeight: CGFloat {
+        guard isExpanded else { return 0 }
+        let measured = measuredContentHeights[selectedTab] ?? 0
+        return measured > 1 ? measured : Self.fallbackContentHeight
+    }
+
+    private var collapsibleSectionHeight: CGFloat {
+        Self.collapsiblePanelHeight(
+            isExpanded: isExpanded,
+            contentHeight: layoutContentHeight
+        )
+    }
+
+    private var layoutMetrics: PanelLayoutMetrics {
+        let contentHeight = layoutContentHeight
+        return PanelLayoutMetrics(
+            layoutHeightBoost: Self.layoutHeightBoost(
+                isExpanded: isExpanded,
+                contentHeight: contentHeight
+            ),
+            contentHeight: contentHeight
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             collapsiblePanelSection
@@ -102,13 +175,17 @@ struct BottomSheetPanel: View {
         }
         .padding(.horizontal, Self.contentHorizontalInset)
         .padding(.bottom, Self.contentBottomInset + bottomSafeAreaInset)
-        .frame(maxWidth: .infinity)
-        .frame(height: Self.visibleHeight(isExpanded: isExpanded) + bottomSafeAreaInset, alignment: .bottom)
+        .frame(maxWidth: .infinity, alignment: .bottom)
+        .background {
+            Color.clear.preference(key: PanelLayoutMetricsKey.self, value: layoutMetrics)
+        }
         .background(panelBackground)
         .clipped()
         .compositingGroup()
         .shadow(color: Color.black.opacity(0.10), radius: 28, x: 0, y: -5)
-        .animation(.smooth(duration: 0.24), value: isExpanded)
+        .animation(Self.panelMotion, value: isExpanded)
+        .animation(Self.panelMotion, value: selectedTab)
+        .animation(Self.panelMotion, value: layoutContentHeight)
     }
 
     private var collapsiblePanelSection: some View {
@@ -116,15 +193,19 @@ struct BottomSheetPanel: View {
             panelHandleArea
 
             panelContent
+                .padding(.top, isExpanded ? Self.panelContentTopPadding : 0)
+                .padding(.bottom, isExpanded ? Self.tabBarTopSpacing : 0)
+                .opacity(isExpanded ? 1 : 0)
+                .accessibilityHidden(!isExpanded)
+                .allowsHitTesting(isExpanded)
         }
-        .frame(height: Self.collapsiblePanelHeight(isExpanded: isExpanded), alignment: .top)
+        .frame(height: collapsibleSectionHeight, alignment: .top)
         .clipped()
     }
 
     private var fixedTabBarSection: some View {
         panelTabBar
-            .padding(.top, Self.tabBarTopSpacing)
-            .frame(height: Self.tabBarSectionHeight, alignment: .top)
+            .frame(height: Self.tabBarItemHeight, alignment: .top)
             .disabled(!isPanelEnabled)
             .opacity(isPanelEnabled ? 1 : 0.42)
     }
@@ -143,12 +224,17 @@ struct BottomSheetPanel: View {
             backgroundStyle: $backgroundStyle,
             onDrawDots: onDrawDots
         )
-        .padding(.top, isExpanded ? Self.panelContentTopPadding : 0)
-        .padding(.bottom, isExpanded ? Self.expandedPanelContentBottomSpacing : 0)
-        .frame(height: isExpanded ? PanelContentCard.contentHeight : 0, alignment: .top)
-        .opacity(isExpanded ? (isPanelEnabled ? 1 : 0.42) : 0)
-        .accessibilityHidden(!isExpanded)
-        .allowsHitTesting(isExpanded && isPanelEnabled)
+        .fixedSize(horizontal: false, vertical: true)
+        .onPreferenceChange(PanelContentHeightKey.self) { height in
+            guard height > 1 else { return }
+            let previous = measuredContentHeights[selectedTab] ?? 0
+            guard abs(previous - height) > 0.5 else { return }
+            withAnimation(Self.panelMotion) {
+                measuredContentHeights[selectedTab] = height
+            }
+        }
+        .opacity(isPanelEnabled ? 1 : 0.42)
+        .allowsHitTesting(isPanelEnabled)
         .disabled(!isPanelEnabled)
     }
 
@@ -182,46 +268,44 @@ struct BottomSheetPanel: View {
 
     private var panelTabBar: some View {
         HStack(spacing: 0) {
-            ForEach(PanelTab.allCases) { tab in
-                let isSelected = tab == selectedTab
-
-                Button {
-                    selectedTab = tab
-                    if !isExpanded {
-                        setExpanded(true)
-                    }
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(tab.iconAssetName)
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 18, height: 18)
-
-                        Text(tab.title)
-                            .font(.system(size: 13, weight: .regular))
-                    }
-                    .foregroundStyle(isSelected ? activeTabColor : Color.mutedForeground)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Self.tabBarItemHeight)
-                    .scaleEffect(isSelected ? 1.1 : 1)
-                    .contentShape(Rectangle())
-                    .animation(.smooth(duration: 0.18), value: isSelected)
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            ForEach(PanelTab.allCases, id: \.id) { tab in
+                panelTabBarButton(for: tab)
             }
         }
     }
 
-    private static var expandedPanelContentBottomSpacing: CGFloat {
-        max(
-            0,
-            collapsiblePanelHeight(isExpanded: true)
-                - handleTouchHeight
-                - panelContentTopPadding
-                - PanelContentCard.contentHeight
-        )
+    private func panelTabBarButton(for tab: PanelTab) -> some View {
+        let isSelected = tab == selectedTab
+
+        return Button {
+            if tab != selectedTab {
+                withAnimation(Self.panelMotion) {
+                    selectedTab = tab
+                }
+            }
+            if !isExpanded {
+                setExpanded(true)
+            }
+        } label: {
+            VStack(spacing: 3) {
+                tab.tabIcon
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 18, height: 18)
+
+                Text(tab.title)
+                    .font(.system(size: 13, weight: .regular))
+            }
+            .foregroundStyle(isSelected ? activeTabColor : Color.mutedForeground)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.tabBarItemHeight)
+            .scaleEffect(isSelected ? 1.1 : 1)
+            .contentShape(Rectangle())
+            .animation(.smooth(duration: 0.18), value: isSelected)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var activeTabColor: Color {
@@ -240,7 +324,7 @@ struct BottomSheetPanel: View {
     }
 
     private func setExpanded(_ newValue: Bool) {
-        withAnimation(.smooth(duration: 0.24)) {
+        withAnimation(Self.panelMotion) {
             isExpanded = newValue
         }
     }
@@ -328,9 +412,15 @@ struct CanvasHistoryControls: View {
     }
 }
 
-private struct PanelContentCard: View {
-    static let contentHeight: CGFloat = 228
+private struct PanelContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
 
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct PanelContentCard: View {
     let tab: PanelTab
     @Binding var dotCount: Double
     @Binding var dotScale: Double
@@ -365,10 +455,29 @@ private struct PanelContentCard: View {
                     extensionRatio: $extensionRatio,
                     extensionSide: $extensionSide
                 )
+            case .livePhoto:
+                LivePanelPlaceholder()
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: Self.contentHeight)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: PanelContentHeightKey.self,
+                    value: proxy.size.height
+                )
+            }
+        }
+    }
+}
+
+private struct LivePanelPlaceholder: View {
+    var body: some View {
+        Text("建设中...")
+            .font(.system(size: 15, weight: .regular))
+            .foregroundStyle(Color.mutedForeground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32)
     }
 }
 
@@ -394,10 +503,8 @@ private struct BackgroundPanelControls: View {
                 valueText: { "\(Int($0.rounded()))%" }
             )
             .padding(.horizontal, 2)
-
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var controlLabelFont: Font {
@@ -540,11 +647,9 @@ private struct DrawPanelControls: View {
             }
             .padding(.horizontal, 2)
 
-            Spacer(minLength: 0)
-
             drawButton
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var drawButton: some View {
@@ -662,8 +767,7 @@ private struct DotShapePickerPanel: View {
 
             DotColorPicker(selectedDotColor: $selectedDotColor)
         }
-        .frame(maxWidth: .infinity)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
         .animation(.smooth(duration: 0.22), value: selectedCategory)
     }
 
@@ -703,12 +807,43 @@ private struct DotSizeSlider: View {
 private struct DotColorPicker: View {
     @Binding var selectedDotColor: Color
 
+    private var usesCollageTint: Bool {
+        PuzzleDotCollageColor.usesCollageTint(selectedDotColor: selectedDotColor)
+    }
+
     var body: some View {
-        ColorPicker("颜色", selection: $selectedDotColor, supportsOpacity: false)
-            .font(.system(size: 14, weight: .regular))
-            .foregroundStyle(Color.foreground)
-            .frame(height: 30)
-            .padding(.horizontal, 2)
+        HStack(spacing: 10) {
+            ColorPicker("颜色", selection: $selectedDotColor, supportsOpacity: false)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(Color.foreground)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 30)
+
+            Button {
+                selectedDotColor = .clear
+            } label: {
+                Text("清除")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(usesCollageTint ? Color.primaryForeground : Color.foreground)
+                    .frame(width: 48, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(usesCollageTint ? Color.primary : Color.input)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(
+                                usesCollageTint ? Color.primary.opacity(0.75) : Color.border,
+                                lineWidth: 1
+                            )
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("清除颜色")
+            .accessibilityHint("恢复主图与背景的互相拼贴")
+            .accessibilityAddTraits(usesCollageTint ? .isSelected : [])
+        }
+        .padding(.horizontal, 2)
     }
 }
 
@@ -759,33 +894,24 @@ private struct DotShapeGrid: View {
     let onSelect: (DotShapeAsset) -> Void
     @State private var availableWidth: CGFloat = 361
 
-    private let columnCount = 6
+    private let referenceColumnCount = 6
     private let gridSpacing: CGFloat = 8
     private let gridPadding: CGFloat = 8
-    private let visibleRowCount: CGFloat = 2
 
     private var tileSide: CGFloat {
-        let horizontalGaps = CGFloat(columnCount - 1) * gridSpacing
+        let horizontalGaps = CGFloat(referenceColumnCount - 1) * gridSpacing
         let contentWidth = availableWidth - gridPadding * 2 - horizontalGaps
         guard contentWidth > 0 else { return 0 }
-        return contentWidth / CGFloat(columnCount)
+        return contentWidth / CGFloat(referenceColumnCount)
     }
 
     private var gridViewportHeight: CGFloat {
-        let rowGaps = (visibleRowCount - 1) * gridSpacing
-        return tileSide * visibleRowCount + rowGaps + gridPadding * 2
-    }
-
-    private var columns: [GridItem] {
-        Array(
-            repeating: GridItem(.flexible(), spacing: gridSpacing),
-            count: columnCount
-        )
+        tileSide + gridPadding * 2
     }
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: gridSpacing) {
+        ScrollView(.horizontal) {
+            HStack(spacing: gridSpacing) {
                 ForEach(shapes) { shape in
                     DotShapeTile(
                         shape: shape,
@@ -793,6 +919,7 @@ private struct DotShapeGrid: View {
                     ) {
                         onSelect(shape)
                     }
+                    .frame(width: tileSide, height: tileSide)
                 }
             }
             .padding(gridPadding)
@@ -800,16 +927,16 @@ private struct DotShapeGrid: View {
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity)
         .frame(height: gridViewportHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.border, lineWidth: 1.5)
-        )
-        .background(
+        .background {
             GeometryReader { proxy in
                 Color.clear.preference(key: DotShapeGridWidthKey.self, value: proxy.size.width)
             }
-        )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.border, lineWidth: 1.5)
+        }
         .onPreferenceChange(DotShapeGridWidthKey.self) { width in
             availableWidth = width
         }
@@ -844,7 +971,6 @@ private struct DotShapeTile: View {
                     .stroke(Color.border, lineWidth: isSelected ? 0 : 1.5)
             }
         }
-        .frame(maxWidth: .infinity)
         .buttonStyle(.plain)
         .accessibilityLabel(shape.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -858,16 +984,55 @@ private struct DotShapeTile: View {
                 color: isSelected ? Color.primaryForeground : Color.foreground
             )
         } else {
-            Image(shape.previewAssetName)
-                .resizable()
-                .scaledToFit()
+            DotShapeAssetImageView(
+                assetName: shape.assetImageName,
+                renderingMode: shape.usesTemplatePreview ? .template : .original,
+                tintColor: shape.usesTemplatePreview ? previewColor : nil
+            )
         }
+    }
+
+    private var previewColor: Color {
+        isSelected ? Color.primaryForeground : Color.foreground
     }
 
     private var tileBackground: Color {
         isSelected
             ? Color.primary
             : Color.card
+    }
+}
+
+nonisolated enum DotShapeAssetCategoryParser {
+    static let basicCategory = "基础"
+    static let categorizedSuffixes: Set<String> = [
+        "小物",
+        "彩纸",
+        "贴纸",
+        "纽扣",
+        "水钻",
+        "布",
+        "针线"
+    ]
+
+    static func category(for name: String) -> String {
+        suffix(in: name) ?? basicCategory
+    }
+
+    static func title(for name: String) -> String {
+        guard suffix(in: name) != nil, let suffixSeparatorIndex = name.lastIndex(of: ".") else {
+            return name
+        }
+
+        return String(name[..<suffixSeparatorIndex])
+    }
+
+    static func suffix(in name: String) -> String? {
+        guard let suffixSeparatorIndex = name.lastIndex(of: ".") else { return nil }
+
+        let suffixStartIndex = name.index(after: suffixSeparatorIndex)
+        let suffix = String(name[suffixStartIndex...])
+        return categorizedSuffixes.contains(suffix) ? suffix : nil
     }
 }
 
@@ -930,6 +1095,10 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
         }
     }
 
+    static let assetCategorySuffixes = Set(
+        DotShapeAssetCategoryParser.categorizedSuffixes
+    )
+
     static let panelOrder: [DotShapeCategory] = [
         .recent,
         .basic,
@@ -945,27 +1114,31 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
 
 struct DotShapeAsset: Identifiable, Equatable {
     let name: String
-    let previewName: String?
 
     var id: String { name }
 
     var title: String {
-        name.split(separator: ".").first.map(String.init) ?? name
+        DotShapeAssetCategoryParser.title(for: name)
     }
 
     var category: String {
-        let parts = name.split(separator: ".").map(String.init)
-        guard parts.count > 1 else { return "基础" }
-
-        return parts.dropFirst().joined(separator: " ")
+        DotShapeAssetCategoryParser.category(for: name)
     }
 
-    var previewAssetName: String {
-        "public/shapes/\(previewName ?? name)"
+    private var assetCategorySuffix: String? {
+        DotShapeAssetCategoryParser.suffix(in: name)
+    }
+
+    var assetImageName: String {
+        "public/\(name)"
     }
 
     var previewTilePadding: CGFloat {
         category == "基础" ? 16 : 9
+    }
+
+    var usesTemplatePreview: Bool {
+        category == "基础"
     }
 
     var builtInShape: BuiltInDotShape? {
@@ -998,57 +1171,11 @@ struct DotShapeAsset: Identifiable, Equatable {
         all.first { $0.name == name }
     }
 
-    static let defaultSelection = DotShapeAsset(name: BuiltInDotShape.circle.rawValue, previewName: nil)
+    static let defaultSelection = DotShapeAsset(name: BuiltInDotShape.circle.rawValue)
 
-    static let all: [DotShapeAsset] = [
-        DotShapeAsset(name: BuiltInDotShape.circle.rawValue, previewName: nil),
-        DotShapeAsset(name: BuiltInDotShape.square.rawValue, previewName: nil),
-        DotShapeAsset(name: BuiltInDotShape.triangle.rawValue, previewName: nil),
-        DotShapeAsset(name: BuiltInDotShape.star.rawValue, previewName: nil),
-        DotShapeAsset(name: "丝带.彩纸", previewName: "丝带.彩纸.preview"),
-        DotShapeAsset(name: "乱七八糟.贴纸", previewName: "乱七八糟.贴纸.preview"),
-        DotShapeAsset(name: "云1.布", previewName: "云1.布.preview"),
-        DotShapeAsset(name: "圆.brush.水钻", previewName: "圆.brush.水钻.preview"),
-        DotShapeAsset(name: "圆2.brus.水钻", previewName: "圆2.brus.水钻.preview"),
-        DotShapeAsset(name: "小熊.水钻", previewName: "小熊.水钻.preview"),
-        DotShapeAsset(name: "工牌.小物", previewName: "工牌.小物.preview"),
-        DotShapeAsset(name: "开关.贴纸", previewName: "开关.贴纸.preview"),
-        DotShapeAsset(name: "彩纸1.彩纸", previewName: "彩纸1.彩纸.preview"),
-        DotShapeAsset(name: "彩纸2.彩纸", previewName: "彩纸2.彩纸.preview"),
-        DotShapeAsset(name: "彩纸3.彩纸", previewName: "彩纸3.彩纸.preview"),
-        DotShapeAsset(name: "彩纸4.彩纸", previewName: "彩纸4.彩纸.preview"),
-        DotShapeAsset(name: "很多个星.贴纸", previewName: "很多个星.贴纸.preview"),
-        DotShapeAsset(name: "心", previewName: nil),
-        DotShapeAsset(name: "心.水钻", previewName: "心.水钻.preview"),
-        DotShapeAsset(name: "心2.布", previewName: "心2.布.preview"),
-        DotShapeAsset(name: "星1", previewName: nil),
-        DotShapeAsset(name: "星1.纽扣", previewName: "星1.纽扣.preview"),
-        DotShapeAsset(name: "星2", previewName: nil),
-        DotShapeAsset(name: "星2.纽扣", previewName: "星2.纽扣.preview"),
-        DotShapeAsset(name: "星3", previewName: nil),
-        DotShapeAsset(name: "星星.水钻", previewName: "星星.水钻.preview"),
-        DotShapeAsset(name: "月亮.布", previewName: "月亮.布.preview"),
-        DotShapeAsset(name: "未标题-1.小物", previewName: "未标题-1.小物.preview"),
-        DotShapeAsset(name: "水滴.水钻", previewName: "水滴.水钻.preview"),
-        DotShapeAsset(name: "眼睛.小物", previewName: "眼睛.小物.preview"),
-        DotShapeAsset(name: "脸.纽扣", previewName: "脸.纽扣.preview"),
-        DotShapeAsset(name: "花1", previewName: nil),
-        DotShapeAsset(name: "花1.纽扣", previewName: "花1.纽扣.preview"),
-        DotShapeAsset(name: "花2.布", previewName: "花2.布.preview"),
-        DotShapeAsset(name: "花3.布", previewName: "花3.布.preview"),
-        DotShapeAsset(name: "花4.贴纸", previewName: "花4.贴纸.preview"),
-        DotShapeAsset(name: "花束.小物", previewName: "花束.小物.preview"),
-        DotShapeAsset(name: "菜单.贴纸", previewName: "菜单.贴纸.preview"),
-        DotShapeAsset(name: "蛙.小物", previewName: "蛙.小物.preview"),
-        DotShapeAsset(name: "蝴蝶1.纽扣", previewName: "蝴蝶1.纽扣.preview"),
-        DotShapeAsset(name: "蝴蝶结.布", previewName: "蝴蝶结.布.preview"),
-        DotShapeAsset(name: "针线1.针线", previewName: "针线1.针线.preview"),
-        DotShapeAsset(name: "雪", previewName: nil),
-        DotShapeAsset(name: "面包.小物", previewName: "面包.小物.preview"),
-        DotShapeAsset(name: "风扇.小物", previewName: "风扇.小物.preview"),
-        DotShapeAsset(name: "鱼", previewName: "鱼.preview"),
-        DotShapeAsset(name: "鱼1.纽扣", previewName: "鱼1.纽扣.preview")
-    ]
+    static let all: [DotShapeAsset] =
+        BuiltInDotShape.allCases.map { DotShapeAsset(name: $0.rawValue) }
+        + DotShapeCatalog.assetNames.map { DotShapeAsset(name: $0) }
 }
 
 enum DotShapeRecentList {

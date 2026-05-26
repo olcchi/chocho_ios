@@ -53,11 +53,12 @@ nonisolated enum CanvasRasterExporter {
             drawDots(
                 in: context,
                 layout: layout,
+                image: image,
+                backgroundStyle: backgroundStyle,
                 dots: dots,
                 dotScale: dotScale,
                 dotColor: dotColor,
-                usesRandomDotColors: usesRandomDotColors,
-                extensionSide: extensionSide
+                usesRandomDotColors: usesRandomDotColors
             )
 
             context.restoreGState()
@@ -138,37 +139,24 @@ nonisolated enum CanvasRasterExporter {
     private nonisolated static func drawDots(
         in context: CGContext,
         layout: PuzzleCanvasLayoutResult,
+        image: UIImage,
+        backgroundStyle: PuzzleBackgroundStyle,
         dots: [PuzzleDot],
         dotScale: CGFloat,
         dotColor: Color,
-        usesRandomDotColors: Bool,
-        extensionSide: PuzzleCanvasExtensionSide
+        usesRandomDotColors: Bool
     ) {
-        let referenceFrame = CGRect(
-            origin: .zero,
-            size: layout.referenceComposedFrame.size
-        )
         let referenceOrigin = layout.referenceComposedFrame.origin
         let photoFrameHeight = layout.referenceLocalPhotoFrame.height
 
         for dot in dots {
             let dotSize = DotSizeControl.displaySize(
-                renderedScale: dot.size * dotScale,
+                renderedScale: dot.size * dotScale * dot.displaySizeScale,
                 photoFrameHeight: photoFrameHeight
             )
-            let centers = PuzzleCanvasCoordinate.dotCentersInReferenceFrame(
-                position: dot.position,
-                referenceFrame: referenceFrame,
-                extensionSide: extensionSide
-            )
-            let uiColor = UIColor(
-                dot.displayColor(
-                    usesRandomColor: usesRandomDotColors,
-                    selectedColor: dotColor
-                )
-            )
+            let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
 
-            for center in centers {
+            for (centerIndex, center) in centers.enumerated() {
                 let origin = CGPoint(
                     x: referenceOrigin.x + center.x - dotSize / 2,
                     y: referenceOrigin.y + center.y - dotSize / 2
@@ -176,13 +164,44 @@ nonisolated enum CanvasRasterExporter {
                 let rect = CGRect(origin: origin, size: CGSize(width: dotSize, height: dotSize))
 
                 if let builtInShape = dot.builtInShape {
-                    drawBuiltInDot(
-                        builtInShape,
-                        in: context,
-                        rect: rect,
-                        color: uiColor
-                    )
+                    if PuzzleDotCollageColor.shouldRenderCollageContent(
+                        for: dot,
+                        usesRandomDotColors: usesRandomDotColors,
+                        extensionRatio: layout.extensionRatio,
+                        selectedDotColor: dotColor
+                    ) {
+                        drawBuiltInDotCollage(
+                            builtInShape,
+                            centerIndex: centerIndex,
+                            dot: dot,
+                            in: context,
+                            rect: rect,
+                            image: image,
+                            layout: layout,
+                            backgroundStyle: backgroundStyle,
+                            photoFrameHeight: photoFrameHeight
+                        )
+                    } else {
+                        let uiColor = UIColor(
+                            dot.displayColor(
+                                usesRandomColor: usesRandomDotColors,
+                                selectedColor: dotColor
+                            )
+                        )
+                        drawBuiltInDot(
+                            builtInShape,
+                            in: context,
+                            rect: rect,
+                            color: uiColor
+                        )
+                    }
                 } else {
+                    let uiColor = UIColor(
+                        dot.displayColor(
+                            usesRandomColor: usesRandomDotColors,
+                            selectedColor: dotColor
+                        )
+                    )
                     drawAssetDot(
                         assetName: dot.shapeAssetName,
                         in: context,
@@ -195,23 +214,59 @@ nonisolated enum CanvasRasterExporter {
         }
     }
 
+    private nonisolated static func drawBuiltInDotCollage(
+        _ shape: BuiltInDotShape,
+        centerIndex: Int,
+        dot: PuzzleDot,
+        in context: CGContext,
+        rect: CGRect,
+        image: UIImage,
+        layout: PuzzleCanvasLayoutResult,
+        backgroundStyle: PuzzleBackgroundStyle,
+        photoFrameHeight: CGFloat
+    ) {
+        let path = shape.bezierPath(in: rect)
+        let photoSize = layout.referenceLocalPhotoFrame.size
+        let extensionSize = layout.referenceLocalExtensionGridFrame.size
+
+        context.saveGState()
+        path.addClip()
+
+        if centerIndex == 0 {
+            let mirrorPosition = PuzzleDotCollageColor.referenceExtensionMirrorPosition(
+                forPhotoPosition: dot.position,
+                extensionSide: layout.extensionSide
+            )
+            let samplePoint = PuzzleDotCollageColor.clampedExtensionSamplePoint(mirrorPosition)
+            let backgroundOrigin = CGPoint(
+                x: rect.midX - samplePoint.x * extensionSize.width,
+                y: rect.midY - samplePoint.y * extensionSize.height
+            )
+
+            drawExtensionBackground(
+                in: context,
+                rect: CGRect(origin: backgroundOrigin, size: extensionSize),
+                style: backgroundStyle,
+                photoFrameHeight: photoFrameHeight
+            )
+        } else {
+            let photoOrigin = CGPoint(
+                x: rect.midX - dot.position.x * photoSize.width,
+                y: rect.midY - dot.position.y * photoSize.height
+            )
+            image.draw(in: CGRect(origin: photoOrigin, size: photoSize))
+        }
+
+        context.restoreGState()
+    }
+
     private nonisolated static func drawBuiltInDot(
         _ shape: BuiltInDotShape,
         in context: CGContext,
         rect: CGRect,
         color: UIColor
     ) {
-        let path: UIBezierPath
-        switch shape {
-        case .circle:
-            path = UIBezierPath(ovalIn: rect)
-        case .square:
-            path = UIBezierPath(rect: rect)
-        case .triangle:
-            path = equilateralTrianglePath(in: rect)
-        case .star:
-            path = fivePointStarPath(in: rect)
-        }
+        let path = shape.bezierPath(in: rect)
 
         context.saveGState()
         color.setFill()
@@ -226,7 +281,7 @@ nonisolated enum CanvasRasterExporter {
         color: UIColor,
         usesTemplateColor: Bool
     ) {
-        guard let image = UIImage(named: "public/shapes/\(assetName)") else { return }
+        guard let image = DotShapeAssetImage.uiImage(named: "public/\(assetName)") else { return }
 
         if usesTemplateColor {
             image.withTintColor(color, renderingMode: .alwaysTemplate).draw(in: rect)
@@ -235,44 +290,6 @@ nonisolated enum CanvasRasterExporter {
         }
     }
 
-    private nonisolated static func equilateralTrianglePath(in rect: CGRect) -> UIBezierPath {
-        let side = min(rect.width, rect.height * 2 / sqrt(3))
-        let height = side * sqrt(3) / 2
-        let minX = rect.midX - side / 2
-        let minY = rect.midY - height / 2
-
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: rect.midX, y: minY))
-        path.addLine(to: CGPoint(x: minX + side, y: minY + height))
-        path.addLine(to: CGPoint(x: minX, y: minY + height))
-        path.close()
-        return path
-    }
-
-    private nonisolated static func fivePointStarPath(in rect: CGRect) -> UIBezierPath {
-        let outerRadius = min(rect.width, rect.height) / 2
-        let innerRadius = outerRadius * 0.42
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let path = UIBezierPath()
-
-        for index in 0..<10 {
-            let angle = -CGFloat.pi / 2 + CGFloat(index) * CGFloat.pi / 5
-            let radius = index.isMultiple(of: 2) ? outerRadius : innerRadius
-            let point = CGPoint(
-                x: center.x + cos(angle) * radius,
-                y: center.y + sin(angle) * radius
-            )
-
-            if index == 0 {
-                path.move(to: point)
-            } else {
-                path.addLine(to: point)
-            }
-        }
-
-        path.close()
-        return path
-    }
 }
 
 private nonisolated enum ThemeUIColor {

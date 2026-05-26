@@ -10,6 +10,7 @@ import SwiftUI
 import UIKit
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: PanelTab = .dots
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var canvasImage: UIImage?
@@ -20,9 +21,10 @@ struct ContentView: View {
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
     @State private var isPanelExpanded = true
+    @State private var panelLayoutMetrics = PanelLayoutMetrics.initial
     @State private var dotCount: Double = 10
     @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
-    @State private var selectedDotColor: Color = .primary
+    @State private var selectedDotColor: Color = .clear
     @State private var usesRandomDotColors = false
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var isTraceDrawingEnabled = false
@@ -37,35 +39,37 @@ struct ContentView: View {
     @State private var shareSheetDetent: PresentationDetent = .medium
     @GestureState private var gestureOffset: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
+    @State private var hasAttemptedDraftRestore = false
+    @State private var pendingDraftSave: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                Color.background
-                    .ignoresSafeArea()
+            VStack(spacing: 0) {
+                ZStack(alignment: .top) {
+                    canvasArea
+                        .padding(.top, topCanvasInset(for: proxy))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                panelBackgroundColor
-                    .ignoresSafeArea(edges: .top)
-                    .frame(height: topActionBarHeight)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    panelBackgroundColor
+                        .ignoresSafeArea(edges: .top)
+                        .frame(height: topActionBarHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .allowsHitTesting(false)
 
-                canvasArea
-                .padding(.top, topCanvasInset(for: proxy))
-                .padding(.bottom, BottomSheetPanel.visibleHeight(isExpanded: isPanelExpanded))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .animation(.smooth(duration: 0.24), value: isPanelExpanded)
-
-                CanvasHeader(
-                    selectedPhotoItem: $selectedPhotoItem,
-                    exportMessage: exportMessage,
-                    canDownload: canvasImage != nil,
-                    isBusy: isPhotoLoading || isExporting,
-                    onDownload: shareCanvas
-                )
-                .padding(.top, 4)
-                .padding(.trailing, 25)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .zIndex(1)
+                    CanvasHeader(
+                        selectedPhotoItem: $selectedPhotoItem,
+                        exportMessage: exportMessage,
+                        canDownload: canvasImage != nil,
+                        isBusy: isPhotoLoading || isExporting,
+                        onDownload: shareCanvas
+                    )
+                    .padding(.top, 4)
+                    .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(BottomSheetPanel.panelMotion, value: isPanelExpanded)
+                .animation(BottomSheetPanel.panelMotion, value: selectedTab)
 
                 BottomSheetPanel(
                     selectedTab: $selectedTab,
@@ -83,26 +87,55 @@ struct ContentView: View {
                     isPanelEnabled: canvasImage != nil,
                     onDrawDots: drawPuzzleDots
                 )
-                    .padding(.bottom, -proxy.safeAreaInsets.bottom)
-
-                CanvasHistoryControls(
-                    canUndo: canvasHistory.canUndo,
-                    canRedo: canvasHistory.canRedo,
-                    canClear: !puzzleDots.isEmpty,
-                    onClear: presentClearCanvasConfirmation,
-                    onUndo: undoCanvasChange,
-                    onRedo: redoCanvasChange
-                )
-                .padding(.trailing, 20)
-                .padding(.bottom, historyControlsBottomPadding(for: proxy))
-                .animation(.smooth(duration: 0.24), value: isPanelExpanded)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .zIndex(2)
+                .overlay(alignment: .topTrailing) {
+                    CanvasHistoryControls(
+                        canUndo: canvasHistory.canUndo,
+                        canRedo: canvasHistory.canRedo,
+                        canClear: !puzzleDots.isEmpty,
+                        onClear: presentClearCanvasConfirmation,
+                        onUndo: undoCanvasChange,
+                        onRedo: redoCanvasChange
+                    )
+                    .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
+                    .offset(y: -BottomSheetPanel.historyControlsClearance)
+                }
+                .padding(.bottom, -proxy.safeAreaInsets.bottom)
+            }
+            .background {
+                Color.background
+                    .ignoresSafeArea()
+            }
+            .onPreferenceChange(PanelLayoutMetricsKey.self) { metrics in
+                guard metrics != panelLayoutMetrics else { return }
+                panelLayoutMetrics = metrics
             }
         }
         .task(id: selectedPhotoItem) {
             await loadSelectedPhoto()
         }
+        .task {
+            guard !hasAttemptedDraftRestore else { return }
+            hasAttemptedDraftRestore = true
+            await restoreCanvasDraftIfNeeded()
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: CanvasDraftStore.autosaveInterval)
+                persistCanvasDraft()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .background || newPhase == .inactive else { return }
+            persistCanvasDraft()
+        }
+        .onChange(of: extensionRatio) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: extensionSide) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: backgroundStyle) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: dotScale) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: selectedDotColor) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: dotCount) { _, newDotCount in
             syncPuzzleDots(to: Int(newDotCount.rounded()))
         }
@@ -135,9 +168,7 @@ struct ContentView: View {
                     extensionSide: extensionSide,
                     backgroundStyle: backgroundStyle,
                     imageViewportResetID: imageViewportResetID,
-                    panelLayoutHeightBoost: BottomSheetPanel.layoutHeightBoost(
-                        isExpanded: isPanelExpanded
-                    ),
+                    panelLayoutHeightBoost: panelLayoutMetrics.layoutHeightBoost,
                     dots: puzzleDots,
                     dotScale: CGFloat(dotScale),
                     dotColor: selectedDotColor,
@@ -180,9 +211,6 @@ struct ContentView: View {
         Color.popover
     }
 
-    private func historyControlsBottomPadding(for proxy: GeometryProxy) -> CGFloat {
-        BottomSheetPanel.visibleHeight(isExpanded: isPanelExpanded) + 10
-    }
     
     @MainActor
     private func loadSelectedPhoto() async {
@@ -216,6 +244,7 @@ struct ContentView: View {
 
             applyPuzzleDots(initialDots)
             exportMessage = nil
+            persistCanvasDraft()
         } catch {
             exportMessage = "上传失败"
         }
@@ -298,6 +327,7 @@ struct ContentView: View {
     private func updateTracePoints(_ points: [PuzzleCanvasTracePoint]) {
         tracePoints = points
         exportMessage = nil
+        scheduleCanvasDraftSave()
     }
 
     @MainActor
@@ -311,7 +341,11 @@ struct ContentView: View {
     private func clearCanvasContent() {
         guard !puzzleDots.isEmpty else { return }
 
-        puzzleDots = canvasHistory.clearValue()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            puzzleDots = canvasHistory.clearValue()
+        }
         exportMessage = nil
     }
 
@@ -336,6 +370,76 @@ struct ContentView: View {
         canvasHistory.record(dots)
         puzzleDots = canvasHistory.currentValue
         exportMessage = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func restoreCanvasDraftIfNeeded() async {
+        guard canvasImage == nil else { return }
+
+        guard let restored = await CanvasDraftStore.load() else { return }
+
+        canvasImage = restored.image
+        extensionRatio = restored.extensionRatio
+        extensionSide = restored.extensionSide
+        backgroundStyle = restored.backgroundStyle
+        dotCount = restored.dotCount
+        dotScale = restored.dotScale
+        selectedDotColor = restored.selectedDotColor
+        usesRandomDotColors = restored.usesRandomDotColors
+        selectedDotShape = DotShapeAsset.asset(named: restored.selectedDotShapeName)
+            ?? .defaultSelection
+        isTraceDrawingEnabled = restored.isTraceDrawingEnabled
+        tracePoints = restored.tracePoints
+        viewportScale = restored.viewportScale
+        viewportOffset = restored.viewportOffset
+        lastMagnification = 1
+        imageViewportResetID = UUID()
+        canvasHistory.reset(to: restored.puzzleDots)
+        puzzleDots = restored.puzzleDots
+        exportMessage = nil
+    }
+
+    @MainActor
+    private func scheduleCanvasDraftSave() {
+        pendingDraftSave?.cancel()
+        pendingDraftSave = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            persistCanvasDraft()
+        }
+    }
+
+    @MainActor
+    private func persistCanvasDraft() {
+        pendingDraftSave?.cancel()
+        pendingDraftSave = nil
+
+        guard let canvasImage else {
+            Task { await CanvasDraftStore.clear() }
+            return
+        }
+
+        let capture = CanvasDraftCapture(
+            image: canvasImage,
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide,
+            backgroundStyle: backgroundStyle,
+            dotCount: dotCount,
+            dotScale: dotScale,
+            selectedDotColor: selectedDotColor,
+            usesRandomDotColors: usesRandomDotColors,
+            selectedDotShapeName: selectedDotShape.name,
+            isTraceDrawingEnabled: isTraceDrawingEnabled,
+            puzzleDots: puzzleDots,
+            tracePoints: tracePoints,
+            viewportScale: viewportScale,
+            viewportOffset: viewportOffset
+        )
+
+        Task {
+            await CanvasDraftStore.save(capture)
+        }
     }
 
     @MainActor
@@ -350,15 +454,17 @@ struct ContentView: View {
     private func dodgeCanvasForPanelExpansion(isExpanded: Bool) {
         guard canvasImage != nil else { return }
 
-        let panelHeightBoost = BottomSheetPanel.layoutHeightBoost(isExpanded: true)
+        let panelHeightBoost = BottomSheetPanel.layoutHeightBoost(
+            isExpanded: true,
+            contentHeight: panelLayoutMetrics.contentHeight
+        )
         let delta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            scale: viewportScale,
             panelHeightBoost: panelHeightBoost,
             isPanelExpanded: isExpanded
         )
         guard delta != .zero else { return }
 
-        withAnimation(.smooth(duration: 0.24)) {
+        withAnimation(BottomSheetPanel.panelMotion) {
             viewportOffset = viewportOffset + delta
         }
     }

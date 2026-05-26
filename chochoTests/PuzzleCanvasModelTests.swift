@@ -1,6 +1,7 @@
 import CoreGraphics
 import SwiftUI
 import Testing
+import UIKit
 @testable import chocho
 
 struct PuzzleCanvasModelTests {
@@ -30,7 +31,11 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func panelLayoutHeightBoostKeepsPhotoFitScaleStable() {
-        let boost = BottomSheetPanel.layoutHeightBoost(isExpanded: true)
+        let contentHeight = BottomSheetPanel.fallbackContentHeight
+        let boost = BottomSheetPanel.layoutHeightBoost(
+            isExpanded: true,
+            contentHeight: contentHeight
+        )
         #expect(boost > 0)
 
         let collapsedViewport = CGSize(width: 390, height: 500)
@@ -53,27 +58,50 @@ struct PuzzleCanvasModelTests {
 
         #expect(collapsedLayout.photoFrame.size == expandedLayout.photoFrame.size)
         #expect(collapsedLayout.photoFrame.origin == expandedLayout.photoFrame.origin)
-        #expect(BottomSheetPanel.layoutHeightBoost(isExpanded: false) == 0)
+        #expect(
+            BottomSheetPanel.layoutHeightBoost(
+                isExpanded: false,
+                contentHeight: contentHeight
+            ) == 0
+        )
+    }
+
+    @Test func shorterPanelContentProducesSmallerLayoutHeightBoost() {
+        let tallContent: CGFloat = 320
+        let shortContent: CGFloat = 120
+
+        let tallBoost = BottomSheetPanel.layoutHeightBoost(
+            isExpanded: true,
+            contentHeight: tallContent
+        )
+        let shortBoost = BottomSheetPanel.layoutHeightBoost(
+            isExpanded: true,
+            contentHeight: shortContent
+        )
+
+        #expect(shortBoost < tallBoost)
     }
 
     @Test func panelExpansionOffsetDeltaShiftsCanvasUpWhenPanelExpands() {
-        let boost = BottomSheetPanel.layoutHeightBoost(isExpanded: true)
-        let scale: CGFloat = 1.5
+        let boost = BottomSheetPanel.layoutHeightBoost(
+            isExpanded: true,
+            contentHeight: BottomSheetPanel.fallbackContentHeight
+        )
+        let dodge = boost * PuzzleCanvasViewport.panelExpansionDodgeFraction
 
         let expandedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            scale: scale,
             panelHeightBoost: boost,
             isPanelExpanded: true
         )
         let collapsedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            scale: scale,
             panelHeightBoost: boost,
             isPanelExpanded: false
         )
 
         #expect(expandedDelta.width == 0)
-        #expect(expandedDelta.height == -scale * boost / 2)
+        #expect(expandedDelta.height == -dodge)
         #expect(collapsedDelta.height == -expandedDelta.height)
+        #expect(dodge < boost)
     }
 
     @Test func layoutKeepsPhotoSizeWhenExtensionRatioChanges() {
@@ -95,7 +123,7 @@ struct PuzzleCanvasModelTests {
         #expect(extended.referenceComposedFrame == baseline.referenceComposedFrame)
     }
 
-    @Test func viewportResetFitsComposedWidthToScreenEdges() {
+    @Test func viewportResetFitsComposedWidthToNinetyPercentOfScreen() {
         let availableSize = CGSize(width: 600, height: 240)
         let layout = PuzzleCanvasLayout.layout(
             imageSize: CGSize(width: 1000, height: 500),
@@ -109,11 +137,14 @@ struct PuzzleCanvasModelTests {
         let viewportCenter = CGPoint(x: availableSize.width / 2, y: availableSize.height / 2)
         let visibleFrame = layout.visibleComposedFrame
         let scale = reset.scale
+        let horizontalInset = availableSize.width * (1 - PuzzleCanvasViewport.resetViewportWidthFraction) / 2
 
-        #expect(isApproximatelyEqual(scale, 600.0 / 960.0))
+        #expect(isApproximatelyEqual(scale, 600.0 * 0.9 / 960.0))
         #expect(
             reset.offset.width
-            == -viewportCenter.x - (visibleFrame.minX - viewportCenter.x) * scale
+            == -viewportCenter.x
+                - (visibleFrame.minX - viewportCenter.x) * scale
+                + horizontalInset
         )
         #expect(
             reset.offset.height
@@ -129,8 +160,8 @@ struct PuzzleCanvasModelTests {
             + (visibleFrame.maxX - viewportCenter.x) * scale
             + reset.offset.width
 
-        #expect(leftEdge == 0)
-        #expect(rightEdge == availableSize.width)
+        #expect(isApproximatelyEqual(leftEdge, horizontalInset))
+        #expect(isApproximatelyEqual(rightEdge, availableSize.width - horizontalInset))
     }
 
     @Test func magnifyAdjustedOffsetKeepsAnchorPointFixed() {
@@ -161,7 +192,7 @@ struct PuzzleCanvasModelTests {
         #expect(anchoredScreenPoint.y == anchor.y)
     }
 
-    @Test func viewportResetScalesPhotoOnlyCanvasToScreenEdges() {
+    @Test func viewportResetScalesPhotoOnlyCanvasToNinetyPercentOfScreen() {
         let availableSize = CGSize(width: 600, height: 240)
         let layout = PuzzleCanvasLayout.layout(
             imageSize: CGSize(width: 1000, height: 500),
@@ -172,9 +203,11 @@ struct PuzzleCanvasModelTests {
             layout: layout,
             availableSize: availableSize
         )
+        let horizontalInset = availableSize.width * (1 - PuzzleCanvasViewport.resetViewportWidthFraction) / 2
 
-        #expect(isApproximatelyEqual(reset.scale, 600.0 / 480.0))
-        #expect(reset.offset == CGSize.zero)
+        #expect(isApproximatelyEqual(reset.scale, 600.0 * 0.9 / 480.0))
+        #expect(isApproximatelyEqual(reset.offset.width, horizontalInset))
+        #expect(reset.offset.height == 0)
     }
 
     @Test func exportViewportTransformAlignsVisibleCompositionToExportBounds() {
@@ -265,6 +298,72 @@ struct PuzzleCanvasModelTests {
         ])
     }
 
+    @Test func dotCentersStayInMaxBackgroundCoordinatesWhenRightBackgroundIsClipped() {
+        let imageSize = CGSize(width: 1000, height: 500)
+        let availableSize = CGSize(width: 600, height: 240)
+        let fullBackgroundLayout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: availableSize,
+            extensionRatio: 1,
+            extensionSide: .right
+        )
+        let clippedBackgroundLayout = PuzzleCanvasLayout.layout(
+            imageSize: imageSize,
+            availableSize: availableSize,
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+        let position = CGPoint(x: 0.8, y: 0.4)
+
+        let fullCenters = PuzzleCanvasCoordinate.dotCenters(
+            for: position,
+            in: fullBackgroundLayout
+        )
+        let clippedCenters = PuzzleCanvasCoordinate.dotCenters(
+            for: position,
+            in: clippedBackgroundLayout
+        )
+
+        #expect(fullCenters == clippedCenters)
+        #expect(clippedCenters == [
+            CGPoint(x: 384, y: 96),
+            CGPoint(x: 864, y: 96)
+        ])
+        #expect(clippedBackgroundLayout.visibleComposedFrame.maxX < clippedCenters[1].x)
+    }
+
+    @Test func dotCentersStayInMaxBackgroundCoordinatesForAllBackgroundSides() {
+        let imageSize = CGSize(width: 1000, height: 500)
+        let availableSize = CGSize(width: 600, height: 240)
+        let position = CGPoint(x: 0.3, y: 0.7)
+
+        for side in PuzzleCanvasExtensionSide.allCases {
+            let fullBackgroundLayout = PuzzleCanvasLayout.layout(
+                imageSize: imageSize,
+                availableSize: availableSize,
+                extensionRatio: 1,
+                extensionSide: side
+            )
+            let clippedBackgroundLayout = PuzzleCanvasLayout.layout(
+                imageSize: imageSize,
+                availableSize: availableSize,
+                extensionRatio: 0.2,
+                extensionSide: side
+            )
+
+            #expect(
+                PuzzleCanvasCoordinate.dotCenters(
+                    for: position,
+                    in: fullBackgroundLayout
+                )
+                == PuzzleCanvasCoordinate.dotCenters(
+                    for: position,
+                    in: clippedBackgroundLayout
+                )
+            )
+        }
+    }
+
     @Test func adjustedDotsGrowAndShrinkToRequestedCount() {
         let originalDots = PuzzleDotFactory.makeDots(count: 2, shapeAssetName: "眼睛.小物")
 
@@ -301,6 +400,169 @@ struct PuzzleCanvasModelTests {
         #expect(dot.displayColor(usesRandomColor: true, selectedColor: selectedColor) == dot.color)
     }
 
+    @Test func collageDisplayColorSamplesOppositeLayerAtMirrorPosition() throws {
+        let image = try #require(makeSolidTestImage())
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 100, height: 100),
+            availableSize: CGSize(width: 240, height: 120),
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+        let dot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.5, y: 0.5),
+            index: 0,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+        let photoDotColor = PuzzleDotCollageColor.displayColor(
+            for: dot,
+            centerIndex: 0,
+            layout: layout,
+            image: image,
+            backgroundStyle: .stripes,
+            usesRandomDotColors: false,
+            selectedDotColor: .clear
+        )
+        let backgroundDotColor = PuzzleDotCollageColor.displayColor(
+            for: dot,
+            centerIndex: 1,
+            layout: layout,
+            image: image,
+            backgroundStyle: .stripes,
+            usesRandomDotColors: false,
+            selectedDotColor: .clear
+        )
+
+        #expect(photoDotColor != .clear)
+        #expect(backgroundDotColor != .clear)
+        #expect(
+            PuzzleDotCollageColor.imageColor(at: dot.position, image: image)
+            == backgroundDotColor
+        )
+        #expect(
+            PuzzleDotCollageColor.backgroundColor(
+                at: PuzzleDotCollageColor.referenceExtensionMirrorPosition(
+                    forPhotoPosition: dot.position,
+                    extensionSide: layout.extensionSide
+                ),
+                style: .stripes,
+                extensionSize: layout.referenceLocalExtensionGridFrame.size,
+                photoFrameHeight: layout.referenceLocalPhotoFrame.height
+            )
+            == photoDotColor
+        )
+    }
+
+    @Test func collagePhotoDotAppearanceIsStableWhenExtensionIsCropped() throws {
+        let image = try #require(makeSolidTestImage())
+        let dot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.7, y: 0.4),
+            index: 0,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+        let wideLayout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 100, height: 100),
+            availableSize: CGSize(width: 240, height: 120),
+            extensionRatio: 0.8,
+            extensionSide: .right
+        )
+        let narrowLayout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 100, height: 100),
+            availableSize: CGSize(width: 240, height: 120),
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+
+        let widePhotoDotColor = PuzzleDotCollageColor.displayColor(
+            for: dot,
+            centerIndex: 0,
+            layout: wideLayout,
+            image: image,
+            backgroundStyle: .stripes,
+            usesRandomDotColors: false,
+            selectedDotColor: .clear
+        )
+        let narrowPhotoDotColor = PuzzleDotCollageColor.displayColor(
+            for: dot,
+            centerIndex: 0,
+            layout: narrowLayout,
+            image: image,
+            backgroundStyle: .stripes,
+            usesRandomDotColors: false,
+            selectedDotColor: .clear
+        )
+
+        #expect(widePhotoDotColor == narrowPhotoDotColor)
+    }
+
+    @Test func opaqueSelectedColorDisablesCollageRendering() {
+        let dot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.5, y: 0.5),
+            index: 0,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+
+        #expect(PuzzleDotCollageColor.usesCollageTint(selectedDotColor: .clear))
+        #expect(!PuzzleDotCollageColor.usesCollageTint(selectedDotColor: Color.red))
+        #expect(
+            !PuzzleDotCollageColor.shouldRenderCollageContent(
+                for: dot,
+                usesRandomDotColors: false,
+                extensionRatio: 0.2,
+                selectedDotColor: Color.red
+            )
+        )
+        #expect(
+            PuzzleDotCollageColor.shouldRenderCollageContent(
+                for: dot,
+                usesRandomDotColors: false,
+                extensionRatio: 0.2,
+                selectedDotColor: .clear
+            )
+        )
+    }
+
+    @Test func collageDisplayColorIgnoresPngStickerDots() throws {
+        let image = try #require(makeSolidTestImage())
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 100, height: 100),
+            availableSize: CGSize(width: 240, height: 120),
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+        let pngDot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.5, y: 0.5),
+            index: 0,
+            shapeAssetName: "鱼"
+        )
+        let selectedColor = Color.red
+
+        #expect(!pngDot.supportsCollageTinting)
+        #expect(
+            PuzzleDotCollageColor.displayColor(
+                for: pngDot,
+                centerIndex: 0,
+                layout: layout,
+                image: image,
+                backgroundStyle: .stripes,
+                usesRandomDotColors: false,
+                selectedDotColor: selectedColor
+            )
+            == selectedColor
+        )
+        #expect(
+            PuzzleDotCollageColor.displayColor(
+                for: pngDot,
+                centerIndex: 1,
+                layout: layout,
+                image: image,
+                backgroundStyle: .stripes,
+                usesRandomDotColors: false,
+                selectedDotColor: selectedColor
+            )
+            == selectedColor
+        )
+    }
+
     @Test func builtInBasicDotShapesAreAvailableForDrawing() {
         let builtInNames = BuiltInDotShape.allCases.map(\.rawValue)
         let basicShapeNames = DotShapeAsset.shapes(for: .basic, recentNames: []).map(\.name)
@@ -313,6 +575,33 @@ struct PuzzleCanvasModelTests {
         #expect(basicShapeNames.starts(with: builtInNames))
         #expect(dot.builtInShape == .star)
         #expect(dot.usesTemplateColor)
+    }
+
+    @Test func categorizedAssetDotsRenderLargerThanBasicDots() {
+        let basicDot = PuzzleDotFactory.makeDot(
+            position: .zero,
+            index: 0,
+            shapeAssetName: "星1"
+        )
+        let categorizedDot = PuzzleDotFactory.makeDot(
+            position: .zero,
+            index: 0,
+            shapeAssetName: "鱼1.纽扣"
+        )
+
+        #expect(basicDot.displaySizeScale == 1)
+        #expect(categorizedDot.displaySizeScale == 1.25)
+    }
+
+    @Test func assetDotsWithoutKnownCategorySuffixRenderAsBasicDots() {
+        let basicDot = PuzzleDotFactory.makeDot(
+            position: .zero,
+            index: 0,
+            shapeAssetName: "圆.brush"
+        )
+
+        #expect(basicDot.usesTemplateColor)
+        #expect(basicDot.displaySizeScale == 1)
     }
 
     @Test func defaultDotShapeSelectionIsCircle() {
@@ -756,28 +1045,87 @@ struct PuzzleCanvasModelTests {
 
     @Test func dotShapeCatalogGroupsItemsByPanelCategory() {
         #expect(DotShapeCategory.panelOrder.map(\.title) == ["最近", "基础", "小物", "彩纸", "贴纸", "纽扣", "水钻", "布", "针线"])
-        #expect(DotShapeAsset.all.filter { $0.matches(category: .objects) }.map(\.title).prefix(4) == ["工牌", "未标题-1", "眼睛", "花束"])
+        #expect(DotShapeAsset.all.filter { $0.matches(category: .objects) }.map(\.name).contains("眼睛.小物"))
+    }
+
+    @Test func assetDotNamesUseFinalComponentAsCategory() {
+        let rhinestoneShape = DotShapeAsset(name: "圆.brush.水钻")
+
+        #expect(rhinestoneShape.title == "圆.brush")
+        #expect(rhinestoneShape.category == "水钻")
+        #expect(rhinestoneShape.matches(category: .rhinestone))
+    }
+
+    @Test func dotShapeCategoryUsesOnlyKnownFinalSuffix() {
+        let basicShapeWithDotInName = DotShapeAsset(name: "圆.brush")
+        let basicShapeNames = DotShapeAsset.shapes(for: .basic, recentNames: []).map(\.name)
+        let stickerShapeNames = DotShapeAsset.shapes(for: .sticker, recentNames: []).map(\.name)
+        let rhinestoneShapeNames = DotShapeAsset.shapes(for: .rhinestone, recentNames: []).map(\.name)
+
+        #expect(basicShapeWithDotInName.title == "圆.brush")
+        #expect(basicShapeWithDotInName.category == "基础")
+        #expect(basicShapeWithDotInName.matches(category: .basic))
+        #expect(basicShapeNames.contains("心"))
+        #expect(!basicShapeNames.contains("心.水钻"))
+        #expect(rhinestoneShapeNames.contains("心.水钻"))
+        #expect(stickerShapeNames.contains("鱼.贴纸"))
+    }
+
+    @Test func generatedDotShapeCatalogFeedsPanelShapeList() {
+        let paperShapeNames = DotShapeAsset.shapes(for: .paper, recentNames: []).map(\.name)
+
+        #expect(paperShapeNames.contains("彩纸5.彩纸"))
+    }
+
+    @Test func assetDotImageNamesUseCompiledCatalogName() {
+        let shape = DotShapeAsset(name: "彩纸5.彩纸")
+
+        #expect(shape.assetImageName == "public/彩纸5.彩纸")
+    }
+
+    @Test func basicAssetDotPreviewsUseTemplateTinting() {
+        let basicShape = DotShapeAsset(name: "星1")
+        let categorizedShape = DotShapeAsset(name: "彩纸5.彩纸")
+
+        #expect(basicShape.usesTemplatePreview)
+        #expect(!categorizedShape.usesTemplatePreview)
+    }
+
+    @Test func datasetDotAssetsLoadAsImagesForPanelPreview() {
+        let image = DotShapeAssetImage.uiImage(named: DotShapeAsset(name: "彩纸5.彩纸").assetImageName)
+
+        #expect(image != nil)
+    }
+
+    @Test func categorizedDotAssetImagesUseExactDataAssetInsteadOfBaseImageFallback() throws {
+        for assetName in ["public/心.水钻", "public/星1.纽扣"] {
+            let loadedImage = try #require(DotShapeAssetImage.uiImage(named: assetName))
+            let dataAsset = try #require(NSDataAsset(name: assetName))
+            let exactImage = try #require(UIImage(data: dataAsset.data))
+
+            #expect(normalizedPNGData(loadedImage) == normalizedPNGData(exactImage))
+        }
     }
 
     @Test func basicSvgDotShapesUseUnifiedPreviewPadding() {
-        let basicShape = DotShapeAsset(name: "星1", previewName: nil)
-        let objectShape = DotShapeAsset(name: "眼睛.小物", previewName: "眼睛.小物.preview")
+        let basicShape = DotShapeAsset(name: "星1")
+        let objectShape = DotShapeAsset(name: "眼睛.小物")
 
         #expect(basicShape.previewTilePadding == 16)
         #expect(objectShape.previewTilePadding == 9)
     }
 
     @Test func recentDotShapeListMovesSelectedShapeToFrontWithoutDuplicates() {
-        let first = DotShapeAsset(name: "眼睛.小物", previewName: "眼睛.小物.preview")
-        let second = DotShapeAsset(name: "花束.小物", previewName: "花束.小物.preview")
+        let first = DotShapeAsset(name: "眼睛.小物")
+        let second = DotShapeAsset(name: "花束.小物")
         let recentNames = DotShapeRecentList.adding(first.name, to: [second.name, first.name], limit: 3)
 
         #expect(recentNames == [first.name, second.name])
     }
 
     @Test func selectingRecentDotShapeKeepsCurrentRecentOrder() {
-        let first = DotShapeAsset(name: "眼睛.小物", previewName: "眼睛.小物.preview")
-        let second = DotShapeAsset(name: "花束.小物", previewName: "花束.小物.preview")
+        let first = DotShapeAsset(name: "眼睛.小物")
+        let second = DotShapeAsset(name: "花束.小物")
 
         let recentNames = DotShapeRecentList.selecting(
             first.name,
@@ -810,4 +1158,44 @@ private func isApproximatelyEqual(
     tolerance: CGFloat = 0.000001
 ) -> Bool {
     abs(lhs - rhs) <= tolerance
+}
+
+private func makeSolidTestImage(
+    width: Int = 40,
+    height: Int = 40,
+    red: CGFloat = 0.2,
+    green: CGFloat = 0.6,
+    blue: CGFloat = 0.9
+) -> UIImage? {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    guard let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        return nil
+    }
+
+    context.setFillColor(CGColor(red: red, green: green, blue: blue, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    guard let cgImage = context.makeImage() else { return nil }
+    return UIImage(cgImage: cgImage)
+}
+
+private func normalizedPNGData(
+    _ image: UIImage,
+    size: CGSize = CGSize(width: 64, height: 64)
+) -> Data? {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = false
+
+    let renderer = UIGraphicsImageRenderer(size: size, format: format)
+    return renderer.image { _ in
+        image.draw(in: CGRect(origin: .zero, size: size))
+    }.pngData()
 }

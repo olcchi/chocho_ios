@@ -1,5 +1,6 @@
 import CoreGraphics
 import SwiftUI
+import UIKit
 
 nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, Equatable {
     case top
@@ -333,11 +334,16 @@ struct CanvasViewportResetKey: Equatable {
 }
 
 enum PuzzleCanvasViewport {
-    /// Fits the visible photo + background width to the screen edges and centers vertically.
+    /// Target width fraction for interactive viewport reset (double-tap / layout change).
+    static let resetViewportWidthFraction: CGFloat = 0.9
+
+    /// Fits the visible photo + background width to the viewport and centers vertically.
+    /// Horizontally centers when `targetViewportWidthFraction` is less than 1.
     /// Matches `PuzzleCanvasCoordinate` viewport transform: scale about available center, then offset.
     static func resetTransform(
         layout: PuzzleCanvasLayoutResult,
-        availableSize: CGSize
+        availableSize: CGSize,
+        targetViewportWidthFraction: CGFloat = resetViewportWidthFraction
     ) -> (scale: CGFloat, offset: CGSize) {
         let visibleFrame = layout.visibleComposedFrame
 
@@ -352,30 +358,38 @@ enum PuzzleCanvasViewport {
             x: availableSize.width / 2,
             y: availableSize.height / 2
         )
-        let scale = availableSize.width / visibleFrame.width
-        let offset = CGSize(
+        let clampedWidthFraction = min(max(targetViewportWidthFraction, 0), 1)
+        let targetWidth = availableSize.width * clampedWidthFraction
+        let scale = targetWidth / visibleFrame.width
+        var offset = CGSize(
             width: -viewportCenter.x - (visibleFrame.minX - viewportCenter.x) * scale,
             height: availableSize.height / 2
                 - viewportCenter.y
                 - (visibleFrame.midY - viewportCenter.y) * scale
         )
+        if clampedWidthFraction < 1 {
+            let horizontalInset = (availableSize.width - visibleFrame.width * scale) / 2
+            offset.width += horizontalInset
+        }
 
         return (scale, offset)
     }
 
+    /// Fraction of bottom-panel expand/collapse height used for canvas dodge.
+    /// Smaller than full re-centering so the canvas nudges without tracking panel travel 1:1.
+    static let panelExpansionDodgeFraction: CGFloat = 0.32
+
     /// Vertical offset delta when the bottom panel expands or collapses.
-    /// Keeps the composed canvas visually centered in the clipped viewport while
-    /// `BottomSheetPanel.layoutHeightBoost` preserves fit scale.
+    /// Screen-space nudge; `BottomSheetPanel.layoutHeightBoost` still preserves fit scale.
     static func panelExpansionOffsetDelta(
-        scale: CGFloat,
         panelHeightBoost: CGFloat,
         isPanelExpanded: Bool
     ) -> CGSize {
-        guard panelHeightBoost > 0, scale.isFinite, scale > 0 else {
+        guard panelHeightBoost > 0 else {
             return .zero
         }
 
-        let verticalShift = -scale * panelHeightBoost / 2
+        let verticalShift = -panelHeightBoost * panelExpansionDodgeFraction
         return CGSize(width: 0, height: isPanelExpanded ? verticalShift : -verticalShift)
     }
 
@@ -424,7 +438,8 @@ enum PuzzleCanvasExport {
 
         return PuzzleCanvasViewport.resetTransform(
             layout: layout,
-            availableSize: exportSize
+            availableSize: exportSize,
+            targetViewportWidthFraction: 1
         )
     }
 }
@@ -657,6 +672,18 @@ nonisolated enum PuzzleCanvasCoordinate {
     }
 
     /// Renders dots in the fixed reference canvas; narrowing extension only clips them.
+    static func dotCenters(
+        for position: CGPoint,
+        in layout: PuzzleCanvasLayoutResult
+    ) -> [CGPoint] {
+        dotCentersInReferenceFrame(
+            position: position,
+            referenceFrame: CGRect(origin: .zero, size: layout.referenceComposedFrame.size),
+            extensionSide: layout.extensionSide
+        )
+    }
+
+    /// Renders dots in the fixed reference canvas; narrowing extension only clips them.
     static func dotCentersInReferenceFrame(
         position: CGPoint,
         referenceFrame: CGRect,
@@ -670,7 +697,10 @@ nonisolated enum PuzzleCanvasCoordinate {
         let extensionSpan = clampedMaxRatio / (1 + clampedMaxRatio)
         let photoFrame: CGRect
         let mirrorFrame: CGRect
-        let mirrorPosition: CGPoint
+        let mirrorPosition = PuzzleDotCollageColor.referenceExtensionMirrorPosition(
+            forPhotoPosition: position,
+            extensionSide: extensionSide
+        )
 
         switch extensionSide {
         case .right:
@@ -687,10 +717,6 @@ nonisolated enum PuzzleCanvasCoordinate {
                 width: referenceFrame.width * extensionSpan,
                 height: referenceFrame.height
             )
-            mirrorPosition = CGPoint(
-                x: position.x / max(clampedMaxRatio, .leastNonzeroMagnitude),
-                y: position.y
-            )
         case .left:
             let photoWidth = referenceFrame.width * photoSpan
             photoFrame = CGRect(
@@ -704,10 +730,6 @@ nonisolated enum PuzzleCanvasCoordinate {
                 y: referenceFrame.minY,
                 width: referenceFrame.width * extensionSpan,
                 height: referenceFrame.height
-            )
-            mirrorPosition = CGPoint(
-                x: position.x / max(clampedMaxRatio, .leastNonzeroMagnitude),
-                y: position.y
             )
         case .bottom:
             let photoHeight = referenceFrame.height * photoSpan
@@ -723,10 +745,6 @@ nonisolated enum PuzzleCanvasCoordinate {
                 width: referenceFrame.width,
                 height: referenceFrame.height * extensionSpan
             )
-            mirrorPosition = CGPoint(
-                x: position.x,
-                y: position.y / max(clampedMaxRatio, .leastNonzeroMagnitude)
-            )
         case .top:
             let photoHeight = referenceFrame.height * photoSpan
             photoFrame = CGRect(
@@ -740,10 +758,6 @@ nonisolated enum PuzzleCanvasCoordinate {
                 y: referenceFrame.minY,
                 width: referenceFrame.width,
                 height: referenceFrame.height * extensionSpan
-            )
-            mirrorPosition = CGPoint(
-                x: position.x,
-                y: position.y / max(clampedMaxRatio, .leastNonzeroMagnitude)
             )
         }
 
@@ -957,15 +971,223 @@ nonisolated struct PuzzleDot: Identifiable, Equatable {
     let shapeAssetName: String
 
     var usesTemplateColor: Bool {
-        !shapeAssetName.contains(".")
+        DotShapeAssetCategoryParser.suffix(in: shapeAssetName) == nil
+    }
+
+    /// Category-suffixed asset dots (e.g. `鱼1.纽扣`) render 25% larger than basic dots.
+    var displaySizeScale: CGFloat {
+        DotShapeAssetCategoryParser.suffix(in: shapeAssetName) == nil ? 1 : 1.25
     }
 
     var builtInShape: BuiltInDotShape? {
         BuiltInDotShape(rawValue: shapeAssetName)
     }
 
+    /// Vector basic shapes (circle/square/triangle/star) use mirror collage tinting.
+    var supportsCollageTinting: Bool {
+        builtInShape != nil
+    }
+
     func displayColor(usesRandomColor: Bool, selectedColor: Color) -> Color {
         usesRandomColor ? color : selectedColor
+    }
+}
+
+/// Default dot tinting: each copy samples the mirrored region on the opposite layer.
+nonisolated enum PuzzleDotCollageColor {
+    private static let fallbackPrimary = Color(.sRGB, red: 165 / 255, green: 231 / 255, blue: 76 / 255, opacity: 1)
+    private static let fallbackSecondary = Color(.sRGB, red: 238 / 255, green: 247 / 255, blue: 221 / 255, opacity: 1)
+    private static let fallbackBorder = Color(.sRGB, red: 226 / 255, green: 232 / 255, blue: 216 / 255, opacity: 1)
+    private static let fallbackBackground = Color(.sRGB, red: 245 / 255, green: 254 / 255, blue: 233 / 255, opacity: 1)
+
+    static func extensionMirrorPosition(
+        forPhotoPosition position: CGPoint,
+        extensionSide: PuzzleCanvasExtensionSide,
+        extensionRatio: CGFloat
+    ) -> CGPoint {
+        let clampedRatio = min(max(extensionRatio, 0), PuzzleCanvasLayout.maxExtensionRatio)
+        let divisor = max(clampedRatio, .leastNonzeroMagnitude)
+
+        switch extensionSide {
+        case .right, .left:
+            return CGPoint(
+                x: position.x / divisor,
+                y: position.y
+            )
+        case .bottom, .top:
+            return CGPoint(
+                x: position.x,
+                y: position.y / divisor
+            )
+        }
+    }
+
+    /// Mirror position in the full reference extension grid (stable when visible extension is cropped).
+    static func referenceExtensionMirrorPosition(
+        forPhotoPosition position: CGPoint,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGPoint {
+        extensionMirrorPosition(
+            forPhotoPosition: position,
+            extensionSide: extensionSide,
+            extensionRatio: PuzzleCanvasLayout.maxExtensionRatio
+        )
+    }
+
+    /// Transparent dot color means mirror collage; any opaque pick uses flat tint instead.
+    static func usesCollageTint(selectedDotColor: Color) -> Bool {
+        var alpha: CGFloat = 0
+        UIColor(selectedDotColor).getWhite(nil, alpha: &alpha)
+        return alpha < 0.01
+    }
+
+    static func shouldRenderCollageContent(
+        for dot: PuzzleDot,
+        usesRandomDotColors: Bool,
+        extensionRatio: CGFloat,
+        selectedDotColor: Color
+    ) -> Bool {
+        dot.supportsCollageTinting
+            && !usesRandomDotColors
+            && extensionRatio > 0
+            && usesCollageTint(selectedDotColor: selectedDotColor)
+    }
+
+    static func clampedExtensionSamplePoint(_ mirrorPosition: CGPoint) -> CGPoint {
+        CGPoint(
+            x: min(max(mirrorPosition.x, 0), 1),
+            y: min(max(mirrorPosition.y, 0), 1)
+        )
+    }
+
+    static func contentOffsetInDot(
+        dotSize: CGFloat,
+        normalizedPoint: CGPoint,
+        contentSize: CGSize
+    ) -> CGSize {
+        CGSize(
+            width: dotSize / 2 - normalizedPoint.x * contentSize.width,
+            height: dotSize / 2 - normalizedPoint.y * contentSize.height
+        )
+    }
+
+    static func displayColor(
+        for dot: PuzzleDot,
+        centerIndex: Int,
+        layout: PuzzleCanvasLayoutResult,
+        image: UIImage,
+        backgroundStyle: PuzzleBackgroundStyle,
+        usesRandomDotColors: Bool,
+        selectedDotColor: Color
+    ) -> Color {
+        if usesRandomDotColors {
+            return dot.displayColor(usesRandomColor: true, selectedColor: selectedDotColor)
+        }
+
+        guard dot.supportsCollageTinting,
+              usesCollageTint(selectedDotColor: selectedDotColor) else {
+            return selectedDotColor
+        }
+
+        guard layout.extensionRatio > 0 else {
+            return selectedDotColor
+        }
+
+        let mirrorPosition = referenceExtensionMirrorPosition(
+            forPhotoPosition: dot.position,
+            extensionSide: layout.extensionSide
+        )
+        let extensionFrame = layout.referenceLocalExtensionGridFrame
+
+        switch centerIndex {
+        case 0:
+            return backgroundColor(
+                at: mirrorPosition,
+                style: backgroundStyle,
+                extensionSize: extensionFrame.size,
+                photoFrameHeight: layout.referenceLocalPhotoFrame.height
+            )
+        default:
+            return imageColor(at: dot.position, image: image)
+        }
+    }
+
+    static func imageColor(at normalizedPoint: CGPoint, image: UIImage) -> Color {
+        guard let cgImage = image.cgImage else { return fallbackPrimary }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return fallbackPrimary }
+
+        let u = min(max(normalizedPoint.x, 0), 1)
+        let v = min(max(normalizedPoint.y, 0), 1)
+        let x = min(width - 1, max(0, Int((CGFloat(width) * u).rounded(.down))))
+        let y = min(height - 1, max(0, Int((CGFloat(height) * v).rounded(.down))))
+
+        guard let dataProvider = cgImage.dataProvider,
+              let data = dataProvider.data,
+              let bytes = CFDataGetBytePtr(data) else {
+            return fallbackPrimary
+        }
+
+        let bytesPerPixel = max(cgImage.bitsPerPixel / 8, 4)
+        let offset = y * cgImage.bytesPerRow + x * bytesPerPixel
+
+        return Color(
+            .sRGB,
+            red: Double(bytes[offset]) / 255,
+            green: Double(bytes[offset + 1]) / 255,
+            blue: Double(bytes[offset + 2]) / 255,
+            opacity: 1
+        )
+    }
+
+    static func backgroundColor(
+        at normalizedPoint: CGPoint,
+        style: PuzzleBackgroundStyle,
+        extensionSize: CGSize,
+        photoFrameHeight: CGFloat
+    ) -> Color {
+        guard extensionSize.width > 0, extensionSize.height > 0 else {
+            return fallbackSecondary
+        }
+
+        let u = min(max(normalizedPoint.x, 0), 1)
+        let v = min(max(normalizedPoint.y, 0), 1)
+        let point = CGPoint(
+            x: u * extensionSize.width,
+            y: v * extensionSize.height
+        )
+        let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
+        let lineWidth = PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: photoFrameHeight)
+
+        switch style {
+        case .grid:
+            let nearestVerticalDistance = distanceToGridLine(
+                coordinate: point.x,
+                spacing: spacing
+            )
+            let nearestHorizontalDistance = distanceToGridLine(
+                coordinate: point.y,
+                spacing: spacing
+            )
+            let nearestGridDistance = min(nearestVerticalDistance, nearestHorizontalDistance)
+
+            if nearestGridDistance <= lineWidth / 2 {
+                return fallbackBorder
+            }
+            return fallbackSecondary
+        case .stripes:
+            let bandIndex = Int(point.y / spacing)
+            return bandIndex.isMultiple(of: 2) ? fallbackSecondary : fallbackBackground
+        }
+    }
+
+    private static func distanceToGridLine(coordinate: CGFloat, spacing: CGFloat) -> CGFloat {
+        guard spacing > 0 else { return .greatestFiniteMagnitude }
+
+        let remainder = coordinate.truncatingRemainder(dividingBy: spacing)
+        return min(remainder, spacing - remainder)
     }
 }
 
