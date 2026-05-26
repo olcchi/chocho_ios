@@ -42,23 +42,30 @@ struct PuzzleCanvasModelTests {
         #expect(shortOcclusion < tallOcclusion)
     }
 
-    @Test func panelExpansionOffsetDeltaShiftsCanvasUpWhenPanelExpands() {
-        let occlusion = BottomSheetPanel.panelExpansionOcclusionHeight(contentHeight: 228)
-        let dodge = occlusion * PuzzleCanvasViewport.panelExpansionDodgeFraction
-
-        let expandedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            panelOcclusionHeight: occlusion,
-            isPanelExpanded: true
+    @Test func panelTrackingOffsetFollowsBottomInsetChanges() {
+        let availableSize = CGSize(width: 600, height: 800)
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: availableSize,
+            extensionRatio: 0
         )
-        let collapsedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            panelOcclusionHeight: occlusion,
-            isPanelExpanded: false
+        let shortInset: CGFloat = 120
+        let tallInset: CGFloat = 320
+
+        let shortTracking = PuzzleCanvasViewport.panelTrackingOffset(
+            layout: layout,
+            availableSize: availableSize,
+            bottomPanelInset: shortInset
+        )
+        let tallTracking = PuzzleCanvasViewport.panelTrackingOffset(
+            layout: layout,
+            availableSize: availableSize,
+            bottomPanelInset: tallInset
         )
 
-        #expect(expandedDelta.width == 0)
-        #expect(expandedDelta.height == -dodge)
-        #expect(collapsedDelta.height == -expandedDelta.height)
-        #expect(dodge < occlusion)
+        #expect(tallTracking.height < shortTracking.height)
+        #expect(tallTracking.height < 0)
+        #expect(shortTracking.height < 0)
     }
 
     @Test func layoutKeepsPhotoSizeWhenExtensionRatioChanges() {
@@ -147,6 +154,28 @@ struct PuzzleCanvasModelTests {
 
         #expect(anchoredScreenPoint.x == anchor.x)
         #expect(anchoredScreenPoint.y == anchor.y)
+    }
+
+    @Test func viewportResetCentersAboveBottomPanelInset() {
+        let availableSize = CGSize(width: 600, height: 800)
+        let bottomPanelInset: CGFloat = 280
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: availableSize,
+            extensionRatio: 0
+        )
+        let reset = PuzzleCanvasViewport.resetTransform(
+            layout: layout,
+            availableSize: availableSize,
+            bottomPanelInset: bottomPanelInset
+        )
+        let visibleCenterY = (availableSize.height - bottomPanelInset) / 2
+        let viewportCenterY = availableSize.height / 2
+        let scaledMidY = viewportCenterY
+            + (layout.visibleComposedFrame.midY - viewportCenterY) * reset.scale
+            + reset.offset.height
+
+        #expect(isApproximatelyEqual(scaledMidY, visibleCenterY, tolerance: 0.5))
     }
 
     @Test func viewportResetScalesPhotoOnlyCanvasToNinetyPercentOfScreen() {

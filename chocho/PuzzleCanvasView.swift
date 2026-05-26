@@ -8,12 +8,15 @@ struct PuzzleCanvasView: View {
     var backgroundStyle: PuzzleBackgroundStyle = .grid
     var backgroundColors: PuzzleBackgroundColors = .default
     var imageViewportResetID: UUID = UUID()
+    /// Bottom overlay height (expanded/collapsed panel) used to center content above the panel.
+    var bottomPanelInset: CGFloat = 0
     let dots: [PuzzleDot]
     var dotScale: CGFloat = 1
     var dotColor: Color = .primary
     var usesRandomDotColors = false
     var viewportScale: CGFloat = 1
     var viewportOffset: CGSize = .zero
+    var gestureOffset: CGSize = .zero
     var tracePoints: [PuzzleCanvasTracePoint] = []
     var isTraceDrawingEnabled = false
     var onTapCanvas: ((PuzzleCanvasTracePoint) -> Void)?
@@ -37,6 +40,10 @@ struct PuzzleCanvasView: View {
             let referenceFrame = layout.referenceComposedFrame
             let referenceLocalPhotoFrame = layout.referenceLocalPhotoFrame
             let extensionGridFrame = layout.referenceLocalExtensionGridFrame
+            let displayOffset = displayViewportOffset(
+                layout: layout,
+                availableSize: proxy.size
+            )
 
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
@@ -116,7 +123,8 @@ struct PuzzleCanvasView: View {
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .scaleEffect(viewportScale)
-                .offset(viewportOffset)
+                .offset(displayOffset)
+                .animation(BottomSheetPanel.panelMotion, value: bottomPanelInset)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .contentShape(Rectangle())
@@ -158,6 +166,21 @@ struct PuzzleCanvasView: View {
         }
     }
 
+    private func displayViewportOffset(
+        layout: PuzzleCanvasLayoutResult,
+        availableSize: CGSize
+    ) -> CGSize {
+        let panelTracking = PuzzleCanvasViewport.panelTrackingOffset(
+            layout: layout,
+            availableSize: availableSize,
+            bottomPanelInset: bottomPanelInset
+        )
+        return CGSize(
+            width: viewportOffset.width + panelTracking.width + gestureOffset.width,
+            height: viewportOffset.height + panelTracking.height + gestureOffset.height
+        )
+    }
+
     @ViewBuilder
     private func extensionBackgroundView(photoFrameHeight: CGFloat) -> some View {
         switch backgroundStyle {
@@ -187,7 +210,10 @@ struct PuzzleCanvasView: View {
                     availableSize: availableSize,
                     layout: layout,
                     scale: viewportScale,
-                    offset: viewportOffset
+                    offset: displayViewportOffset(
+                        layout: layout,
+                        availableSize: availableSize
+                    )
                 ) else {
                     return
                 }
@@ -207,14 +233,18 @@ struct PuzzleCanvasView: View {
                     availableSize: availableSize,
                     layout: layout,
                     scale: viewportScale,
-                    offset: viewportOffset
+                    offset: displayViewportOffset(
+                        layout: layout,
+                        availableSize: availableSize
+                    )
                 ) else {
                     return
                 }
 
                 let reset = PuzzleCanvasViewport.resetTransform(
                     layout: layout,
-                    availableSize: availableSize
+                    availableSize: availableSize,
+                    bottomPanelInset: 0
                 )
                 onDoubleTapBackground?(reset.scale, reset.offset)
             }
@@ -232,10 +262,13 @@ struct PuzzleCanvasView: View {
                         availableSize: availableSize,
                         layout: layout,
                         scale: viewportScale,
-                        offset: viewportOffset
+                        offset: displayViewportOffset(
+                            layout: layout,
+                            availableSize: availableSize
+                        )
                       ) else {
-                    return
-                }
+                        return
+                      }
 
                 if isTracingCurrentStroke {
                     appendTracePoint(point)
@@ -298,8 +331,12 @@ private struct ViewportResetObserver: View {
     }
 
     private func attemptReset() {
-        guard awaitingLayoutReset,
-              availableSize.width > 0,
+        guard awaitingLayoutReset else { return }
+        performResetIfPossible()
+    }
+
+    private func performResetIfPossible() {
+        guard availableSize.width > 0,
               availableSize.height > 0,
               layout.visibleComposedFrame.width > 0,
               layout.visibleComposedFrame.height > 0 else {
@@ -308,7 +345,8 @@ private struct ViewportResetObserver: View {
 
         let reset = PuzzleCanvasViewport.resetTransform(
             layout: layout,
-            availableSize: availableSize
+            availableSize: availableSize,
+            bottomPanelInset: 0
         )
         onReset?(reset.scale, reset.offset)
         awaitingLayoutReset = false

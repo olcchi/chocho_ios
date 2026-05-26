@@ -22,7 +22,7 @@ struct ContentView: View {
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
     @State private var isPanelExpanded = true
-    @State private var panelOcclusionForDodge: CGFloat = 0
+    @State private var panelVisibleHeight: CGFloat = 0
     @State private var dotCount: Double = 10
     @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
     @State private var selectedDotColor: Color = .clear
@@ -71,6 +71,7 @@ struct ContentView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
                 BottomSheetPanel(
+                    panelVisibleHeight: $panelVisibleHeight,
                     selectedTab: $selectedTab,
                     isExpanded: $isPanelExpanded,
                     dotCount: $dotCount,
@@ -105,10 +106,6 @@ struct ContentView: View {
                 Color.background
                     .ignoresSafeArea()
             }
-            .onPreferenceChange(PanelVisibleHeightKey.self) { height in
-                guard height > 0, isPanelExpanded else { return }
-                panelOcclusionForDodge = max(0, height - BottomSheetPanel.collapsedHeight)
-            }
         }
         .task(id: selectedPhotoItem) {
             await loadSelectedPhoto()
@@ -140,9 +137,6 @@ struct ContentView: View {
         .onChange(of: dotCount) { _, newDotCount in
             syncPuzzleDots(to: Int(newDotCount.rounded()))
         }
-        .onChange(of: isPanelExpanded) { _, isExpanded in
-            dodgeCanvasForPanelExpansion(isExpanded: isExpanded)
-        }
         .sheet(item: $shareItem) { item in
             CanvasShareSheet(fileURL: item.fileURL)
                 .presentationDetents([.medium, .large], selection: $shareSheetDetent)
@@ -159,6 +153,13 @@ struct ContentView: View {
         }
     }
 
+    private var bottomPanelInset: CGFloat {
+        BottomSheetPanel.bottomPanelInset(
+            isExpanded: isPanelExpanded,
+            panelVisibleHeight: panelVisibleHeight
+        )
+    }
+
     @ViewBuilder
     private var canvasArea: some View {
         if let canvasImage {
@@ -170,12 +171,14 @@ struct ContentView: View {
                     backgroundStyle: backgroundStyle,
                     backgroundColors: backgroundColors,
                     imageViewportResetID: imageViewportResetID,
+                    bottomPanelInset: bottomPanelInset,
                     dots: puzzleDots,
                     dotScale: CGFloat(dotScale),
                     dotColor: selectedDotColor,
                     usesRandomDotColors: usesRandomDotColors,
                     viewportScale: viewportScale,
-                    viewportOffset: viewportOffset + gestureOffset,
+                    viewportOffset: viewportOffset,
+                    gestureOffset: gestureOffset,
                     tracePoints: tracePoints,
                     isTraceDrawingEnabled: isTraceDrawingEnabled,
                     onTapCanvas: addPuzzleDot(at:),
@@ -197,6 +200,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .padding(.bottom, bottomPanelInset)
         }
     }
 
@@ -450,21 +454,6 @@ struct ContentView: View {
         withAnimation(.easeInOut(duration: 0.24)) {
             viewportScale = scale
             viewportOffset = offset
-        }
-    }
-
-    @MainActor
-    private func dodgeCanvasForPanelExpansion(isExpanded: Bool) {
-        guard canvasImage != nil else { return }
-
-        let delta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            panelOcclusionHeight: panelOcclusionForDodge,
-            isPanelExpanded: isExpanded
-        )
-        guard delta != .zero else { return }
-
-        withAnimation(BottomSheetPanel.panelMotion) {
-            viewportOffset = viewportOffset + delta
         }
     }
 

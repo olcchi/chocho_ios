@@ -55,14 +55,6 @@ enum PanelTab: String, CaseIterable, Identifiable {
     }
 }
 
-struct PanelVisibleHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 struct BottomSheetPanel: View {
     static let topCornerRadius: CGFloat = 24
     static let panelMotion: Animation = .smooth(duration: 0.24)
@@ -106,6 +98,22 @@ struct BottomSheetPanel: View {
             - visibleHeight(isExpanded: false, contentHeight: contentHeight)
     }
 
+    /// Typical expanded content height for the default tab, used before the panel is measured.
+    static let defaultExpandedContentHeight: CGFloat = 228
+
+    static var defaultExpandedVisibleHeight: CGFloat {
+        visibleHeight(isExpanded: true, contentHeight: defaultExpandedContentHeight)
+    }
+
+    /// Height reserved at the bottom of the canvas stack for the panel overlay.
+    static func bottomPanelInset(isExpanded: Bool, panelVisibleHeight: CGFloat) -> CGFloat {
+        if panelVisibleHeight > 0 {
+            return panelVisibleHeight
+        }
+        return isExpanded ? defaultExpandedVisibleHeight : collapsedHeight
+    }
+
+    @Binding var panelVisibleHeight: CGFloat
     @Binding var selectedTab: PanelTab
     @Binding var isExpanded: Bool
     @Binding var dotCount: Double
@@ -134,10 +142,9 @@ struct BottomSheetPanel: View {
         .padding(.horizontal, Self.contentHorizontalInset)
         .padding(.bottom, Self.contentBottomInset + bottomSafeAreaInset)
         .frame(maxWidth: .infinity, alignment: .bottom)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(key: PanelVisibleHeightKey.self, value: proxy.size.height)
-            }
+        .onGeometryChange(for: CGFloat.self, of: \.size.height) { _, newHeight in
+            guard newHeight > 0 else { return }
+            panelVisibleHeight = newHeight
         }
         .background(panelBackground)
         .clipped()
@@ -156,6 +163,7 @@ struct BottomSheetPanel: View {
                     .padding(.top, Self.panelContentTopPadding)
                     .padding(.bottom, Self.tabBarTopSpacing)
                     .transition(.opacity)
+                    .animation(Self.panelMotion, value: selectedTab)
             }
         }
         .clipped()
@@ -183,6 +191,7 @@ struct BottomSheetPanel: View {
             backgroundColors: $backgroundColors,
             onDrawDots: onDrawDots
         )
+        .id(selectedTab)
         .fixedSize(horizontal: false, vertical: true)
         .opacity(isPanelEnabled ? 1 : 0.42)
         .allowsHitTesting(isPanelEnabled)

@@ -355,6 +355,7 @@ enum PuzzleCanvasViewport {
     static func resetTransform(
         layout: PuzzleCanvasLayoutResult,
         availableSize: CGSize,
+        bottomPanelInset: CGFloat = 0,
         targetViewportWidthFraction: CGFloat = resetViewportWidthFraction
     ) -> (scale: CGFloat, offset: CGSize) {
         let visibleFrame = layout.visibleComposedFrame
@@ -366,16 +367,21 @@ enum PuzzleCanvasViewport {
             return (1, .zero)
         }
 
+        let clampedBottomInset = min(
+            max(bottomPanelInset, 0),
+            max(availableSize.height - 1, 0)
+        )
         let viewportCenter = CGPoint(
             x: availableSize.width / 2,
             y: availableSize.height / 2
         )
+        let targetCenterY = (availableSize.height - clampedBottomInset) / 2
         let clampedWidthFraction = min(max(targetViewportWidthFraction, 0), 1)
         let targetWidth = availableSize.width * clampedWidthFraction
         let scale = targetWidth / visibleFrame.width
         var offset = CGSize(
             width: -viewportCenter.x - (visibleFrame.minX - viewportCenter.x) * scale,
-            height: availableSize.height / 2
+            height: targetCenterY
                 - viewportCenter.y
                 - (visibleFrame.midY - viewportCenter.y) * scale
         )
@@ -391,17 +397,31 @@ enum PuzzleCanvasViewport {
     /// Smaller than full re-centering so the canvas nudges without tracking panel travel 1:1.
     static let panelExpansionDodgeFraction: CGFloat = 0.32
 
-    /// Vertical offset delta when the bottom panel expands or collapses over the canvas.
-    static func panelExpansionOffsetDelta(
-        panelOcclusionHeight: CGFloat,
-        isPanelExpanded: Bool
+    /// Live offset that keeps the composed canvas shifted above the current bottom panel height.
+    /// Applied at render time so content tracks panel resize animations frame-by-frame.
+    static func panelTrackingOffset(
+        layout: PuzzleCanvasLayoutResult,
+        availableSize: CGSize,
+        bottomPanelInset: CGFloat
     ) -> CGSize {
-        guard panelOcclusionHeight > 0 else {
-            return .zero
-        }
-
-        let verticalShift = -panelOcclusionHeight * panelExpansionDodgeFraction
-        return CGSize(width: 0, height: isPanelExpanded ? verticalShift : -verticalShift)
+        let clampedInset = min(
+            max(bottomPanelInset, 0),
+            max(availableSize.height - 1, 0)
+        )
+        let baseline = resetTransform(
+            layout: layout,
+            availableSize: availableSize,
+            bottomPanelInset: 0
+        )
+        let adjusted = resetTransform(
+            layout: layout,
+            availableSize: availableSize,
+            bottomPanelInset: clampedInset
+        )
+        return CGSize(
+            width: adjusted.offset.width - baseline.offset.width,
+            height: adjusted.offset.height - baseline.offset.height
+        )
     }
 
     static let minScale: CGFloat = 0.4
