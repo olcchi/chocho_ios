@@ -983,9 +983,10 @@ nonisolated struct PuzzleDot: Identifiable, Equatable {
         BuiltInDotShape(rawValue: shapeAssetName)
     }
 
-    /// Vector basic shapes (circle/square/triangle/star) use mirror collage tinting.
+    /// Built-in geometry and basic catalog SVG shapes use mirror collage tinting.
     var supportsCollageTinting: Bool {
-        builtInShape != nil
+        if builtInShape != nil { return true }
+        return usesTemplateColor && DotShapeCatalog.assetNames.contains(shapeAssetName)
     }
 
     func displayColor(usesRandomColor: Bool, selectedColor: Color) -> Color {

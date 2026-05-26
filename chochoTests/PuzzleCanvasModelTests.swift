@@ -521,6 +521,24 @@ struct PuzzleCanvasModelTests {
         )
     }
 
+    @Test func basicSvgDotSupportsCollageTinting() {
+        let svgDot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.5, y: 0.5),
+            index: 0,
+            shapeAssetName: "星1"
+        )
+
+        #expect(svgDot.supportsCollageTinting)
+        #expect(
+            PuzzleDotCollageColor.shouldRenderCollageContent(
+                for: svgDot,
+                usesRandomDotColors: false,
+                extensionRatio: 0.2,
+                selectedDotColor: .clear
+            )
+        )
+    }
+
     @Test func collageDisplayColorIgnoresPngStickerDots() throws {
         let image = try #require(makeSolidTestImage())
         let layout = PuzzleCanvasLayout.layout(

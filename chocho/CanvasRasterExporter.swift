@@ -195,6 +195,23 @@ nonisolated enum CanvasRasterExporter {
                             color: uiColor
                         )
                     }
+                } else if PuzzleDotCollageColor.shouldRenderCollageContent(
+                    for: dot,
+                    usesRandomDotColors: usesRandomDotColors,
+                    extensionRatio: layout.extensionRatio,
+                    selectedDotColor: dotColor
+                ) {
+                    drawAssetDotCollage(
+                        assetName: dot.shapeAssetName,
+                        centerIndex: centerIndex,
+                        dot: dot,
+                        in: context,
+                        rect: rect,
+                        image: image,
+                        layout: layout,
+                        backgroundStyle: backgroundStyle,
+                        photoFrameHeight: photoFrameHeight
+                    )
                 } else {
                     let uiColor = UIColor(
                         dot.displayColor(
@@ -226,11 +243,65 @@ nonisolated enum CanvasRasterExporter {
         photoFrameHeight: CGFloat
     ) {
         let path = shape.bezierPath(in: rect)
-        let photoSize = layout.referenceLocalPhotoFrame.size
-        let extensionSize = layout.referenceLocalExtensionGridFrame.size
 
         context.saveGState()
         path.addClip()
+        drawMirrorCollageContent(
+            centerIndex: centerIndex,
+            dot: dot,
+            in: context,
+            rect: rect,
+            image: image,
+            layout: layout,
+            backgroundStyle: backgroundStyle,
+            photoFrameHeight: photoFrameHeight
+        )
+        context.restoreGState()
+    }
+
+    private nonisolated static func drawAssetDotCollage(
+        assetName: String,
+        centerIndex: Int,
+        dot: PuzzleDot,
+        in context: CGContext,
+        rect: CGRect,
+        image: UIImage,
+        layout: PuzzleCanvasLayoutResult,
+        backgroundStyle: PuzzleBackgroundStyle,
+        photoFrameHeight: CGFloat
+    ) {
+        guard let maskImage = DotShapeAssetImage.uiImage(named: "public/\(assetName)"),
+              let maskCGImage = maskImage.cgImage else {
+            return
+        }
+
+        context.saveGState()
+        context.clip(to: rect, mask: maskCGImage)
+        drawMirrorCollageContent(
+            centerIndex: centerIndex,
+            dot: dot,
+            in: context,
+            rect: rect,
+            image: image,
+            layout: layout,
+            backgroundStyle: backgroundStyle,
+            photoFrameHeight: photoFrameHeight
+        )
+        context.restoreGState()
+    }
+
+    private nonisolated static func drawMirrorCollageContent(
+        centerIndex: Int,
+        dot: PuzzleDot,
+        in context: CGContext,
+        rect: CGRect,
+        image: UIImage,
+        layout: PuzzleCanvasLayoutResult,
+        backgroundStyle: PuzzleBackgroundStyle,
+        photoFrameHeight: CGFloat
+    ) {
+        let photoSize = layout.referenceLocalPhotoFrame.size
+        let extensionSize = layout.referenceLocalExtensionGridFrame.size
 
         if centerIndex == 0 {
             let mirrorPosition = PuzzleDotCollageColor.referenceExtensionMirrorPosition(
@@ -256,8 +327,6 @@ nonisolated enum CanvasRasterExporter {
             )
             image.draw(in: CGRect(origin: photoOrigin, size: photoSize))
         }
-
-        context.restoreGState()
     }
 
     private nonisolated static func drawBuiltInDot(

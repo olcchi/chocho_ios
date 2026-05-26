@@ -490,6 +490,21 @@ private struct PuzzleDotsCanvas: View {
                     )
                 )
             }
+        } else if PuzzleDotCollageColor.shouldRenderCollageContent(
+            for: dot,
+            usesRandomDotColors: usesRandomDotColors,
+            extensionRatio: layout.extensionRatio,
+            selectedDotColor: dotColor
+        ) {
+            PuzzleDotCollageAssetShapeView(
+                centerIndex: centerIndex,
+                dot: dot,
+                image: image,
+                backgroundStyle: backgroundStyle,
+                photoFrame: photoFrame,
+                layout: layout,
+                dotSize: size
+            )
         } else {
             let stickerColor = dot.displayColor(
                 usesRandomColor: usesRandomDotColors,
@@ -516,14 +531,60 @@ private struct PuzzleDotCollageBasicShapeView: View {
     let dotSize: CGFloat
 
     var body: some View {
-        collageFill
-            .mask {
-                DotShapeDrawing(shape: shape, color: .white)
-            }
+        PuzzleDotCollageMirrorFill(
+            centerIndex: centerIndex,
+            dot: dot,
+            image: image,
+            backgroundStyle: backgroundStyle,
+            photoFrame: photoFrame,
+            layout: layout,
+            dotSize: dotSize
+        )
+        .mask {
+            DotShapeDrawing(shape: shape, color: .white)
+        }
     }
+}
 
-    @ViewBuilder
-    private var collageFill: some View {
+private struct PuzzleDotCollageAssetShapeView: View {
+    let centerIndex: Int
+    let dot: PuzzleDot
+    let image: UIImage
+    let backgroundStyle: PuzzleBackgroundStyle
+    let photoFrame: CGRect
+    let layout: PuzzleCanvasLayoutResult
+    let dotSize: CGFloat
+
+    var body: some View {
+        PuzzleDotCollageMirrorFill(
+            centerIndex: centerIndex,
+            dot: dot,
+            image: image,
+            backgroundStyle: backgroundStyle,
+            photoFrame: photoFrame,
+            layout: layout,
+            dotSize: dotSize
+        )
+        .mask {
+            DotShapeAssetImageView(
+                assetName: "public/\(dot.shapeAssetName)",
+                renderingMode: .template,
+                tintColor: .white
+            )
+        }
+    }
+}
+
+private struct PuzzleDotCollageMirrorFill: View {
+    let centerIndex: Int
+    let dot: PuzzleDot
+    let image: UIImage
+    let backgroundStyle: PuzzleBackgroundStyle
+    let photoFrame: CGRect
+    let layout: PuzzleCanvasLayoutResult
+    let dotSize: CGFloat
+
+    var body: some View {
         let extensionFrame = layout.referenceLocalExtensionGridFrame
 
         if centerIndex == 0 {
