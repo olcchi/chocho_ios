@@ -1,9 +1,9 @@
 import UIKit
 
 enum CanvasExportFormat: Equatable {
-    /// Current default: rasterized canvas key frame.
+    /// Rasterized canvas key frame as JPEG.
     case staticJPEG
-    /// Reserved for Live Photo export (key frame + paired motion).
+    /// Key frame plus paired motion video.
     case livePhoto
 }
 
@@ -11,25 +11,23 @@ enum CanvasExportWriter {
     /// Balances visual quality and encode speed for photo + grid exports.
     nonisolated static let jpegCompressionQuality: CGFloat = 0.92
 
-    nonisolated static func format(for source: CanvasPhotoSource?) -> CanvasExportFormat {
+    nonisolated static func format(
+        liveDotAnimation: LiveDotAnimation,
+        source: CanvasPhotoSource? = nil
+    ) -> CanvasExportFormat {
+        if liveDotAnimation.exportsAsLivePhoto {
+            return .livePhoto
+        }
+
         guard let source, source.isLivePhoto else {
             return .staticJPEG
         }
 
-        // Motion export will branch here once Live Photo rendering exists.
         return .staticJPEG
     }
 
-    nonisolated static func writeTemporaryExport(
-        _ image: UIImage,
-        source: CanvasPhotoSource?
-    ) -> URL? {
-        switch format(for: source) {
-        case .staticJPEG:
-            return writeTemporaryJPEG(image)
-        case .livePhoto:
-            return writeTemporaryJPEG(image)
-        }
+    nonisolated static func writeTemporaryStillImage(_ image: UIImage) -> URL? {
+        writeTemporaryJPEG(image)
     }
 
     nonisolated static func writeTemporaryJPEG(_ image: UIImage) -> URL? {

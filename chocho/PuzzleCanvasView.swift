@@ -19,6 +19,8 @@ struct PuzzleCanvasView: View {
     var gestureOffset: CGSize = .zero
     var tracePoints: [PuzzleCanvasTracePoint] = []
     var isTraceDrawingEnabled = false
+    var liveDotAnimation: LiveDotAnimation = .none
+    var livePreviewPlaybackStart: Date?
     var onTapCanvas: ((PuzzleCanvasTracePoint) -> Void)?
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
@@ -47,78 +49,27 @@ struct PuzzleCanvasView: View {
 
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
-                    ZStack(alignment: .topLeading) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .interpolation(photoInterpolation)
-                            .frame(
-                                width: layout.photoFrame.width,
-                                height: layout.photoFrame.height
+                    Group {
+                        if liveDotAnimation != .none, let livePreviewPlaybackStart {
+                            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+                                composedCanvasLayers(
+                                    layout: layout,
+                                    referenceFrame: referenceFrame,
+                                    referenceLocalPhotoFrame: referenceLocalPhotoFrame,
+                                    extensionGridFrame: extensionGridFrame,
+                                    blinkTime: timeline.date.timeIntervalSince(livePreviewPlaybackStart)
+                                )
+                            }
+                        } else {
+                            composedCanvasLayers(
+                                layout: layout,
+                                referenceFrame: referenceFrame,
+                                referenceLocalPhotoFrame: referenceLocalPhotoFrame,
+                                extensionGridFrame: extensionGridFrame,
+                                blinkTime: nil
                             )
-                            .position(
-                                x: referenceLocalPhotoFrame.midX,
-                                y: referenceLocalPhotoFrame.midY
-                            )
-
-                        extensionBackgroundView(
-                            photoFrameHeight: referenceLocalPhotoFrame.height,
-                            extensionSize: extensionGridFrame.size
-                        )
-                            .frame(
-                                width: extensionGridFrame.width,
-                                height: extensionGridFrame.height
-                            )
-                            .position(
-                                x: extensionGridFrame.midX,
-                                y: extensionGridFrame.midY
-                            )
-
-                        PuzzleTraceCanvas(
-                            tracePoints: tracePoints,
-                            canvasSize: referenceFrame.size,
-                            extensionSide: extensionSide
-                        )
-                        .frame(
-                            width: referenceFrame.width,
-                            height: referenceFrame.height
-                        )
-                        .position(
-                            x: referenceFrame.width / 2,
-                            y: referenceFrame.height / 2
-                        )
-                        .opacity(isTraceDrawingEnabled ? 1 : 0)
-
-                        PuzzleDotsCanvas(
-                            image: image,
-                            dots: dots,
-                            dotScale: dotScale,
-                            dotColor: dotColor,
-                            usesRandomDotColors: usesRandomDotColors,
-                            backgroundStyle: backgroundStyle,
-                            backgroundColors: backgroundColors,
-                            photoFrame: referenceLocalPhotoFrame,
-                            layout: layout
-                        )
-                        .frame(
-                            width: referenceFrame.width,
-                            height: referenceFrame.height
-                        )
+                        }
                     }
-                    .frame(
-                        width: referenceFrame.width,
-                        height: referenceFrame.height,
-                        alignment: .topLeading
-                    )
-                    .frame(
-                        width: layout.composedSize.width,
-                        height: layout.composedSize.height,
-                        alignment: layout.visibleComposedClipAlignment
-                    )
-                    .clipped()
-                    .position(
-                        x: layout.visibleComposedClipPosition.x,
-                        y: layout.visibleComposedClipPosition.y
-                    )
                     .animation(.none, value: extensionRatio)
                     .animation(.none, value: extensionSide)
                     .animation(.none, value: backgroundStyle)
@@ -169,6 +120,82 @@ struct PuzzleCanvasView: View {
         }
     }
 
+    @ViewBuilder
+    private func composedCanvasLayers(
+        layout: PuzzleCanvasLayoutResult,
+        referenceFrame: CGRect,
+        referenceLocalPhotoFrame: CGRect,
+        extensionGridFrame: CGRect,
+        blinkTime: TimeInterval?
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            Image(uiImage: image)
+                .resizable()
+                .interpolation(photoInterpolation)
+                .frame(
+                    width: layout.photoFrame.width,
+                    height: layout.photoFrame.height
+                )
+                .position(
+                    x: referenceLocalPhotoFrame.midX,
+                    y: referenceLocalPhotoFrame.midY
+                )
+
+            halftoneAwareExtensionBackground(
+                photoFrameHeight: referenceLocalPhotoFrame.height,
+                extensionGridFrame: extensionGridFrame
+            )
+
+            PuzzleTraceCanvas(
+                tracePoints: tracePoints,
+                canvasSize: referenceFrame.size,
+                extensionSide: extensionSide
+            )
+            .frame(
+                width: referenceFrame.width,
+                height: referenceFrame.height
+            )
+            .position(
+                x: referenceFrame.width / 2,
+                y: referenceFrame.height / 2
+            )
+            .opacity(isTraceDrawingEnabled ? 1 : 0)
+
+            PuzzleDotsCanvas(
+                image: image,
+                dots: dots,
+                dotScale: dotScale,
+                dotColor: dotColor,
+                usesRandomDotColors: usesRandomDotColors,
+                liveDotAnimation: liveDotAnimation,
+                blinkTime: blinkTime,
+                backgroundStyle: backgroundStyle,
+                backgroundColors: backgroundColors,
+                photoFrame: referenceLocalPhotoFrame,
+                layout: layout
+            )
+            .frame(
+                width: referenceFrame.width,
+                height: referenceFrame.height
+            )
+        }
+        .frame(
+            width: referenceFrame.width,
+            height: referenceFrame.height,
+            alignment: .topLeading
+        )
+        .frame(
+            width: layout.composedSize.width,
+            height: layout.composedSize.height,
+            alignment: layout.visibleComposedClipAlignment
+        )
+        .clipped()
+        .position(
+            x: layout.visibleComposedClipPosition.x,
+            y: layout.visibleComposedClipPosition.y
+        )
+    }
+
     private func displayViewportOffset(
         layout: PuzzleCanvasLayoutResult,
         availableSize: CGSize
@@ -185,9 +212,41 @@ struct PuzzleCanvasView: View {
     }
 
     @ViewBuilder
+    private func halftoneAwareExtensionBackground(
+        photoFrameHeight: CGFloat,
+        extensionGridFrame: CGRect
+    ) -> some View {
+        if backgroundStyle == .halftone {
+            let visibleSize = PuzzleHalftoneBackgroundMetrics.visibleDisplaySize(
+                fullExtensionSize: extensionGridFrame.size,
+                extensionRatio: extensionRatio,
+                extensionSide: extensionSide
+            )
+            let center = PuzzleHalftoneBackgroundMetrics.visibleDisplayCenter(
+                in: extensionGridFrame,
+                extensionRatio: extensionRatio,
+                extensionSide: extensionSide
+            )
+            extensionBackgroundView(
+                photoFrameHeight: photoFrameHeight,
+                displaySize: visibleSize
+            )
+            .frame(width: visibleSize.width, height: visibleSize.height)
+            .position(x: center.x, y: center.y)
+        } else {
+            extensionBackgroundView(
+                photoFrameHeight: photoFrameHeight,
+                displaySize: extensionGridFrame.size
+            )
+            .frame(width: extensionGridFrame.width, height: extensionGridFrame.height)
+            .position(x: extensionGridFrame.midX, y: extensionGridFrame.midY)
+        }
+    }
+
+    @ViewBuilder
     private func extensionBackgroundView(
         photoFrameHeight: CGFloat,
-        extensionSize: CGSize
+        displaySize: CGSize
     ) -> some View {
         switch backgroundStyle {
         case .grid:
@@ -203,7 +262,9 @@ struct PuzzleCanvasView: View {
         case .halftone:
             PuzzleHalftoneBackgroundView(
                 sourceImage: image,
-                surfaceSize: extensionSize,
+                extensionRatio: extensionRatio,
+                extensionSide: extensionSide,
+                displaySize: displaySize,
                 backgroundColor: backgroundColors.fillColor,
                 dotColor: backgroundColors.lineColor
             )
@@ -501,12 +562,34 @@ private struct PuzzleDotsCanvas: View {
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
+    var liveDotAnimation: LiveDotAnimation = .none
+    var blinkTime: TimeInterval?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
 
     var body: some View {
+        dotsLayer(blinkTime: blinkTime)
+            .allowsHitTesting(false)
+            .animation(.none, value: dots.count)
+    }
+
+    private func dotMotion(dotID: UUID, blinkTime: TimeInterval?) -> (opacity: Double, scale: CGFloat) {
+        guard let blinkTime else { return (1, 1) }
+        switch liveDotAnimation {
+        case .none:
+            return (1, 1)
+        case .randomBlink:
+            return (DotRandomBlinkOpacity.opacity(dotID: dotID, time: blinkTime), 1)
+        case .breathe:
+            let sample = DotBreatheAnimation.sample(dotID: dotID, time: blinkTime)
+            return (sample.opacity, CGFloat(sample.scale))
+        }
+    }
+
+    @ViewBuilder
+    private func dotsLayer(blinkTime: TimeInterval?) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(dots) { dot in
                 let size = DotSizeControl.displaySize(
@@ -514,6 +597,7 @@ private struct PuzzleDotsCanvas: View {
                     photoFrameHeight: photoFrame.height
                 )
                 let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
+                let motion = dotMotion(dotID: dot.id, blinkTime: blinkTime)
 
                 ForEach(Array(centers.enumerated()), id: \.offset) { centerIndex, center in
                     Color.clear
@@ -523,12 +607,12 @@ private struct PuzzleDotsCanvas: View {
                                 .frame(width: size, height: size, alignment: .topLeading)
                                 .clipped()
                         }
+                        .scaleEffect(motion.scale)
+                        .opacity(motion.opacity)
                         .position(center)
                 }
             }
         }
-        .allowsHitTesting(false)
-        .animation(.none, value: dots.count)
     }
 
     @ViewBuilder
@@ -677,6 +761,7 @@ private struct PuzzleDotCollageMirrorFill: View {
 
             PuzzleDotCollageBackgroundFill(
                 sourceImage: image,
+                layout: layout,
                 style: backgroundStyle,
                 colors: backgroundColors,
                 extensionSize: extensionFrame.size,
@@ -705,6 +790,7 @@ private struct PuzzleDotCollageMirrorFill: View {
 
 private struct PuzzleDotCollageBackgroundFill: View {
     let sourceImage: UIImage
+    let layout: PuzzleCanvasLayoutResult
     let style: PuzzleBackgroundStyle
     let colors: PuzzleBackgroundColors
     let extensionSize: CGSize
@@ -739,7 +825,9 @@ private struct PuzzleDotCollageBackgroundFill: View {
             case .halftone:
                 PuzzleHalftoneBackgroundView(
                     sourceImage: sourceImage,
-                    surfaceSize: extensionSize,
+                    extensionRatio: PuzzleCanvasLayout.maxExtensionRatio,
+                    extensionSide: layout.extensionSide,
+                    displaySize: extensionSize,
                     backgroundColor: colors.fillColor,
                     dotColor: colors.lineColor
                 )

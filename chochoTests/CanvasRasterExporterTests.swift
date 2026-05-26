@@ -1,4 +1,5 @@
 import Testing
+import SwiftUI
 import UIKit
 @testable import chocho
 
@@ -16,7 +17,7 @@ struct CanvasRasterExporterTests {
                 backgroundStyle: .grid,
                 dots: PuzzleDotFactory.makeDots(count: 4),
                 dotScale: 8,
-                dotColor: .primary,
+                dotColor: Color(red: 0, green: 0, blue: 0),
                 usesRandomDotColors: false
             )
         )
@@ -53,6 +54,103 @@ struct CanvasRasterExporterTests {
         #expect(sampleColor(in: exported, at: CGPoint(x: 200, y: 358)).isClose(to: .sourceBlue))
     }
 
+    @Test func liveExportAnimatesExtensionSideMirrorDots() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exportSize = CGSize(width: 480, height: 300)
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.25, y: 0.5),
+            color: .clear,
+            size: 10,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+
+        let dimFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: .clear,
+                usesRandomDotColors: false,
+                liveDotAnimation: .randomBlink,
+                blinkTime: 0.15
+            )
+        )
+        let brightFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: .clear,
+                usesRandomDotColors: false,
+                liveDotAnimation: .randomBlink,
+                blinkTime: 1.05
+            )
+        )
+
+        let samplePoint = CGPoint(x: 430, y: 150)
+        let dimSample = sampleColor(in: dimFrame, at: samplePoint)
+        let brightSample = sampleColor(in: brightFrame, at: samplePoint)
+        #expect(dimSample != brightSample)
+    }
+
+    @Test func breatheAnimationChangesRasterizedDotAppearance() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exportSize = CGSize(width: 480, height: 300)
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.25, y: 0.5),
+            color: .clear,
+            size: 10,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+
+        let contractedFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: .clear,
+                usesRandomDotColors: false,
+                liveDotAnimation: .breathe,
+                blinkTime: 2.05
+            )
+        )
+        let expandedFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: .clear,
+                usesRandomDotColors: false,
+                liveDotAnimation: .breathe,
+                blinkTime: 0.35
+            )
+        )
+
+        let samplePoint = CGPoint(x: 430, y: 150)
+        #expect(
+            sampleColor(in: contractedFrame, at: samplePoint)
+                != sampleColor(in: expandedFrame, at: samplePoint)
+        )
+    }
+
     @Test func bottomExtensionExportHasNoTopBlankMargin() throws {
         let source = try #require(makeSolidImage(width: 400, height: 300))
         let exported = try #require(makeExportedImage(
@@ -79,12 +177,12 @@ private func makeExportedImage(
         backgroundStyle: .stripes,
         dots: [],
         dotScale: 8,
-        dotColor: .primary,
+        dotColor: Color(red: 0, green: 0, blue: 0),
         usesRandomDotColors: false
     )
 }
 
-private struct SampledColor {
+private struct SampledColor: Equatable {
     let red: UInt8
     let green: UInt8
     let blue: UInt8

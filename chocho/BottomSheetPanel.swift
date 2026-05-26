@@ -122,6 +122,10 @@ struct BottomSheetPanel: View {
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
     @Binding var isTraceDrawingEnabled: Bool
+    @Binding var liveDotAnimation: LiveDotAnimation
+    var livePreviewProgress: Double = 0
+    var isLivePreviewPlaying: Bool = false
+    var onToggleLivePreviewPlayback: () -> Void = {}
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
     @Binding var backgroundStyle: PuzzleBackgroundStyle
@@ -185,6 +189,10 @@ struct BottomSheetPanel: View {
             usesRandomDotColors: $usesRandomDotColors,
             selectedDotShape: $selectedDotShape,
             isTraceDrawingEnabled: $isTraceDrawingEnabled,
+            liveDotAnimation: $liveDotAnimation,
+            livePreviewProgress: livePreviewProgress,
+            isLivePreviewPlaying: isLivePreviewPlaying,
+            onToggleLivePreviewPlayback: onToggleLivePreviewPlayback,
             extensionRatio: $extensionRatio,
             extensionSide: $extensionSide,
             backgroundStyle: $backgroundStyle,
@@ -312,7 +320,7 @@ struct CanvasHistoryControls: View {
             .opacity(canClear ? 1 : 0.42)
             .accessibilityLabel("清空画布内容")
 
-            controlDivider
+            PanelSeparator(orientation: .vertical)
 
             historyButton(
                 assetName: "public/undo",
@@ -321,7 +329,7 @@ struct CanvasHistoryControls: View {
                 action: onUndo
             )
 
-            controlDivider
+            PanelSeparator(orientation: .vertical)
 
             historyButton(
                 assetName: "public/redo",
@@ -341,13 +349,6 @@ struct CanvasHistoryControls: View {
             RoundedRectangle(cornerRadius: BottomSheetPanel.topCornerRadius, style: .continuous)
                 .stroke(Color.border.opacity(0.7), lineWidth: 1)
         }
-    }
-
-    private var controlDivider: some View {
-        Rectangle()
-            .fill(Color.border)
-            .frame(width: 1, height: 18)
-            .padding(.horizontal, 3)
     }
 
     private func historyButton(
@@ -380,6 +381,10 @@ private struct PanelContentCard: View {
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
     @Binding var isTraceDrawingEnabled: Bool
+    @Binding var liveDotAnimation: LiveDotAnimation
+    var livePreviewProgress: Double
+    var isLivePreviewPlaying: Bool
+    var onToggleLivePreviewPlayback: () -> Void
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
     @Binding var backgroundStyle: PuzzleBackgroundStyle
@@ -410,20 +415,128 @@ private struct PanelContentCard: View {
                     extensionSide: $extensionSide
                 )
             case .livePhoto:
-                LivePanelPlaceholder()
+                LivePanelControls(
+                    liveDotAnimation: $liveDotAnimation,
+                    livePreviewProgress: livePreviewProgress,
+                    isLivePreviewPlaying: isLivePreviewPlaying,
+                    onToggleLivePreviewPlayback: onToggleLivePreviewPlayback
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 
-private struct LivePanelPlaceholder: View {
+private enum PanelSeparatorStyle {
+    static let color = Color.border
+    static let thickness: CGFloat = 1
+    static let linePadding: CGFloat = 1
+    static let verticalLineHeight: CGFloat = 18
+}
+
+private struct PanelSeparator: View {
+    enum Orientation {
+        case horizontal
+        case vertical
+    }
+
+    var orientation: Orientation
+
     var body: some View {
-        Text("建设中...")
-            .font(.system(size: 15, weight: .regular))
-            .foregroundStyle(Color.mutedForeground)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 32)
+        switch orientation {
+        case .horizontal:
+            Rectangle()
+                .fill(PanelSeparatorStyle.color)
+                .frame(maxWidth: .infinity)
+                .frame(height: PanelSeparatorStyle.thickness)
+                .padding(.vertical, PanelSeparatorStyle.linePadding)
+        case .vertical:
+            Rectangle()
+                .fill(PanelSeparatorStyle.color)
+                .frame(
+                    width: PanelSeparatorStyle.thickness,
+                    height: PanelSeparatorStyle.verticalLineHeight
+                )
+                .padding(.horizontal, PanelSeparatorStyle.linePadding)
+        }
+    }
+}
+
+private struct PanelRowSeparator: View {
+    var body: some View {
+        PanelSeparator(orientation: .horizontal)
+    }
+}
+
+private struct LivePanelControls: View {
+    @Binding var liveDotAnimation: LiveDotAnimation
+    var livePreviewProgress: Double
+    var isLivePreviewPlaying: Bool
+    var onToggleLivePreviewPlayback: () -> Void
+
+    private var controlLabelFont: Font {
+        .system(size: 13, weight: .regular)
+    }
+
+    private var canPlayPreview: Bool {
+        liveDotAnimation != .none
+    }
+
+    private var playbackElapsed: TimeInterval {
+        livePreviewProgress * liveDotAnimation.motionExportDuration
+    }
+
+    private var playbackTimeLabel: String {
+        String(format: "%.1f", playbackElapsed)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text("动画")
+                    .font(controlLabelFont)
+                    .foregroundStyle(Color.foreground)
+
+                Spacer(minLength: 0)
+
+                PanelValueMenu(
+                    accessibilityTitle: "动画",
+                    selection: $liveDotAnimation,
+                    options: LiveDotAnimation.allCases,
+                    title: { $0.title },
+                    font: controlLabelFont
+                )
+            }
+            .padding(.horizontal, 2)
+            .padding(.bottom, 4)
+
+            PanelRowSeparator()
+
+            HStack(spacing: 10) {
+                Button(action: onToggleLivePreviewPlayback) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isLivePreviewPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(isLivePreviewPlaying ? "暂停" : "预览")
+                            .font(controlLabelFont)
+                        if canPlayPreview {
+                            Text(playbackTimeLabel)
+                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                .foregroundStyle(Color.mutedForeground)
+                        }
+                    }
+                    .foregroundStyle(canPlayPreview ? Color.foreground : Color.mutedForeground)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 36)
+                    .background(Color.input, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canPlayPreview)
+            }
+            .padding(.horizontal, 2)
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 
@@ -434,16 +547,22 @@ private struct BackgroundPanelControls: View {
     @Binding var extensionSide: PuzzleCanvasExtensionSide
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 backgroundStyleControl
-                controlSeparator
+                PanelSeparator(orientation: .vertical)
                 backgroundPositionControl
             }
             .padding(.horizontal, 2)
+            .padding(.bottom, 4)
+
+            PanelRowSeparator()
 
             backgroundColorPickers
                 .padding(.horizontal, 2)
+                .padding(.vertical, 4)
+
+            PanelRowSeparator()
 
             StyledSlider(
                 title: extensionSizeTitle,
@@ -453,6 +572,7 @@ private struct BackgroundPanelControls: View {
                 valueText: { "\(Int($0.rounded()))%" }
             )
             .padding(.horizontal, 2)
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
@@ -532,12 +652,6 @@ private struct BackgroundPanelControls: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var controlSeparator: some View {
-        Capsule(style: .continuous)
-            .fill(Color.appAccent.opacity(0.22))
-            .frame(width: 1.5, height: 18)
-    }
-
     private var extensionSizeTitle: String {
         extensionSide.isHorizontal ? "背景宽度" : "背景高度"
     }
@@ -600,14 +714,17 @@ private struct DrawPanelControls: View {
     let onDrawDots: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            VStack(spacing: 6) {
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
                 StyledSlider(
                     title: "波点数量",
                     value: $dotCount,
                     range: 0...30,
                     step: 1
                 )
+                .padding(.bottom, 4)
+
+                PanelRowSeparator()
 
                 HStack(spacing: 10) {
                     compactToggleButton(
@@ -617,7 +734,7 @@ private struct DrawPanelControls: View {
                         usesRandomDotColors.toggle()
                     }
 
-                    controlSeparator
+                    PanelSeparator(orientation: .vertical)
 
                     compactToggleButton(
                         title: "手绘轨迹",
@@ -627,10 +744,15 @@ private struct DrawPanelControls: View {
                     }
                 }
                 .frame(height: 30)
+                .padding(.top, 4)
             }
             .padding(.horizontal, 2)
+            .padding(.bottom, 4)
+
+            PanelRowSeparator()
 
             drawButton
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
@@ -662,16 +784,6 @@ private struct DrawPanelControls: View {
 
     private var inactiveColor: Color {
         Color.input
-    }
-
-    private var separatorColor: Color {
-        Color.appAccent.opacity(0.22)
-    }
-
-    private var controlSeparator: some View {
-        Capsule(style: .continuous)
-            .fill(separatorColor)
-            .frame(width: 1.5, height: 18)
     }
 
     private func compactToggleButton(
@@ -728,9 +840,11 @@ private struct DotShapePickerPanel: View {
     @AppStorage("chocho.dotShape.recentNames") private var recentShapeNamesStore = DotShapeAsset.defaultSelection.name
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-
+        VStack(alignment: .leading, spacing: 0) {
             DotShapeCategoryTabs(selectedCategory: $selectedCategory)
+                .padding(.bottom, 3)
+
+            PanelRowSeparator()
 
             DotShapeGrid(
                 shapes: shapes,
@@ -745,10 +859,15 @@ private struct DotShapePickerPanel: View {
                 )
                 recentShapeNamesStore = DotShapeRecentList.storageString(for: recentShapeNames)
             }
+            .padding(.vertical, 3)
 
             DotSizeSlider(dotScale: $dotScale)
+                .padding(.vertical, 3)
+
+            PanelRowSeparator()
 
             DotColorPicker(selectedDotColor: $selectedDotColor)
+                .padding(.top, 3)
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .animation(.smooth(duration: 0.22), value: selectedCategory)
@@ -1158,7 +1277,9 @@ struct DotShapeAsset: Identifiable, Equatable {
 
     static let all: [DotShapeAsset] =
         BuiltInDotShape.allCases.map { DotShapeAsset(name: $0.rawValue) }
-        + DotShapeCatalog.assetNames.map { DotShapeAsset(name: $0) }
+        + DotShapeCatalog.assetNames
+            .filter { BuiltInDotShape(rawValue: $0) == nil }
+            .map { DotShapeAsset(name: $0) }
 }
 
 enum DotShapeRecentList {

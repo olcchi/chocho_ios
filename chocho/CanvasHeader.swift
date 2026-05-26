@@ -18,6 +18,14 @@ struct CanvasHeader: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             HStack(spacing: 10) {
+                Image("chocho")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 20)
+                    .accessibilityLabel("chocho")
+
+                Spacer(minLength: 0)
+
                 PhotosPicker(selection: $selectedPhotoItem, matching: CanvasPhotoImport.pickerMatching) {
                     CanvasActionLabel(title: "上传", iconAssetName: "public/upload")
                 }
@@ -32,6 +40,7 @@ struct CanvasHeader: View {
                 }
                 .disabled(!canDownload || isBusy)
             }
+            .frame(maxWidth: .infinity, minHeight: 30)
 
             if let exportMessage {
                 CanvasStatusLabel(title: exportMessage)

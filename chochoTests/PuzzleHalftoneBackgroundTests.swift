@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 import UIKit
 @testable import chocho
@@ -11,6 +12,43 @@ struct PuzzleHalftoneBackgroundTests {
         #expect(firstValues == secondValues)
     }
 
+    @Test func extensionPixelSizeMatchesExportCanvasExtension() {
+        let pixelSize = CGSize(width: 1200, height: 800)
+        let size = PuzzleHalftoneBackgroundMetrics.extensionPixelSize(
+            imagePixelSize: pixelSize,
+            extensionRatio: 0.25,
+            extensionSide: .right
+        )
+        #expect(size.width == 300)
+        #expect(size.height == 800)
+    }
+
+    @Test func visibleCropKeepsPhotoAdjacentEdgeForRightExtension() {
+        let crop = PuzzleHalftoneBackgroundMetrics.visibleCropNormalizedRect(
+            extensionRatio: 0.25,
+            extensionSide: .right
+        )
+        #expect(crop == CGRect(x: 0, y: 0, width: 0.25, height: 1))
+
+        let mapped = PuzzleHalftoneBackgroundMetrics.mapVisiblePointToFullExtension(
+            CGPoint(x: 1, y: 0.5),
+            extensionRatio: 0.25,
+            extensionSide: .right
+        )
+        #expect(mapped.x == 0.25)
+        #expect(mapped.y == 0.5)
+    }
+
+    @Test func fullExtensionRenderSizeUsesMaxRatio() {
+        let pixelSize = CGSize(width: 100, height: 200)
+        let full = PuzzleHalftoneBackgroundMetrics.fullExtensionPixelSize(
+            imagePixelSize: pixelSize,
+            extensionSide: .right
+        )
+        #expect(full.width == 100)
+        #expect(full.height == 200)
+    }
+
     @Test func renderProducesImageForSolidSource() {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { context in
             UIColor(white: 0.2, alpha: 1).setFill()
@@ -19,10 +57,9 @@ struct PuzzleHalftoneBackgroundTests {
 
         let surface = PuzzleHalftoneBackgroundRenderer.render(
             sourceImage: image,
-            surfaceSize: CGSize(width: 80, height: 40),
+            renderPixelSize: CGSize(width: 80, height: 40),
             backgroundColor: Color(hex: "#f0eee6"),
-            dotColor: Color(hex: "#0046ff"),
-            blurAmount: 24
+            dotColor: Color(hex: "#0046ff")
         )
 
         #expect(surface != nil)

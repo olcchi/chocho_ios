@@ -5,6 +5,7 @@
 //  Created by Ekar on 2026/5/22.
 //
 
+import Photos
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -29,6 +30,10 @@ struct ContentView: View {
     @State private var usesRandomDotColors = false
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var isTraceDrawingEnabled = false
+    @State private var liveDotAnimation: LiveDotAnimation = .none
+    @State private var livePreviewPlaybackStart: Date?
+    @State private var livePreviewProgress: Double = 0
+    @State private var livePreviewPlaybackTask: Task<Void, Never>?
     @State private var tracePoints: [PuzzleCanvasTracePoint] = []
     @State private var puzzleDots: [PuzzleDot] = []
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
@@ -37,6 +42,8 @@ struct ContentView: View {
     @State private var isPhotoLoading = false
     @State private var isExporting = false
     @State private var shareItem: CanvasShareItem?
+    @State private var shareCleanup: (() -> Void)?
+    @State private var retainsLivePhotoExportFilesOnDismiss = false
     @State private var shareSheetDetent: PresentationDetent = .medium
     @GestureState private var gestureOffset: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
@@ -65,8 +72,8 @@ struct ContentView: View {
                         onDownload: shareCanvas
                     )
                     .padding(.top, 4)
-                    .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.horizontal, BottomSheetPanel.contentHorizontalInset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
@@ -80,6 +87,10 @@ struct ContentView: View {
                     usesRandomDotColors: $usesRandomDotColors,
                     selectedDotShape: $selectedDotShape,
                     isTraceDrawingEnabled: $isTraceDrawingEnabled,
+                    liveDotAnimation: $liveDotAnimation,
+                    livePreviewProgress: livePreviewProgress,
+                    isLivePreviewPlaying: isLivePreviewPlaying,
+                    onToggleLivePreviewPlayback: toggleLivePreviewPlayback,
                     extensionRatio: $extensionRatio,
                     extensionSide: $extensionSide,
                     backgroundStyle: $backgroundStyle,
@@ -134,11 +145,17 @@ struct ContentView: View {
         .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: liveDotAnimation) { _, _ in
+            stopLivePreviewPlayback()
+        }
         .onChange(of: dotCount) { _, newDotCount in
             syncPuzzleDots(to: Int(newDotCount.rounded()))
         }
-        .sheet(item: $shareItem) { item in
-            CanvasShareSheet(fileURL: item.fileURL)
+        .sheet(item: $shareItem, onDismiss: handleShareSheetDismiss) { item in
+            CanvasShareSheet(
+                product: item.product,
+                onSaveToPhotos: handleSaveToPhotosResult
+            )
                 .presentationDetents([.medium, .large], selection: $shareSheetDetent)
                 .presentationDragIndicator(.visible)
                 .onAppear {
@@ -181,6 +198,8 @@ struct ContentView: View {
                     gestureOffset: gestureOffset,
                     tracePoints: tracePoints,
                     isTraceDrawingEnabled: isTraceDrawingEnabled,
+                    liveDotAnimation: liveDotAnimation,
+                    livePreviewPlaybackStart: livePreviewPlaybackStart,
                     onTapCanvas: addPuzzleDot(at:),
                     onDoubleTapBackground: applyCanvasViewportReset,
                     onViewportReset: applyCanvasViewportReset,
@@ -216,7 +235,49 @@ struct ContentView: View {
         Color.popover
     }
 
-    
+    private var isLivePreviewPlaying: Bool {
+        livePreviewPlaybackStart != nil
+    }
+
+    private func toggleLivePreviewPlayback() {
+        if isLivePreviewPlaying {
+            stopLivePreviewPlayback()
+        } else {
+            startLivePreviewPlayback()
+        }
+    }
+
+    @MainActor
+    private func startLivePreviewPlayback() {
+        guard liveDotAnimation != .none else { return }
+
+        livePreviewPlaybackTask?.cancel()
+        let duration = liveDotAnimation.motionExportDuration
+        let start = Date()
+        livePreviewPlaybackStart = start
+        livePreviewProgress = 0
+
+        livePreviewPlaybackTask = Task { @MainActor in
+            while !Task.isCancelled {
+                let elapsed = Date().timeIntervalSince(start)
+                livePreviewProgress = min(1, elapsed / duration)
+                if elapsed >= duration {
+                    stopLivePreviewPlayback()
+                    return
+                }
+                try? await Task.sleep(for: .seconds(1.0 / 60.0))
+            }
+        }
+    }
+
+    @MainActor
+    private func stopLivePreviewPlayback() {
+        livePreviewPlaybackTask?.cancel()
+        livePreviewPlaybackTask = nil
+        livePreviewPlaybackStart = nil
+        livePreviewProgress = 0
+    }
+
     @MainActor
     private func loadSelectedPhoto() async {
         guard let selectedPhotoItem else { return }
@@ -467,7 +528,8 @@ struct ContentView: View {
         guard !isExporting else { return }
 
         isExporting = true
-        exportMessage = "正在导出…"
+        let exportsLivePhoto = liveDotAnimation.exportsAsLivePhoto
+        exportMessage = exportsLivePhoto ? "正在导出实况…" : "正在导出…"
 
         let snapshot = CanvasExportSnapshot(
             image: canvasImage,
@@ -478,45 +540,109 @@ struct ContentView: View {
             dots: puzzleDots,
             dotScale: CGFloat(dotScale),
             dotColor: selectedDotColor,
-            usesRandomDotColors: usesRandomDotColors
+            usesRandomDotColors: usesRandomDotColors,
+            liveDotAnimation: liveDotAnimation
         )
 
         Task {
             defer { isExporting = false }
 
             let exportSize = exportCanvasSize(for: snapshot.image)
-            let renderedImage = await Task.detached(priority: .userInitiated) {
-                CanvasRasterExporter.render(
-                    image: snapshot.image,
-                    exportSize: exportSize,
-                    extensionRatio: snapshot.extensionRatio,
-                    extensionSide: snapshot.extensionSide,
-                    backgroundStyle: snapshot.backgroundStyle,
-                    backgroundColors: snapshot.backgroundColors,
-                    dots: snapshot.dots,
-                    dotScale: snapshot.dotScale,
-                    dotColor: snapshot.dotColor,
-                    usesRandomDotColors: snapshot.usesRandomDotColors
-                )
+            let exportFormat = CanvasExportWriter.format(liveDotAnimation: snapshot.liveDotAnimation)
+
+            let product: CanvasExportProduct? = await Task.detached(priority: .userInitiated) {
+                switch exportFormat {
+                case .livePhoto:
+                    let liveSnapshot = CanvasLivePhotoExporter.Snapshot(
+                        image: snapshot.image,
+                        extensionRatio: snapshot.extensionRatio,
+                        extensionSide: snapshot.extensionSide,
+                        backgroundStyle: snapshot.backgroundStyle,
+                        backgroundColors: snapshot.backgroundColors,
+                        dots: snapshot.dots,
+                        dotScale: snapshot.dotScale,
+                        dotColor: snapshot.dotColor,
+                        usesRandomDotColors: snapshot.usesRandomDotColors,
+                        liveDotAnimation: snapshot.liveDotAnimation
+                    )
+                    guard let bundle = await CanvasLivePhotoExporter.export(
+                        snapshot: liveSnapshot,
+                        keyPhotoSize: exportSize
+                    ) else {
+                        return nil
+                    }
+                    return .livePhoto(bundle)
+
+                case .staticJPEG:
+                    guard let renderedImage = CanvasRasterExporter.render(
+                        image: snapshot.image,
+                        exportSize: exportSize,
+                        extensionRatio: snapshot.extensionRatio,
+                        extensionSide: snapshot.extensionSide,
+                        backgroundStyle: snapshot.backgroundStyle,
+                        backgroundColors: snapshot.backgroundColors,
+                        dots: snapshot.dots,
+                        dotScale: snapshot.dotScale,
+                        dotColor: snapshot.dotColor,
+                        usesRandomDotColors: snapshot.usesRandomDotColors
+                    ) else {
+                        return nil
+                    }
+
+                    guard let fileURL = CanvasExportWriter.writeTemporaryStillImage(renderedImage) else {
+                        return nil
+                    }
+                    return .stillImage(fileURL)
+                }
             }.value
 
-            guard let renderedImage else {
-                exportMessage = "生成失败"
-                return
-            }
-
-            let fileURL = await Task.detached(priority: .utility) {
-                CanvasExportWriter.writeTemporaryJPEG(renderedImage)
-            }.value
-
-            guard let fileURL else {
-                exportMessage = "导出失败"
+            guard let product else {
+                exportMessage = exportsLivePhoto ? "实况导出失败" : "导出失败"
                 return
             }
 
             exportMessage = nil
-            shareItem = CanvasShareItem(fileURL: fileURL)
+
+            // Pre-request photo library authorization while we are still on the main
+            // thread and before the share sheet is presented.  This ensures the system
+            // permission dialog can appear (UIActivityViewController would otherwise
+            // intercept the presentation context, preventing the dialog from showing).
+            _ = await CanvasPhotoLibrarySaver.requestAuthorization()
+
+            shareCleanup?()
+            shareCleanup = { product.removeTemporaryFiles() }
+            // Always retain export files until the save result is known.
+            // For still images the save is async; the sheet dismisses before the
+            // PHAssetCreationRequest finishes reading the file, so cleanup must
+            // wait until handleSaveToPhotosResult is called.
+            retainsLivePhotoExportFilesOnDismiss = true
+            shareItem = CanvasShareItem(product: product)
         }
+    }
+
+    @MainActor
+    private func handleShareSheetDismiss() {
+        guard retainsLivePhotoExportFilesOnDismiss else {
+            cleanupShareExportFiles()
+            return
+        }
+        retainsLivePhotoExportFilesOnDismiss = false
+    }
+
+    @MainActor
+    private func handleSaveToPhotosResult(_ didSave: Bool) {
+        if didSave {
+            exportMessage = "已保存到相册"
+        } else {
+            let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+            if status == .denied || status == .restricted {
+                exportMessage = "保存失败，请在设置中允许访问相册"
+            } else {
+                exportMessage = "保存失败"
+            }
+        }
+        retainsLivePhotoExportFilesOnDismiss = false
+        cleanupShareExportFiles()
     }
 
     private func exportCanvasSize(for image: UIImage) -> CGSize {
@@ -573,6 +699,13 @@ struct ContentView: View {
                 }
         )
     }
+
+    @MainActor
+    private func cleanupShareExportFiles() {
+        shareCleanup?()
+        shareCleanup = nil
+        retainsLivePhotoExportFilesOnDismiss = false
+    }
 }
 
 private extension CGSize {
@@ -583,7 +716,9 @@ private extension CGSize {
 
 private struct CanvasShareItem: Identifiable {
     let id = UUID()
-    let fileURL: URL
+    let product: CanvasExportProduct
+
+    var shareItems: [Any] { product.shareItems }
 }
 
 private struct CanvasUploadPlaceholder: View {
@@ -615,13 +750,22 @@ private struct CanvasUploadPlaceholder: View {
 }
 
 private struct CanvasShareSheet: UIViewControllerRepresentable {
-    let fileURL: URL
+    let product: CanvasExportProduct
+    let onSaveToPhotos: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(
-            activityItems: [fileURL],
-            applicationActivities: [SaveCanvasToPhotosActivity(fileURL: fileURL)]
+            activityItems: product.shareItems,
+            applicationActivities: [
+                SaveCanvasToPhotosActivity(
+                    product: product,
+                    onSaveToPhotos: onSaveToPhotos
+                ),
+            ]
         )
+        // Exclude the system "Save Image / Save to Photos" entry so only our custom
+        // "保存到相册" button appears — avoiding a duplicate Chinese + English pair.
+        controller.excludedActivityTypes = [.saveToCameraRoll]
         controller.modalPresentationStyle = .pageSheet
         configureSheetPresentation(for: controller)
         return controller
@@ -640,10 +784,12 @@ private struct CanvasShareSheet: UIViewControllerRepresentable {
 }
 
 private final class SaveCanvasToPhotosActivity: UIActivity {
-    private let fileURL: URL
+    private let product: CanvasExportProduct
+    private let onSaveToPhotos: (Bool) -> Void
 
-    init(fileURL: URL) {
-        self.fileURL = fileURL
+    init(product: CanvasExportProduct, onSaveToPhotos: @escaping (Bool) -> Void) {
+        self.product = product
+        self.onSaveToPhotos = onSaveToPhotos
         super.init()
     }
 
@@ -669,7 +815,8 @@ private final class SaveCanvasToPhotosActivity: UIActivity {
 
     override func perform() {
         Task { @MainActor in
-            let didSave = await CanvasPhotoLibrarySaver.save(fileURL: fileURL)
+            let didSave = await CanvasPhotoLibrarySaver.save(product: product)
+            onSaveToPhotos(didSave)
             activityDidFinish(didSave)
         }
     }
@@ -685,4 +832,5 @@ private struct CanvasExportSnapshot {
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
+    let liveDotAnimation: LiveDotAnimation
 }

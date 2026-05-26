@@ -3,9 +3,21 @@ import UIKit
 @testable import chocho
 
 struct CanvasExportWriterTests {
+    @Test func liveAnimationSelectsLivePhotoExportFormat() {
+        #expect(
+            CanvasExportWriter.format(liveDotAnimation: .randomBlink) == .livePhoto
+        )
+        #expect(
+            CanvasExportWriter.format(liveDotAnimation: .breathe) == .livePhoto
+        )
+        #expect(
+            CanvasExportWriter.format(liveDotAnimation: .none) == .staticJPEG
+        )
+    }
+
     @Test func writesJPEGFileToTemporaryDirectory() throws {
         let image = try #require(makeSolidImage(width: 120, height: 80))
-        let fileURL = try #require(CanvasExportWriter.writeTemporaryJPEG(image))
+        let fileURL = try #require(CanvasExportWriter.writeTemporaryStillImage(image))
 
         defer { try? FileManager.default.removeItem(at: fileURL) }
 

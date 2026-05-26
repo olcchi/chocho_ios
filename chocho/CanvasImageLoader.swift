@@ -79,6 +79,23 @@ enum CanvasImageLoader {
         )
     }
 
+    /// Scales a pixel size down so the longest edge fits `maxPixelDimension`.
+    nonisolated static func fittedPixelSize(
+        _ size: CGSize,
+        maxPixelDimension: Int
+    ) -> CGSize {
+        guard maxPixelDimension > 0 else { return size }
+
+        let longestEdge = max(size.width, size.height)
+        guard longestEdge > CGFloat(maxPixelDimension) else { return size }
+
+        let scale = CGFloat(maxPixelDimension) / longestEdge
+        return CGSize(
+            width: size.width * scale,
+            height: size.height * scale
+        )
+    }
+
     private nonisolated static func downsampleIfNeeded(
         _ image: UIImage,
         maxPixelDimension: Int

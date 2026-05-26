@@ -52,6 +52,106 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
     }
 }
 
+/// Live preview animation applied to canvas dots; animated exports become Live Photos.
+nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable {
+    case none
+    case randomBlink
+    case breathe
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .none:
+            "无"
+        case .randomBlink:
+            "闪烁"
+        case .breathe:
+            "呼吸"
+        }
+    }
+
+    var exportsAsLivePhoto: Bool {
+        self != .none
+    }
+
+    var motionExportDuration: TimeInterval {
+        switch self {
+        case .none:
+            0
+        case .randomBlink:
+            DotRandomBlinkOpacity.exportDuration
+        case .breathe:
+            DotBreatheAnimation.exportDuration
+        }
+    }
+}
+
+nonisolated enum DotRandomBlinkOpacity {
+    static let minimumOpacity: Double = 0.06
+    static let maximumOpacity: Double = 1
+    static let exportDuration: TimeInterval = 3
+
+    static func opacity(dotID: UUID, time: TimeInterval) -> Double {
+        let parameters = blinkParameters(for: dotID)
+        let primary = sin(time * parameters.primarySpeed + parameters.primaryPhase)
+        let secondary = sin(time * parameters.secondarySpeed + parameters.secondaryPhase)
+        let blended = (primary + secondary) * 0.5
+        let normalized = (blended + 1) * 0.5
+        return minimumOpacity + (maximumOpacity - minimumOpacity) * normalized
+    }
+
+    private static func blinkParameters(for dotID: UUID) -> (
+        primaryPhase: Double,
+        primarySpeed: Double,
+        secondaryPhase: Double,
+        secondarySpeed: Double
+    ) {
+        var hasher = Hasher()
+        hasher.combine(dotID)
+        let seed = UInt64(bitPattern: Int64(hasher.finalize()))
+
+        func unit(_ bits: UInt64) -> Double {
+            Double(bits) / Double(UInt16.max)
+        }
+
+        let primaryPeriod = 0.85 + unit(seed & 0xFFFF) * 1.35
+        let secondaryPeriod = 1.1 + unit((seed >> 16) & 0xFFFF) * 1.6
+        return (
+            primaryPhase: unit((seed >> 32) & 0xFFFF) * 2 * .pi,
+            primarySpeed: (2 * .pi) / primaryPeriod,
+            secondaryPhase: unit((seed >> 48) & 0xFFFF) * 2 * .pi,
+            secondarySpeed: (2 * .pi) / secondaryPeriod
+        )
+    }
+}
+
+nonisolated enum DotBreatheAnimation {
+    static let minimumOpacity: Double = 0.58
+    static let maximumOpacity: Double = 1
+    static let minimumScale: Double = 0.84
+    static let maximumScale: Double = 1
+    static let exportDuration: TimeInterval = 3
+    private static let cyclePeriod: TimeInterval = 2.75
+
+    static func sample(dotID: UUID, time: TimeInterval) -> (opacity: Double, scale: Double) {
+        let wave = sin((2 * .pi / cyclePeriod) * time + phaseOffset(for: dotID))
+        let normalized = (wave + 1) * 0.5
+        let eased = normalized * normalized * (3 - 2 * normalized)
+        let opacity = minimumOpacity + (maximumOpacity - minimumOpacity) * eased
+        let scale = minimumScale + (maximumScale - minimumScale) * eased
+        return (opacity, scale)
+    }
+
+    private static func phaseOffset(for dotID: UUID) -> Double {
+        var hasher = Hasher()
+        hasher.combine(dotID)
+        let seed = UInt64(bitPattern: Int64(hasher.finalize()))
+        let unit = Double(seed & 0xFFFF) / Double(UInt16.max)
+        return unit * 0.45 * .pi
+    }
+}
+
 struct PuzzleBackgroundColors: Equatable {
     var fillColor: Color
     var alternateColor: Color
@@ -1140,6 +1240,8 @@ nonisolated enum PuzzleDotCollageColor {
                 colors: backgroundColors,
                 extensionSize: extensionFrame.size,
                 photoFrameHeight: layout.referenceLocalPhotoFrame.height,
+                extensionRatio: layout.extensionRatio,
+                extensionSide: layout.extensionSide,
                 sourceImage: image
             )
         default:
@@ -1183,6 +1285,8 @@ nonisolated enum PuzzleDotCollageColor {
         colors: PuzzleBackgroundColors = .default,
         extensionSize: CGSize,
         photoFrameHeight: CGFloat,
+        extensionRatio: CGFloat = 0,
+        extensionSide: PuzzleCanvasExtensionSide = .right,
         sourceImage: UIImage? = nil
     ) -> Color {
         guard extensionSize.width > 0, extensionSize.height > 0 else {
@@ -1218,17 +1322,28 @@ nonisolated enum PuzzleDotCollageColor {
             let bandIndex = Int(point.y / spacing)
             return bandIndex.isMultiple(of: 2) ? colors.fillColor : colors.alternateColor
         case .halftone:
-            guard let sourceImage,
-                  let surface = PuzzleHalftoneBackgroundRenderer.render(
-                      sourceImage: sourceImage,
-                      surfaceSize: extensionSize,
-                      backgroundColor: colors.fillColor,
-                      dotColor: colors.lineColor
-                  ) else {
+            guard let sourceImage else {
                 return colors.fillColor
             }
+            let renderPixelSize = PuzzleHalftoneBackgroundMetrics.fullExtensionPixelSize(
+                imagePixelSize: CanvasImageLoader.pixelSize(for: sourceImage),
+                extensionSide: extensionSide
+            )
+            guard let surface = PuzzleHalftoneBackgroundRenderer.render(
+                sourceImage: sourceImage,
+                renderPixelSize: renderPixelSize,
+                backgroundColor: colors.fillColor,
+                dotColor: colors.lineColor
+            ) else {
+                return colors.fillColor
+            }
+            let fullSamplePoint = PuzzleHalftoneBackgroundMetrics.mapVisiblePointToFullExtension(
+                normalizedPoint,
+                extensionRatio: extensionRatio,
+                extensionSide: extensionSide
+            )
             return PuzzleHalftoneBackgroundRenderer.color(
-                at: normalizedPoint,
+                at: fullSamplePoint,
                 surface: surface,
                 fallback: colors.fillColor
             )

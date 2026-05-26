@@ -21,4 +21,9 @@ private final class SpyPhotoLibrarySaver: CanvasPhotoLibrarySaving {
         savedFileURL = fileURL
         return true
     }
+
+    func saveLivePhoto(imageURL: URL, videoURL: URL) async -> Bool {
+        savedFileURL = imageURL
+        return true
+    }
 }

@@ -1095,6 +1095,31 @@ struct PuzzleCanvasModelTests {
         #expect(!categorizedShape.usesTemplatePreview)
     }
 
+    @Test func basicSvgDotShapesResolveToBuiltInVectorPaths() {
+        let shapeNames = ["心", "星1", "星2", "星3", "花1", "雪"]
+
+        for shapeName in shapeNames {
+            let panelShape = DotShapeAsset(name: shapeName)
+            let canvasDot = PuzzleDot(
+                id: UUID(),
+                position: .zero,
+                color: .clear,
+                size: 1,
+                shapeAssetName: shapeName
+            )
+
+            #expect(panelShape.builtInShape != nil)
+            #expect(canvasDot.builtInShape != nil)
+            #expect(panelShape.builtInShape?.bezierPath(in: CGRect(x: 0, y: 0, width: 48, height: 48)).isEmpty == false)
+        }
+    }
+
+    @Test func panelDotShapeListDoesNotDuplicateVectorizedBasicAssets() {
+        let shapeNames = DotShapeAsset.all.map(\.name)
+
+        #expect(shapeNames.count == Set(shapeNames).count)
+    }
+
     @Test func datasetDotAssetsLoadAsImagesForPanelPreview() {
         let image = DotShapeAssetImage.uiImage(named: DotShapeAsset(name: "彩纸5.彩纸").assetImageName)
 

@@ -13,7 +13,9 @@ nonisolated enum CanvasRasterExporter {
         dots: [PuzzleDot],
         dotScale: CGFloat,
         dotColor: Color,
-        usesRandomDotColors: Bool
+        usesRandomDotColors: Bool,
+        liveDotAnimation: LiveDotAnimation = .none,
+        blinkTime: TimeInterval? = nil
     ) -> UIImage? {
         guard exportSize.width > 0, exportSize.height > 0 else { return nil }
 
@@ -48,6 +50,8 @@ nonisolated enum CanvasRasterExporter {
                 style: backgroundStyle,
                 colors: backgroundColors,
                 photoFrameHeight: layout.photoFrame.height,
+                extensionRatio: layout.extensionRatio,
+                extensionSide: layout.extensionSide,
                 sourceImage: image
             )
 
@@ -62,7 +66,9 @@ nonisolated enum CanvasRasterExporter {
                 dots: dots,
                 dotScale: dotScale,
                 dotColor: dotColor,
-                usesRandomDotColors: usesRandomDotColors
+                usesRandomDotColors: usesRandomDotColors,
+                liveDotAnimation: liveDotAnimation,
+                blinkTime: blinkTime
             )
 
             context.restoreGState()
@@ -75,6 +81,8 @@ nonisolated enum CanvasRasterExporter {
         style: PuzzleBackgroundStyle,
         colors: PuzzleBackgroundColors,
         photoFrameHeight: CGFloat,
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide,
         sourceImage: UIImage
     ) {
         guard rect.width > 0, rect.height > 0 else { return }
@@ -100,13 +108,25 @@ nonisolated enum CanvasRasterExporter {
                 colors: colors
             )
         case .halftone:
+            let renderPixelSize = PuzzleHalftoneBackgroundMetrics.fullExtensionPixelSize(
+                imagePixelSize: CanvasImageLoader.pixelSize(for: sourceImage),
+                extensionSide: extensionSide
+            )
+            let visibleCrop = PuzzleHalftoneBackgroundMetrics.visibleCropNormalizedRect(
+                extensionRatio: extensionRatio,
+                extensionSide: extensionSide
+            )
             if let surface = PuzzleHalftoneBackgroundRenderer.render(
                 sourceImage: sourceImage,
-                surfaceSize: rect.size,
+                renderPixelSize: renderPixelSize,
                 backgroundColor: colors.fillColor,
                 dotColor: colors.lineColor
             ) {
-                surface.draw(in: CGRect(origin: .zero, size: rect.size))
+                PuzzleHalftoneBackgroundRenderer.drawVisibleCrop(
+                    of: surface,
+                    normalizedCrop: visibleCrop,
+                    in: CGRect(origin: .zero, size: rect.size)
+                )
             } else {
                 context.setFillColor(UIColor(colors.fillColor).cgColor)
                 context.fill(CGRect(origin: .zero, size: rect.size))
@@ -175,16 +195,24 @@ nonisolated enum CanvasRasterExporter {
         dots: [PuzzleDot],
         dotScale: CGFloat,
         dotColor: Color,
-        usesRandomDotColors: Bool
+        usesRandomDotColors: Bool,
+        liveDotAnimation: LiveDotAnimation,
+        blinkTime: TimeInterval?
     ) {
         let referenceOrigin = layout.referenceComposedFrame.origin
         let photoFrameHeight = layout.referenceLocalPhotoFrame.height
 
         for dot in dots {
-            let dotSize = DotSizeControl.displaySize(
+            let baseDotSize = DotSizeControl.displaySize(
                 renderedScale: dot.size * dotScale * dot.displaySizeScale,
                 photoFrameHeight: photoFrameHeight
             )
+            let motion = dotMotion(
+                dotID: dot.id,
+                liveDotAnimation: liveDotAnimation,
+                blinkTime: blinkTime
+            )
+            let dotSize = baseDotSize * motion.scale
             let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
 
             for (centerIndex, center) in centers.enumerated() {
@@ -205,6 +233,7 @@ nonisolated enum CanvasRasterExporter {
                             builtInShape,
                             centerIndex: centerIndex,
                             dot: dot,
+                            opacity: motion.opacity,
                             in: context,
                             rect: rect,
                             image: image,
@@ -224,7 +253,7 @@ nonisolated enum CanvasRasterExporter {
                             builtInShape,
                             in: context,
                             rect: rect,
-                            color: uiColor
+                            color: uiColor.withAlphaComponent(motion.opacity)
                         )
                     }
                 } else if PuzzleDotCollageColor.shouldRenderCollageContent(
@@ -237,6 +266,7 @@ nonisolated enum CanvasRasterExporter {
                         assetName: dot.shapeAssetName,
                         centerIndex: centerIndex,
                         dot: dot,
+                        opacity: motion.opacity,
                         in: context,
                         rect: rect,
                         image: image,
@@ -257,10 +287,31 @@ nonisolated enum CanvasRasterExporter {
                         in: context,
                         rect: rect,
                         color: uiColor,
-                        usesTemplateColor: dot.usesTemplateColor
+                        usesTemplateColor: dot.usesTemplateColor,
+                        opacity: motion.opacity
                     )
                 }
             }
+        }
+    }
+
+    private nonisolated static func dotMotion(
+        dotID: UUID,
+        liveDotAnimation: LiveDotAnimation,
+        blinkTime: TimeInterval?
+    ) -> (opacity: CGFloat, scale: CGFloat) {
+        guard let blinkTime else { return (1, 1) }
+        switch liveDotAnimation {
+        case .none:
+            return (1, 1)
+        case .randomBlink:
+            return (
+                CGFloat(DotRandomBlinkOpacity.opacity(dotID: dotID, time: blinkTime)),
+                1
+            )
+        case .breathe:
+            let sample = DotBreatheAnimation.sample(dotID: dotID, time: blinkTime)
+            return (CGFloat(sample.opacity), CGFloat(sample.scale))
         }
     }
 
@@ -268,6 +319,7 @@ nonisolated enum CanvasRasterExporter {
         _ shape: BuiltInDotShape,
         centerIndex: Int,
         dot: PuzzleDot,
+        opacity: CGFloat,
         in context: CGContext,
         rect: CGRect,
         image: UIImage,
@@ -279,10 +331,11 @@ nonisolated enum CanvasRasterExporter {
         let path = shape.bezierPath(in: rect)
 
         context.saveGState()
-        path.addClip()
+        clip(to: path, in: context)
         drawMirrorCollageContent(
             centerIndex: centerIndex,
             dot: dot,
+            opacity: opacity,
             in: context,
             rect: rect,
             image: image,
@@ -298,6 +351,7 @@ nonisolated enum CanvasRasterExporter {
         assetName: String,
         centerIndex: Int,
         dot: PuzzleDot,
+        opacity: CGFloat,
         in context: CGContext,
         rect: CGRect,
         image: UIImage,
@@ -306,30 +360,47 @@ nonisolated enum CanvasRasterExporter {
         backgroundColors: PuzzleBackgroundColors,
         photoFrameHeight: CGFloat
     ) {
-        guard let maskImage = DotShapeAssetImage.uiImage(named: "public/\(assetName)"),
-              let maskCGImage = maskImage.cgImage else {
-            return
+        guard let maskImage = DotShapeAssetImage.uiImage(named: "public/\(assetName)") else { return }
+
+        // Use the mask image's natural aspect ratio so the shape isn't squashed.
+        let drawRect = aspectFitRect(for: maskImage.size, in: rect)
+        guard drawRect.width > 0, drawRect.height > 0 else { return }
+
+        // Render collage content into a transparent offscreen context sized to `drawRect`.
+        // CGContextClipToMask is avoided here because it maps the mask image in device
+        // coordinates, which in UIGraphicsImageRenderer's flipped context causes the
+        // mask to appear vertically inverted. Using .destinationIn with UIImage.draw
+        // sidesteps the flip entirely since UIImage.draw respects the current CTM.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let localSize = drawRect.size
+        let maskedContent = UIGraphicsImageRenderer(size: localSize, format: format).image { offCtx in
+            let localRect = CGRect(origin: .zero, size: localSize)
+            drawMirrorCollageContent(
+                centerIndex: centerIndex,
+                dot: dot,
+                opacity: 1,
+                in: offCtx.cgContext,
+                rect: localRect,
+                image: image,
+                layout: layout,
+                backgroundStyle: backgroundStyle,
+                backgroundColors: backgroundColors,
+                photoFrameHeight: photoFrameHeight
+            )
+            // Apply shape mask: only the pixels where the mask is opaque survive.
+            offCtx.cgContext.setBlendMode(.destinationIn)
+            maskImage.draw(in: localRect)
         }
 
-        context.saveGState()
-        context.clip(to: rect, mask: maskCGImage)
-        drawMirrorCollageContent(
-            centerIndex: centerIndex,
-            dot: dot,
-            in: context,
-            rect: rect,
-            image: image,
-            layout: layout,
-            backgroundStyle: backgroundStyle,
-            backgroundColors: backgroundColors,
-            photoFrameHeight: photoFrameHeight
-        )
-        context.restoreGState()
+        maskedContent.draw(in: drawRect, blendMode: .normal, alpha: opacity)
     }
 
     private nonisolated static func drawMirrorCollageContent(
         centerIndex: Int,
         dot: PuzzleDot,
+        opacity: CGFloat,
         in context: CGContext,
         rect: CGRect,
         image: UIImage,
@@ -352,21 +423,56 @@ nonisolated enum CanvasRasterExporter {
                 y: rect.midY - samplePoint.y * extensionSize.height
             )
 
-            drawExtensionBackground(
-                in: context,
-                rect: CGRect(origin: backgroundOrigin, size: extensionSize),
-                style: backgroundStyle,
-                colors: backgroundColors,
-                photoFrameHeight: photoFrameHeight,
-                sourceImage: image
+            // context.setAlpha is ignored by UIImage.draw(in:) which halftone uses internally.
+            // Render into an offscreen buffer first, then composite with explicit alpha.
+            let offFormat = UIGraphicsImageRendererFormat()
+            offFormat.scale = 1
+            offFormat.opaque = false
+            let offscreen = UIGraphicsImageRenderer(size: extensionSize, format: offFormat)
+                .image { offCtx in
+                    drawExtensionBackground(
+                        in: offCtx.cgContext,
+                        rect: CGRect(origin: .zero, size: extensionSize),
+                        style: backgroundStyle,
+                        colors: backgroundColors,
+                        photoFrameHeight: photoFrameHeight,
+                        extensionRatio: layout.extensionRatio,
+                        extensionSide: layout.extensionSide,
+                        sourceImage: image
+                    )
+                }
+            offscreen.draw(
+                in: CGRect(origin: backgroundOrigin, size: extensionSize),
+                blendMode: .normal,
+                alpha: opacity
             )
         } else {
             let photoOrigin = CGPoint(
                 x: rect.midX - dot.position.x * photoSize.width,
                 y: rect.midY - dot.position.y * photoSize.height
             )
-            image.draw(in: CGRect(origin: photoOrigin, size: photoSize))
+            image.draw(
+                in: CGRect(origin: photoOrigin, size: photoSize),
+                blendMode: .normal,
+                alpha: opacity
+            )
         }
+    }
+
+    /// Returns the largest rect with `imageSize`'s aspect ratio that fits in `rect`, centered.
+    private nonisolated static func aspectFitRect(for imageSize: CGSize, in rect: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0, rect.width > 0, rect.height > 0 else {
+            return rect
+        }
+        let scale = min(rect.width / imageSize.width, rect.height / imageSize.height)
+        let fittedWidth = imageSize.width * scale
+        let fittedHeight = imageSize.height * scale
+        return CGRect(
+            x: rect.midX - fittedWidth / 2,
+            y: rect.midY - fittedHeight / 2,
+            width: fittedWidth,
+            height: fittedHeight
+        )
     }
 
     private nonisolated static func drawBuiltInDot(
@@ -378,9 +484,15 @@ nonisolated enum CanvasRasterExporter {
         let path = shape.bezierPath(in: rect)
 
         context.saveGState()
-        color.setFill()
-        path.fill()
+        context.addPath(path.cgPath)
+        context.setFillColor(color.cgColor)
+        context.fillPath(using: path.usesEvenOddFillRule ? .evenOdd : .winding)
         context.restoreGState()
+    }
+
+    private nonisolated static func clip(to path: UIBezierPath, in context: CGContext) {
+        context.addPath(path.cgPath)
+        context.clip(using: path.usesEvenOddFillRule ? .evenOdd : .winding)
     }
 
     private nonisolated static func drawAssetDot(
@@ -388,14 +500,19 @@ nonisolated enum CanvasRasterExporter {
         in context: CGContext,
         rect: CGRect,
         color: UIColor,
-        usesTemplateColor: Bool
+        usesTemplateColor: Bool,
+        opacity: CGFloat = 1
     ) {
         guard let image = DotShapeAssetImage.uiImage(named: "public/\(assetName)") else { return }
-
+        let drawRect = aspectFitRect(for: image.size, in: rect)
         if usesTemplateColor {
-            image.withTintColor(color, renderingMode: .alwaysTemplate).draw(in: rect)
+            image.withTintColor(color, renderingMode: .alwaysTemplate).draw(
+                in: drawRect,
+                blendMode: .normal,
+                alpha: opacity
+            )
         } else {
-            image.draw(in: rect)
+            image.draw(in: drawRect, blendMode: .normal, alpha: opacity)
         }
     }
 

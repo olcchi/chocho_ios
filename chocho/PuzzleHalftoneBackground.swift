@@ -8,12 +8,136 @@ nonisolated enum PuzzleHalftoneBackgroundMetrics {
     static let radiusScale: CGFloat = 0.35
     static let surfaceMaxEdge: CGFloat = 960
     static let defaultPaperHex = "#f0eee6"
-    /// Matches web tone-blur default intensity (0…40).
-    static let defaultBlurAmount: Double = 24
+    /// Tone-blur intensity (0…40); keep low so photo contours stay readable.
+    static let defaultBlurAmount: Double = 0
 
     static func toneBlurRadius(blurAmount: Double) -> CGFloat {
         let clamped = min(max(blurAmount, 0), 40)
         return (clamped * Double(radiusScale) * 10).rounded() / 10
+    }
+
+    /// Extension area size in source-image pixels for a given ratio.
+    static func extensionPixelSize(
+        imagePixelSize: CGSize,
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGSize {
+        let ratio = min(max(extensionRatio, 0), PuzzleCanvasLayout.maxExtensionRatio)
+        let width = max(1, imagePixelSize.width)
+        let height = max(1, imagePixelSize.height)
+
+        switch extensionSide {
+        case .left, .right:
+            return CGSize(width: max(1, width * ratio), height: height)
+        case .top, .bottom:
+            return CGSize(width: width, height: max(1, height * ratio))
+        }
+    }
+
+    /// Full extension strip at max ratio — render once, crop while adjusting width.
+    static func fullExtensionPixelSize(
+        imagePixelSize: CGSize,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGSize {
+        extensionPixelSize(
+            imagePixelSize: imagePixelSize,
+            extensionRatio: PuzzleCanvasLayout.maxExtensionRatio,
+            extensionSide: extensionSide
+        )
+    }
+
+    /// Visible slice of the full extension bitmap (normalized 0…1, photo-adjacent edge aligned).
+    static func visibleCropNormalizedRect(
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGRect {
+        let maxRatio = PuzzleCanvasLayout.maxExtensionRatio
+        let fraction = min(max(extensionRatio, 0), maxRatio) / max(maxRatio, 0.0001)
+        guard fraction > 0 else { return .zero }
+
+        switch extensionSide {
+        case .right:
+            return CGRect(x: 0, y: 0, width: fraction, height: 1)
+        case .left:
+            return CGRect(x: 1 - fraction, y: 0, width: fraction, height: 1)
+        case .bottom:
+            return CGRect(x: 0, y: 0, width: 1, height: fraction)
+        case .top:
+            return CGRect(x: 0, y: 1 - fraction, width: 1, height: fraction)
+        }
+    }
+
+    static func mapVisiblePointToFullExtension(
+        _ normalizedVisiblePoint: CGPoint,
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGPoint {
+        let crop = visibleCropNormalizedRect(
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide
+        )
+        guard crop.width > 0, crop.height > 0 else {
+            return normalizedVisiblePoint
+        }
+
+        let u = min(max(normalizedVisiblePoint.x, 0), 1)
+        let v = min(max(normalizedVisiblePoint.y, 0), 1)
+        return CGPoint(
+            x: crop.minX + u * crop.width,
+            y: crop.minY + v * crop.height
+        )
+    }
+
+    static func photoAdjacentAlignment(for extensionSide: PuzzleCanvasExtensionSide) -> Alignment {
+        switch extensionSide {
+        case .right:
+            .leading
+        case .left:
+            .trailing
+        case .bottom:
+            .top
+        case .top:
+            .bottom
+        }
+    }
+
+    static func visibleDisplaySize(
+        fullExtensionSize: CGSize,
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGSize {
+        let crop = visibleCropNormalizedRect(
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide
+        )
+        return CGSize(
+            width: max(0, fullExtensionSize.width * crop.width),
+            height: max(0, fullExtensionSize.height * crop.height)
+        )
+    }
+
+    static func visibleDisplayCenter(
+        in fullExtensionFrame: CGRect,
+        extensionRatio: CGFloat,
+        extensionSide: PuzzleCanvasExtensionSide
+    ) -> CGPoint {
+        let size = visibleDisplaySize(
+            fullExtensionSize: fullExtensionFrame.size,
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide
+        )
+        let origin = CGPoint(
+            x: extensionSide == .left
+                ? fullExtensionFrame.maxX - size.width
+                : fullExtensionFrame.minX,
+            y: extensionSide == .top
+                ? fullExtensionFrame.maxY - size.height
+                : fullExtensionFrame.minY
+        )
+        return CGPoint(
+            x: origin.x + size.width / 2,
+            y: origin.y + size.height / 2
+        )
     }
 }
 
@@ -28,13 +152,13 @@ nonisolated enum PuzzleHalftoneBackgroundRenderer {
     static func render(
         sourceImage: UIImage,
         sourceCacheKey: String? = nil,
-        surfaceSize: CGSize,
+        renderPixelSize: CGSize,
         backgroundColor: Color,
         dotColor: Color,
         blurAmount: Double = PuzzleHalftoneBackgroundMetrics.defaultBlurAmount
     ) -> UIImage? {
-        let requestedWidth = max(0, surfaceSize.width.rounded())
-        let requestedHeight = max(0, surfaceSize.height.rounded())
+        let requestedWidth = max(0, renderPixelSize.width.rounded())
+        let requestedHeight = max(0, renderPixelSize.height.rounded())
         guard requestedWidth > 0, requestedHeight > 0 else { return nil }
 
         let scale = min(
@@ -57,7 +181,7 @@ nonisolated enum PuzzleHalftoneBackgroundRenderer {
             Int(blurAmount.rounded()),
             width,
             height,
-            "halftone-v3",
+            "halftone-v5",
         ]
         .map { "\($0)" }
         .joined(separator: "|")
@@ -132,6 +256,49 @@ nonisolated enum PuzzleHalftoneBackgroundRenderer {
         )
     }
 
+    static func croppedSurface(
+        _ surface: UIImage,
+        normalizedCrop: CGRect
+    ) -> UIImage? {
+        guard normalizedCrop.width > 0,
+              normalizedCrop.height > 0,
+              let cgImage = surface.cgImage else {
+            return nil
+        }
+
+        let pixelRect = CGRect(
+            x: normalizedCrop.minX * CGFloat(cgImage.width),
+            y: normalizedCrop.minY * CGFloat(cgImage.height),
+            width: normalizedCrop.width * CGFloat(cgImage.width),
+            height: normalizedCrop.height * CGFloat(cgImage.height)
+        ).integral
+
+        guard pixelRect.width > 0,
+              pixelRect.height > 0,
+              let cropped = cgImage.cropping(to: pixelRect) else {
+            return nil
+        }
+
+        return UIImage(
+            cgImage: cropped,
+            scale: surface.scale,
+            orientation: surface.imageOrientation
+        )
+    }
+
+    static func drawVisibleCrop(
+        of surface: UIImage,
+        normalizedCrop: CGRect,
+        in destinationRect: CGRect
+    ) {
+        guard destinationRect.width > 0,
+              destinationRect.height > 0,
+              let cropped = croppedSurface(surface, normalizedCrop: normalizedCrop) else {
+            return
+        }
+        cropped.draw(in: destinationRect)
+    }
+
     private static func renderSurface(
         sourceImage: UIImage,
         width: Int,
@@ -199,8 +366,8 @@ nonisolated enum PuzzleHalftoneBackgroundRenderer {
                         levels: 5
                     )
                     let darkness = 1 - luminance
-                    let missing = random.next() < damage * 0.045 && darkness < 0.7
-                    if darkness < 0.12 || missing {
+                    let missing = random.next() < damage * 0.03 && darkness < 0.75
+                    if darkness < 0.07 || missing {
                         continue
                     }
 
@@ -279,12 +446,20 @@ nonisolated enum PuzzleHalftoneBackgroundRenderer {
 
         guard let sampleImage = sampleUIImage.cgImage else { return nil }
 
-        let filterRadius = max(0.6, blurRadius * 0.34 + damage * 1.4)
-        guard let blurred = applyGaussianBlur(to: sampleImage, radius: filterRadius) else {
-            return nil
+        let filterRadius = blurRadius * 0.18 + damage * 0.55
+        let sampleForPixels: CGImage
+        if filterRadius < 0.75 {
+            sampleForPixels = sampleImage
+        } else if let blurred = applyGaussianBlur(
+            to: sampleImage,
+            radius: max(0.4, filterRadius)
+        ) {
+            sampleForPixels = blurred
+        } else {
+            sampleForPixels = sampleImage
         }
 
-        return readRGBABytes(from: blurred)
+        return readRGBABytes(from: sampleForPixels)
     }
 
     private static func applyGaussianBlur(to image: CGImage, radius: CGFloat) -> CGImage? {
@@ -397,9 +572,9 @@ private nonisolated enum HalftoneColor {
 
     static func hazeColor(_ color: Color) -> UIColor {
         guard let rgb = rgbComponents(color) else {
-            return UIColor(red: 245 / 255, green: 242 / 255, blue: 232 / 255, alpha: 0.18)
+            return UIColor(red: 245 / 255, green: 242 / 255, blue: 232 / 255, alpha: 0.12)
         }
-        return UIColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 0.18)
+        return UIColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 0.12)
     }
 
     static func halftoneDotColor(_ color: Color) -> (r: Int, g: Int, b: Int) {
@@ -455,27 +630,54 @@ private extension UIColor {
 
 struct PuzzleHalftoneBackgroundView: View {
     let sourceImage: UIImage
-    let surfaceSize: CGSize
+    let extensionRatio: CGFloat
+    let extensionSide: PuzzleCanvasExtensionSide
+    /// Visible extension frame on screen; width changes only crop the full halftone bitmap.
+    let displaySize: CGSize
     let backgroundColor: Color
     let dotColor: Color
     var blurAmount: Double = PuzzleHalftoneBackgroundMetrics.defaultBlurAmount
 
-    @State private var renderedImage: UIImage?
+    @State private var fullExtensionImage: UIImage?
+
+    private var visibleCrop: CGRect {
+        PuzzleHalftoneBackgroundMetrics.visibleCropNormalizedRect(
+            extensionRatio: extensionRatio,
+            extensionSide: extensionSide
+        )
+    }
 
     var body: some View {
         Group {
-            if let renderedImage {
-                Image(uiImage: renderedImage)
+            if let fullExtensionImage, visibleCrop.width > 0, visibleCrop.height > 0 {
+                Image(uiImage: fullExtensionImage)
                     .resizable()
                     .interpolation(.medium)
+                    .frame(
+                        width: cropDisplayWidth(for: fullExtensionImage),
+                        height: cropDisplayHeight(for: fullExtensionImage),
+                        alignment: PuzzleHalftoneBackgroundMetrics.photoAdjacentAlignment(
+                            for: extensionSide
+                        )
+                    )
             } else {
                 Color(backgroundColor)
             }
         }
+        .frame(
+            width: displaySize.width,
+            height: displaySize.height,
+            alignment: PuzzleHalftoneBackgroundMetrics.photoAdjacentAlignment(for: extensionSide)
+        )
+        .clipped()
         .task(id: renderTaskID) {
-            renderedImage = PuzzleHalftoneBackgroundRenderer.render(
+            let renderPixelSize = PuzzleHalftoneBackgroundMetrics.fullExtensionPixelSize(
+                imagePixelSize: CanvasImageLoader.pixelSize(for: sourceImage),
+                extensionSide: extensionSide
+            )
+            fullExtensionImage = PuzzleHalftoneBackgroundRenderer.render(
                 sourceImage: sourceImage,
-                surfaceSize: surfaceSize,
+                renderPixelSize: renderPixelSize,
                 backgroundColor: backgroundColor,
                 dotColor: dotColor,
                 blurAmount: blurAmount
@@ -485,11 +687,21 @@ struct PuzzleHalftoneBackgroundView: View {
 
     private var renderTaskID: String {
         [
-            "\(surfaceSize.width)x\(surfaceSize.height)",
+            extensionSide.rawValue,
             HalftoneColor.hexString(backgroundColor) ?? "paper",
             HalftoneColor.hexString(dotColor) ?? "dot",
             "\(blurAmount)",
-            "\(sourceImage.size.width)x\(sourceImage.size.height)",
+            "\(CanvasImageLoader.pixelSize(for: sourceImage).width)x\(CanvasImageLoader.pixelSize(for: sourceImage).height)",
         ].joined(separator: "|")
+    }
+
+    private func cropDisplayWidth(for image: UIImage) -> CGFloat {
+        guard visibleCrop.width > 0 else { return displaySize.width }
+        return displaySize.width / visibleCrop.width
+    }
+
+    private func cropDisplayHeight(for image: UIImage) -> CGFloat {
+        guard visibleCrop.height > 0 else { return displaySize.height }
+        return displaySize.height / visibleCrop.height
     }
 }
