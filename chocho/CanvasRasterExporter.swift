@@ -9,6 +9,7 @@ nonisolated enum CanvasRasterExporter {
         extensionRatio: CGFloat,
         extensionSide: PuzzleCanvasExtensionSide,
         backgroundStyle: PuzzleBackgroundStyle,
+        backgroundColors: PuzzleBackgroundColors = .default,
         dots: [PuzzleDot],
         dotScale: CGFloat,
         dotColor: Color,
@@ -45,6 +46,7 @@ nonisolated enum CanvasRasterExporter {
                 in: context,
                 rect: layout.extensionFrame,
                 style: backgroundStyle,
+                colors: backgroundColors,
                 photoFrameHeight: layout.photoFrame.height
             )
 
@@ -55,6 +57,7 @@ nonisolated enum CanvasRasterExporter {
                 layout: layout,
                 image: image,
                 backgroundStyle: backgroundStyle,
+                backgroundColors: backgroundColors,
                 dots: dots,
                 dotScale: dotScale,
                 dotColor: dotColor,
@@ -69,6 +72,7 @@ nonisolated enum CanvasRasterExporter {
         in context: CGContext,
         rect: CGRect,
         style: PuzzleBackgroundStyle,
+        colors: PuzzleBackgroundColors,
         photoFrameHeight: CGFloat
     ) {
         guard rect.width > 0, rect.height > 0 else { return }
@@ -78,11 +82,21 @@ nonisolated enum CanvasRasterExporter {
 
         switch style {
         case .grid:
-            context.setFillColor(ThemeUIColor.secondary.cgColor)
+            context.setFillColor(UIColor(colors.fillColor).cgColor)
             context.fill(CGRect(origin: .zero, size: rect.size))
-            strokeGrid(in: context, size: rect.size, photoFrameHeight: photoFrameHeight)
+            strokeGrid(
+                in: context,
+                size: rect.size,
+                photoFrameHeight: photoFrameHeight,
+                lineColor: colors.lineColor
+            )
         case .stripes:
-            fillStripes(in: context, size: rect.size, photoFrameHeight: photoFrameHeight)
+            fillStripes(
+                in: context,
+                size: rect.size,
+                photoFrameHeight: photoFrameHeight,
+                colors: colors
+            )
         }
 
         context.restoreGState()
@@ -91,12 +105,13 @@ nonisolated enum CanvasRasterExporter {
     private nonisolated static func strokeGrid(
         in context: CGContext,
         size: CGSize,
-        photoFrameHeight: CGFloat
+        photoFrameHeight: CGFloat,
+        lineColor: Color
     ) {
         let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
         let lineWidth = PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: photoFrameHeight)
 
-        context.setStrokeColor(ThemeUIColor.border.cgColor)
+        context.setStrokeColor(UIColor(lineColor).cgColor)
         context.setLineWidth(lineWidth)
 
         var x: CGFloat = 0
@@ -119,7 +134,8 @@ nonisolated enum CanvasRasterExporter {
     private nonisolated static func fillStripes(
         in context: CGContext,
         size: CGSize,
-        photoFrameHeight: CGFloat
+        photoFrameHeight: CGFloat,
+        colors: PuzzleBackgroundColors
     ) {
         let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
         var y: CGFloat = 0
@@ -128,7 +144,7 @@ nonisolated enum CanvasRasterExporter {
         while y < size.height {
             let bandHeight = min(spacing, size.height - y)
             context.setFillColor(
-                (usesPrimaryStripe ? ThemeUIColor.secondary : ThemeUIColor.background).cgColor
+                UIColor(usesPrimaryStripe ? colors.fillColor : colors.alternateColor).cgColor
             )
             context.fill(CGRect(x: 0, y: y, width: size.width, height: bandHeight))
             y += spacing
@@ -141,6 +157,7 @@ nonisolated enum CanvasRasterExporter {
         layout: PuzzleCanvasLayoutResult,
         image: UIImage,
         backgroundStyle: PuzzleBackgroundStyle,
+        backgroundColors: PuzzleBackgroundColors,
         dots: [PuzzleDot],
         dotScale: CGFloat,
         dotColor: Color,
@@ -179,6 +196,7 @@ nonisolated enum CanvasRasterExporter {
                             image: image,
                             layout: layout,
                             backgroundStyle: backgroundStyle,
+                            backgroundColors: backgroundColors,
                             photoFrameHeight: photoFrameHeight
                         )
                     } else {
@@ -210,6 +228,7 @@ nonisolated enum CanvasRasterExporter {
                         image: image,
                         layout: layout,
                         backgroundStyle: backgroundStyle,
+                        backgroundColors: backgroundColors,
                         photoFrameHeight: photoFrameHeight
                     )
                 } else {
@@ -240,6 +259,7 @@ nonisolated enum CanvasRasterExporter {
         image: UIImage,
         layout: PuzzleCanvasLayoutResult,
         backgroundStyle: PuzzleBackgroundStyle,
+        backgroundColors: PuzzleBackgroundColors,
         photoFrameHeight: CGFloat
     ) {
         let path = shape.bezierPath(in: rect)
@@ -254,6 +274,7 @@ nonisolated enum CanvasRasterExporter {
             image: image,
             layout: layout,
             backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
             photoFrameHeight: photoFrameHeight
         )
         context.restoreGState()
@@ -268,6 +289,7 @@ nonisolated enum CanvasRasterExporter {
         image: UIImage,
         layout: PuzzleCanvasLayoutResult,
         backgroundStyle: PuzzleBackgroundStyle,
+        backgroundColors: PuzzleBackgroundColors,
         photoFrameHeight: CGFloat
     ) {
         guard let maskImage = DotShapeAssetImage.uiImage(named: "public/\(assetName)"),
@@ -285,6 +307,7 @@ nonisolated enum CanvasRasterExporter {
             image: image,
             layout: layout,
             backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
             photoFrameHeight: photoFrameHeight
         )
         context.restoreGState()
@@ -298,6 +321,7 @@ nonisolated enum CanvasRasterExporter {
         image: UIImage,
         layout: PuzzleCanvasLayoutResult,
         backgroundStyle: PuzzleBackgroundStyle,
+        backgroundColors: PuzzleBackgroundColors,
         photoFrameHeight: CGFloat
     ) {
         let photoSize = layout.referenceLocalPhotoFrame.size
@@ -318,6 +342,7 @@ nonisolated enum CanvasRasterExporter {
                 in: context,
                 rect: CGRect(origin: backgroundOrigin, size: extensionSize),
                 style: backgroundStyle,
+                colors: backgroundColors,
                 photoFrameHeight: photoFrameHeight
             )
         } else {

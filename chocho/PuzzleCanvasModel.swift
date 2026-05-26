@@ -49,6 +49,18 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
     }
 }
 
+struct PuzzleBackgroundColors: Equatable {
+    var fillColor: Color
+    var alternateColor: Color
+    var lineColor: Color
+
+    static let `default` = PuzzleBackgroundColors(
+        fillColor: .secondary,
+        alternateColor: .background,
+        lineColor: .border
+    )
+}
+
 nonisolated struct PuzzleCanvasLayoutResult: Equatable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
@@ -379,17 +391,16 @@ enum PuzzleCanvasViewport {
     /// Smaller than full re-centering so the canvas nudges without tracking panel travel 1:1.
     static let panelExpansionDodgeFraction: CGFloat = 0.32
 
-    /// Vertical offset delta when the bottom panel expands or collapses.
-    /// Screen-space nudge; `BottomSheetPanel.layoutHeightBoost` still preserves fit scale.
+    /// Vertical offset delta when the bottom panel expands or collapses over the canvas.
     static func panelExpansionOffsetDelta(
-        panelHeightBoost: CGFloat,
+        panelOcclusionHeight: CGFloat,
         isPanelExpanded: Bool
     ) -> CGSize {
-        guard panelHeightBoost > 0 else {
+        guard panelOcclusionHeight > 0 else {
             return .zero
         }
 
-        let verticalShift = -panelHeightBoost * panelExpansionDodgeFraction
+        let verticalShift = -panelOcclusionHeight * panelExpansionDodgeFraction
         return CGSize(width: 0, height: isPanelExpanded ? verticalShift : -verticalShift)
     }
 
@@ -998,10 +1009,6 @@ nonisolated struct PuzzleDot: Identifiable, Equatable {
 /// Default dot tinting: each copy samples the mirrored region on the opposite layer.
 nonisolated enum PuzzleDotCollageColor {
     private static let fallbackPrimary = Color(.sRGB, red: 165 / 255, green: 231 / 255, blue: 76 / 255, opacity: 1)
-    private static let fallbackSecondary = Color(.sRGB, red: 238 / 255, green: 247 / 255, blue: 221 / 255, opacity: 1)
-    private static let fallbackBorder = Color(.sRGB, red: 226 / 255, green: 232 / 255, blue: 216 / 255, opacity: 1)
-    private static let fallbackBackground = Color(.sRGB, red: 245 / 255, green: 254 / 255, blue: 233 / 255, opacity: 1)
-
     static func extensionMirrorPosition(
         forPhotoPosition position: CGPoint,
         extensionSide: PuzzleCanvasExtensionSide,
@@ -1079,6 +1086,7 @@ nonisolated enum PuzzleDotCollageColor {
         layout: PuzzleCanvasLayoutResult,
         image: UIImage,
         backgroundStyle: PuzzleBackgroundStyle,
+        backgroundColors: PuzzleBackgroundColors = .default,
         usesRandomDotColors: Bool,
         selectedDotColor: Color
     ) -> Color {
@@ -1106,6 +1114,7 @@ nonisolated enum PuzzleDotCollageColor {
             return backgroundColor(
                 at: mirrorPosition,
                 style: backgroundStyle,
+                colors: backgroundColors,
                 extensionSize: extensionFrame.size,
                 photoFrameHeight: layout.referenceLocalPhotoFrame.height
             )
@@ -1147,11 +1156,12 @@ nonisolated enum PuzzleDotCollageColor {
     static func backgroundColor(
         at normalizedPoint: CGPoint,
         style: PuzzleBackgroundStyle,
+        colors: PuzzleBackgroundColors = .default,
         extensionSize: CGSize,
         photoFrameHeight: CGFloat
     ) -> Color {
         guard extensionSize.width > 0, extensionSize.height > 0 else {
-            return fallbackSecondary
+            return colors.fillColor
         }
 
         let u = min(max(normalizedPoint.x, 0), 1)
@@ -1176,12 +1186,12 @@ nonisolated enum PuzzleDotCollageColor {
             let nearestGridDistance = min(nearestVerticalDistance, nearestHorizontalDistance)
 
             if nearestGridDistance <= lineWidth / 2 {
-                return fallbackBorder
+                return colors.lineColor
             }
-            return fallbackSecondary
+            return colors.fillColor
         case .stripes:
             let bandIndex = Int(point.y / spacing)
-            return bandIndex.isMultiple(of: 2) ? fallbackSecondary : fallbackBackground
+            return bandIndex.isMultiple(of: 2) ? colors.fillColor : colors.alternateColor
         }
     }
 

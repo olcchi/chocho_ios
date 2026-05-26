@@ -30,78 +30,35 @@ struct PuzzleCanvasModelTests {
         #expect(layout.extensionFrame.minX == layout.photoFrame.maxX)
     }
 
-    @Test func panelLayoutHeightBoostKeepsPhotoFitScaleStable() {
-        let contentHeight = BottomSheetPanel.fallbackContentHeight
-        let boost = BottomSheetPanel.layoutHeightBoost(
-            isExpanded: true,
-            contentHeight: contentHeight
-        )
-        #expect(boost > 0)
-
-        let collapsedViewport = CGSize(width: 390, height: 500)
-        let expandedViewport = CGSize(width: 390, height: 500 - boost)
-        let imageSize = CGSize(width: 1000, height: 500)
-
-        let collapsedLayout = PuzzleCanvasLayout.layout(
-            imageSize: imageSize,
-            availableSize: collapsedViewport,
-            extensionRatio: 0.5
-        )
-        let expandedLayout = PuzzleCanvasLayout.layout(
-            imageSize: imageSize,
-            availableSize: CGSize(
-                width: expandedViewport.width,
-                height: expandedViewport.height + boost
-            ),
-            extensionRatio: 0.5
-        )
-
-        #expect(collapsedLayout.photoFrame.size == expandedLayout.photoFrame.size)
-        #expect(collapsedLayout.photoFrame.origin == expandedLayout.photoFrame.origin)
-        #expect(
-            BottomSheetPanel.layoutHeightBoost(
-                isExpanded: false,
-                contentHeight: contentHeight
-            ) == 0
-        )
-    }
-
-    @Test func shorterPanelContentProducesSmallerLayoutHeightBoost() {
+    @Test func shorterPanelContentProducesSmallerExpansionOcclusion() {
         let tallContent: CGFloat = 320
         let shortContent: CGFloat = 120
 
-        let tallBoost = BottomSheetPanel.layoutHeightBoost(
-            isExpanded: true,
-            contentHeight: tallContent
-        )
-        let shortBoost = BottomSheetPanel.layoutHeightBoost(
-            isExpanded: true,
-            contentHeight: shortContent
-        )
+        let tallOcclusion = BottomSheetPanel.panelExpansionOcclusionHeight(contentHeight: tallContent)
+        let shortOcclusion = BottomSheetPanel.panelExpansionOcclusionHeight(contentHeight: shortContent)
 
-        #expect(shortBoost < tallBoost)
+        #expect(tallOcclusion > 0)
+        #expect(shortOcclusion > 0)
+        #expect(shortOcclusion < tallOcclusion)
     }
 
     @Test func panelExpansionOffsetDeltaShiftsCanvasUpWhenPanelExpands() {
-        let boost = BottomSheetPanel.layoutHeightBoost(
-            isExpanded: true,
-            contentHeight: BottomSheetPanel.fallbackContentHeight
-        )
-        let dodge = boost * PuzzleCanvasViewport.panelExpansionDodgeFraction
+        let occlusion = BottomSheetPanel.panelExpansionOcclusionHeight(contentHeight: 228)
+        let dodge = occlusion * PuzzleCanvasViewport.panelExpansionDodgeFraction
 
         let expandedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            panelHeightBoost: boost,
+            panelOcclusionHeight: occlusion,
             isPanelExpanded: true
         )
         let collapsedDelta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            panelHeightBoost: boost,
+            panelOcclusionHeight: occlusion,
             isPanelExpanded: false
         )
 
         #expect(expandedDelta.width == 0)
         #expect(expandedDelta.height == -dodge)
         #expect(collapsedDelta.height == -expandedDelta.height)
-        #expect(dodge < boost)
+        #expect(dodge < occlusion)
     }
 
     @Test func layoutKeepsPhotoSizeWhenExtensionRatioChanges() {

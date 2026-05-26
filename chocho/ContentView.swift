@@ -17,11 +17,12 @@ struct ContentView: View {
     @State private var extensionRatio: CGFloat = 0.2
     @State private var extensionSide: PuzzleCanvasExtensionSide = .right
     @State private var backgroundStyle: PuzzleBackgroundStyle = .grid
+    @State private var backgroundColors = PuzzleBackgroundColors.default
     @State private var imageViewportResetID = UUID()
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
     @State private var isPanelExpanded = true
-    @State private var panelLayoutMetrics = PanelLayoutMetrics.initial
+    @State private var panelOcclusionForDodge: CGFloat = 0
     @State private var dotCount: Double = 10
     @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
     @State private var selectedDotColor: Color = .clear
@@ -44,7 +45,7 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
                 ZStack(alignment: .top) {
                     canvasArea
                         .padding(.top, topCanvasInset(for: proxy))
@@ -67,9 +68,7 @@ struct ContentView: View {
                     .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(BottomSheetPanel.panelMotion, value: isPanelExpanded)
-                .animation(BottomSheetPanel.panelMotion, value: selectedTab)
+                .frame(width: proxy.size.width, height: proxy.size.height)
 
                 BottomSheetPanel(
                     selectedTab: $selectedTab,
@@ -83,6 +82,7 @@ struct ContentView: View {
                     extensionRatio: $extensionRatio,
                     extensionSide: $extensionSide,
                     backgroundStyle: $backgroundStyle,
+                    backgroundColors: $backgroundColors,
                     bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
                     isPanelEnabled: canvasImage != nil,
                     onDrawDots: drawPuzzleDots
@@ -105,9 +105,9 @@ struct ContentView: View {
                 Color.background
                     .ignoresSafeArea()
             }
-            .onPreferenceChange(PanelLayoutMetricsKey.self) { metrics in
-                guard metrics != panelLayoutMetrics else { return }
-                panelLayoutMetrics = metrics
+            .onPreferenceChange(PanelVisibleHeightKey.self) { height in
+                guard height > 0, isPanelExpanded else { return }
+                panelOcclusionForDodge = max(0, height - BottomSheetPanel.collapsedHeight)
             }
         }
         .task(id: selectedPhotoItem) {
@@ -131,6 +131,7 @@ struct ContentView: View {
         .onChange(of: extensionRatio) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: extensionSide) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: backgroundStyle) { _, _ in scheduleCanvasDraftSave() }
+        .onChange(of: backgroundColors) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: dotScale) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: selectedDotColor) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
@@ -167,8 +168,8 @@ struct ContentView: View {
                     extensionRatio: extensionRatio,
                     extensionSide: extensionSide,
                     backgroundStyle: backgroundStyle,
+                    backgroundColors: backgroundColors,
                     imageViewportResetID: imageViewportResetID,
-                    panelLayoutHeightBoost: panelLayoutMetrics.layoutHeightBoost,
                     dots: puzzleDots,
                     dotScale: CGFloat(dotScale),
                     dotColor: selectedDotColor,
@@ -383,6 +384,7 @@ struct ContentView: View {
         extensionRatio = restored.extensionRatio
         extensionSide = restored.extensionSide
         backgroundStyle = restored.backgroundStyle
+        backgroundColors = restored.backgroundColors
         dotCount = restored.dotCount
         dotScale = restored.dotScale
         selectedDotColor = restored.selectedDotColor
@@ -425,6 +427,7 @@ struct ContentView: View {
             extensionRatio: extensionRatio,
             extensionSide: extensionSide,
             backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
             dotCount: dotCount,
             dotScale: dotScale,
             selectedDotColor: selectedDotColor,
@@ -454,12 +457,8 @@ struct ContentView: View {
     private func dodgeCanvasForPanelExpansion(isExpanded: Bool) {
         guard canvasImage != nil else { return }
 
-        let panelHeightBoost = BottomSheetPanel.layoutHeightBoost(
-            isExpanded: true,
-            contentHeight: panelLayoutMetrics.contentHeight
-        )
         let delta = PuzzleCanvasViewport.panelExpansionOffsetDelta(
-            panelHeightBoost: panelHeightBoost,
+            panelOcclusionHeight: panelOcclusionForDodge,
             isPanelExpanded: isExpanded
         )
         guard delta != .zero else { return }
@@ -486,6 +485,7 @@ struct ContentView: View {
             extensionRatio: extensionRatio,
             extensionSide: extensionSide,
             backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
             dots: puzzleDots,
             dotScale: CGFloat(dotScale),
             dotColor: selectedDotColor,
@@ -503,6 +503,7 @@ struct ContentView: View {
                     extensionRatio: snapshot.extensionRatio,
                     extensionSide: snapshot.extensionSide,
                     backgroundStyle: snapshot.backgroundStyle,
+                    backgroundColors: snapshot.backgroundColors,
                     dots: snapshot.dots,
                     dotScale: snapshot.dotScale,
                     dotColor: snapshot.dotColor,
@@ -690,6 +691,7 @@ private struct CanvasExportSnapshot {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
     let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
     let dots: [PuzzleDot]
     let dotScale: CGFloat
     let dotColor: Color

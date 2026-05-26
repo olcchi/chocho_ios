@@ -7,6 +7,7 @@ struct CanvasDraftCapture: Sendable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
     let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
     let dotCount: Double
     let dotScale: Double
     let selectedDotColor: Color
@@ -24,6 +25,7 @@ struct CanvasDraftRestore: Sendable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
     let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
     let dotCount: Double
     let dotScale: Double
     let selectedDotColor: Color
@@ -36,14 +38,36 @@ struct CanvasDraftRestore: Sendable {
     let viewportOffset: CGSize
 }
 
+nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendable {
+    var fillColor: CanvasDraftColorComponents
+    var alternateColor: CanvasDraftColorComponents
+    var lineColor: CanvasDraftColorComponents
+
+    init(_ colors: PuzzleBackgroundColors) {
+        fillColor = CanvasDraftColorComponents(colors.fillColor)
+        alternateColor = CanvasDraftColorComponents(colors.alternateColor)
+        lineColor = CanvasDraftColorComponents(colors.lineColor)
+    }
+
+    var puzzleBackgroundColors: PuzzleBackgroundColors {
+        PuzzleBackgroundColors(
+            fillColor: fillColor.color,
+            alternateColor: alternateColor.color,
+            lineColor: lineColor.color
+        )
+    }
+}
+
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
+    static let supportedVersions: Set<Int> = [1, 2]
 
     var version: Int
     var savedAt: Date
     var extensionRatio: Double
     var extensionSide: String
     var backgroundStyle: String
+    var backgroundColors: CanvasDraftStoredBackgroundColors?
     var dotCount: Double
     var dotScale: Double
     var selectedDotColor: CanvasDraftColorComponents
@@ -183,6 +207,7 @@ nonisolated enum CanvasDraftStore {
             extensionRatio: Double(capture.extensionRatio),
             extensionSide: capture.extensionSide.rawValue,
             backgroundStyle: capture.backgroundStyle.rawValue,
+            backgroundColors: CanvasDraftStoredBackgroundColors(capture.backgroundColors),
             dotCount: capture.dotCount,
             dotScale: capture.dotScale,
             selectedDotColor: CanvasDraftColorComponents(capture.selectedDotColor),
@@ -260,7 +285,7 @@ nonisolated enum CanvasDraftStore {
             let manifestData = try Data(contentsOf: manifestURL)
             let manifest = try decoder.decode(CanvasDraftManifest.self, from: manifestData)
 
-            guard manifest.version == CanvasDraftManifest.currentVersion else {
+            guard CanvasDraftManifest.supportedVersions.contains(manifest.version) else {
                 return nil
             }
 
@@ -282,6 +307,7 @@ nonisolated enum CanvasDraftStore {
                 extensionRatio: CGFloat(manifest.extensionRatio),
                 extensionSide: extensionSide,
                 backgroundStyle: backgroundStyle,
+                backgroundColors: manifest.backgroundColors?.puzzleBackgroundColors ?? .default,
                 dotCount: manifest.dotCount,
                 dotScale: manifest.dotScale,
                 selectedDotColor: manifest.selectedDotColor.color,

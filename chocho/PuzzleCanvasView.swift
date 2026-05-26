@@ -6,9 +6,8 @@ struct PuzzleCanvasView: View {
     let extensionRatio: CGFloat
     var extensionSide: PuzzleCanvasExtensionSide = .right
     var backgroundStyle: PuzzleBackgroundStyle = .grid
+    var backgroundColors: PuzzleBackgroundColors = .default
     var imageViewportResetID: UUID = UUID()
-    /// Compensates for bottom-panel expansion so layout fit scale does not change.
-    var panelLayoutHeightBoost: CGFloat = 0
     let dots: [PuzzleDot]
     var dotScale: CGFloat = 1
     var dotColor: Color = .primary
@@ -29,13 +28,9 @@ struct PuzzleCanvasView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layoutAvailableSize = CGSize(
-                width: proxy.size.width,
-                height: proxy.size.height + panelLayoutHeightBoost
-            )
             let layout = PuzzleCanvasLayout.layout(
                 imageSize: image.size,
-                availableSize: layoutAvailableSize,
+                availableSize: proxy.size,
                 extensionRatio: extensionRatio,
                 extensionSide: extensionSide
             )
@@ -90,6 +85,7 @@ struct PuzzleCanvasView: View {
                             dotColor: dotColor,
                             usesRandomDotColors: usesRandomDotColors,
                             backgroundStyle: backgroundStyle,
+                            backgroundColors: backgroundColors,
                             photoFrame: referenceLocalPhotoFrame,
                             layout: layout
                         )
@@ -116,11 +112,11 @@ struct PuzzleCanvasView: View {
                     .animation(.none, value: extensionRatio)
                     .animation(.none, value: extensionSide)
                     .animation(.none, value: backgroundStyle)
+                    .animation(.none, value: backgroundColors)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .scaleEffect(viewportScale)
                 .offset(viewportOffset)
-                .animation(BottomSheetPanel.panelMotion, value: panelLayoutHeightBoost)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .contentShape(Rectangle())
@@ -166,9 +162,15 @@ struct PuzzleCanvasView: View {
     private func extensionBackgroundView(photoFrameHeight: CGFloat) -> some View {
         switch backgroundStyle {
         case .grid:
-            PuzzleGridCanvas(photoFrameHeight: photoFrameHeight)
+            PuzzleGridCanvas(
+                photoFrameHeight: photoFrameHeight,
+                colors: backgroundColors
+            )
         case .stripes:
-            PuzzleStripesCanvas(photoFrameHeight: photoFrameHeight)
+            PuzzleStripesCanvas(
+                photoFrameHeight: photoFrameHeight,
+                colors: backgroundColors
+            )
         }
     }
 
@@ -330,16 +332,22 @@ private struct TraceGestureModifier<Trace: Gesture>: ViewModifier {
 
 private struct PuzzleGridCanvas: View {
     let photoFrameHeight: CGFloat
+    let colors: PuzzleBackgroundColors
 
     var body: some View {
         Canvas { context, size in
             guard size.width > 0, size.height > 0 else { return }
 
-            PuzzleBackgroundCanvasDrawing.fillBase(in: &context, size: size)
+            PuzzleBackgroundCanvasDrawing.fillBase(
+                in: &context,
+                size: size,
+                fillColor: colors.fillColor
+            )
             PuzzleBackgroundCanvasDrawing.strokeGrid(
                 in: &context,
                 size: size,
-                photoFrameHeight: photoFrameHeight
+                photoFrameHeight: photoFrameHeight,
+                lineColor: colors.lineColor
             )
         }
     }
@@ -347,6 +355,7 @@ private struct PuzzleGridCanvas: View {
 
 private struct PuzzleStripesCanvas: View {
     let photoFrameHeight: CGFloat
+    let colors: PuzzleBackgroundColors
 
     var body: some View {
         Canvas { context, size in
@@ -355,24 +364,30 @@ private struct PuzzleStripesCanvas: View {
             PuzzleBackgroundCanvasDrawing.fillStripes(
                 in: &context,
                 size: size,
-                photoFrameHeight: photoFrameHeight
+                photoFrameHeight: photoFrameHeight,
+                colors: colors
             )
         }
     }
 }
 
 private enum PuzzleBackgroundCanvasDrawing {
-    static func fillBase(in context: inout GraphicsContext, size: CGSize) {
+    static func fillBase(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        fillColor: Color
+    ) {
         context.fill(
             Path(CGRect(origin: .zero, size: size)),
-            with: .color(Color.secondary)
+            with: .color(fillColor)
         )
     }
 
     static func strokeGrid(
         in context: inout GraphicsContext,
         size: CGSize,
-        photoFrameHeight: CGFloat
+        photoFrameHeight: CGFloat,
+        lineColor: Color
     ) {
         let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
         var path = Path()
@@ -391,13 +406,14 @@ private enum PuzzleBackgroundCanvasDrawing {
             y += spacing
         }
 
-        stroke(path, in: &context, photoFrameHeight: photoFrameHeight)
+        stroke(path, in: &context, photoFrameHeight: photoFrameHeight, lineColor: lineColor)
     }
 
     static func fillStripes(
         in context: inout GraphicsContext,
         size: CGSize,
-        photoFrameHeight: CGFloat
+        photoFrameHeight: CGFloat,
+        colors: PuzzleBackgroundColors
     ) {
         let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
         var y: CGFloat = 0
@@ -407,7 +423,7 @@ private enum PuzzleBackgroundCanvasDrawing {
             let bandHeight = min(spacing, size.height - y)
             context.fill(
                 Path(CGRect(x: 0, y: y, width: size.width, height: bandHeight)),
-                with: .color(usesPrimaryStripe ? Color.secondary : Color.background)
+                with: .color(usesPrimaryStripe ? colors.fillColor : colors.alternateColor)
             )
             y += spacing
             usesPrimaryStripe.toggle()
@@ -417,11 +433,12 @@ private enum PuzzleBackgroundCanvasDrawing {
     private static func stroke(
         _ path: Path,
         in context: inout GraphicsContext,
-        photoFrameHeight: CGFloat
+        photoFrameHeight: CGFloat,
+        lineColor: Color
     ) {
         context.stroke(
             path,
-            with: .color(Color.border),
+            with: .color(lineColor),
             lineWidth: PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: photoFrameHeight)
         )
     }
@@ -434,6 +451,7 @@ private struct PuzzleDotsCanvas: View {
     let dotColor: Color
     let usesRandomDotColors: Bool
     let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
 
@@ -477,6 +495,7 @@ private struct PuzzleDotsCanvas: View {
                     dot: dot,
                     image: image,
                     backgroundStyle: backgroundStyle,
+                    backgroundColors: backgroundColors,
                     photoFrame: photoFrame,
                     layout: layout,
                     dotSize: size
@@ -501,6 +520,7 @@ private struct PuzzleDotsCanvas: View {
                 dot: dot,
                 image: image,
                 backgroundStyle: backgroundStyle,
+                backgroundColors: backgroundColors,
                 photoFrame: photoFrame,
                 layout: layout,
                 dotSize: size
@@ -526,6 +546,7 @@ private struct PuzzleDotCollageBasicShapeView: View {
     let dot: PuzzleDot
     let image: UIImage
     let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
     let dotSize: CGFloat
@@ -536,6 +557,7 @@ private struct PuzzleDotCollageBasicShapeView: View {
             dot: dot,
             image: image,
             backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
             photoFrame: photoFrame,
             layout: layout,
             dotSize: dotSize
@@ -551,6 +573,7 @@ private struct PuzzleDotCollageAssetShapeView: View {
     let dot: PuzzleDot
     let image: UIImage
     let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
     let dotSize: CGFloat
@@ -561,6 +584,7 @@ private struct PuzzleDotCollageAssetShapeView: View {
             dot: dot,
             image: image,
             backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
             photoFrame: photoFrame,
             layout: layout,
             dotSize: dotSize
@@ -580,6 +604,7 @@ private struct PuzzleDotCollageMirrorFill: View {
     let dot: PuzzleDot
     let image: UIImage
     let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
     let dotSize: CGFloat
@@ -601,6 +626,7 @@ private struct PuzzleDotCollageMirrorFill: View {
 
             PuzzleDotCollageBackgroundFill(
                 style: backgroundStyle,
+                colors: backgroundColors,
                 extensionSize: extensionFrame.size,
                 photoFrameHeight: photoFrame.height
             )
@@ -627,6 +653,7 @@ private struct PuzzleDotCollageMirrorFill: View {
 
 private struct PuzzleDotCollageBackgroundFill: View {
     let style: PuzzleBackgroundStyle
+    let colors: PuzzleBackgroundColors
     let extensionSize: CGSize
     let photoFrameHeight: CGFloat
 
@@ -634,17 +661,23 @@ private struct PuzzleDotCollageBackgroundFill: View {
         Canvas { context, _ in
             switch style {
             case .grid:
-                PuzzleBackgroundCanvasDrawing.fillBase(in: &context, size: extensionSize)
+                PuzzleBackgroundCanvasDrawing.fillBase(
+                    in: &context,
+                    size: extensionSize,
+                    fillColor: colors.fillColor
+                )
                 PuzzleBackgroundCanvasDrawing.strokeGrid(
                     in: &context,
                     size: extensionSize,
-                    photoFrameHeight: photoFrameHeight
+                    photoFrameHeight: photoFrameHeight,
+                    lineColor: colors.lineColor
                 )
             case .stripes:
                 PuzzleBackgroundCanvasDrawing.fillStripes(
                     in: &context,
                     size: extensionSize,
-                    photoFrameHeight: photoFrameHeight
+                    photoFrameHeight: photoFrameHeight,
+                    colors: colors
                 )
             }
         }

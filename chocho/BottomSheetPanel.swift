@@ -55,23 +55,10 @@ enum PanelTab: String, CaseIterable, Identifiable {
     }
 }
 
-struct PanelLayoutMetrics: Equatable {
-    var layoutHeightBoost: CGFloat
-    var contentHeight: CGFloat
+struct PanelVisibleHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
 
-    static let initial = PanelLayoutMetrics(
-        layoutHeightBoost: BottomSheetPanel.layoutHeightBoost(
-            isExpanded: true,
-            contentHeight: BottomSheetPanel.fallbackContentHeight
-        ),
-        contentHeight: BottomSheetPanel.fallbackContentHeight
-    )
-}
-
-struct PanelLayoutMetricsKey: PreferenceKey {
-    static let defaultValue = PanelLayoutMetrics.initial
-
-    static func reduce(value: inout PanelLayoutMetrics, nextValue: () -> PanelLayoutMetrics) {
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
 }
@@ -79,8 +66,6 @@ struct PanelLayoutMetricsKey: PreferenceKey {
 struct BottomSheetPanel: View {
     static let topCornerRadius: CGFloat = 24
     static let panelMotion: Animation = .smooth(duration: 0.24)
-    /// Used until the first content-height measurement arrives.
-    static let fallbackContentHeight: CGFloat = 228
     /// Horizontal inset for panel content; also used for header and history controls aligned to the panel edge.
     static let contentHorizontalInset: CGFloat = 16
     private static let contentBottomInset: CGFloat = 4
@@ -115,15 +100,11 @@ struct BottomSheetPanel: View {
             + contentBottomInset
     }
 
-    /// Extra height added to canvas layout when the panel is expanded so photo fit scale
-    /// stays the same as in the collapsed state; only the visible viewport shrinks.
-    static func layoutHeightBoost(isExpanded: Bool, contentHeight: CGFloat) -> CGFloat {
-        guard isExpanded else { return 0 }
-        return visibleHeight(isExpanded: true, contentHeight: contentHeight)
+    /// How much vertical space the expanded panel covers beyond its collapsed footprint.
+    static func panelExpansionOcclusionHeight(contentHeight: CGFloat) -> CGFloat {
+        visibleHeight(isExpanded: true, contentHeight: contentHeight)
             - visibleHeight(isExpanded: false, contentHeight: contentHeight)
     }
-
-    @State private var measuredContentHeights: [PanelTab: CGFloat] = [:]
 
     @Binding var selectedTab: PanelTab
     @Binding var isExpanded: Bool
@@ -136,36 +117,13 @@ struct BottomSheetPanel: View {
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
     @Binding var backgroundStyle: PuzzleBackgroundStyle
+    @Binding var backgroundColors: PuzzleBackgroundColors
     var bottomSafeAreaInset: CGFloat = 0
     var isPanelEnabled: Bool = true
     let onDrawDots: () -> Void
 
     /// Vertical offset for history controls anchored to the panel top edge.
     static let historyControlsClearance: CGFloat = 40
-
-    private var layoutContentHeight: CGFloat {
-        guard isExpanded else { return 0 }
-        let measured = measuredContentHeights[selectedTab] ?? 0
-        return measured > 1 ? measured : Self.fallbackContentHeight
-    }
-
-    private var collapsibleSectionHeight: CGFloat {
-        Self.collapsiblePanelHeight(
-            isExpanded: isExpanded,
-            contentHeight: layoutContentHeight
-        )
-    }
-
-    private var layoutMetrics: PanelLayoutMetrics {
-        let contentHeight = layoutContentHeight
-        return PanelLayoutMetrics(
-            layoutHeightBoost: Self.layoutHeightBoost(
-                isExpanded: isExpanded,
-                contentHeight: contentHeight
-            ),
-            contentHeight: contentHeight
-        )
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -177,7 +135,9 @@ struct BottomSheetPanel: View {
         .padding(.bottom, Self.contentBottomInset + bottomSafeAreaInset)
         .frame(maxWidth: .infinity, alignment: .bottom)
         .background {
-            Color.clear.preference(key: PanelLayoutMetricsKey.self, value: layoutMetrics)
+            GeometryReader { proxy in
+                Color.clear.preference(key: PanelVisibleHeightKey.self, value: proxy.size.height)
+            }
         }
         .background(panelBackground)
         .clipped()
@@ -185,21 +145,19 @@ struct BottomSheetPanel: View {
         .shadow(color: Color.black.opacity(0.10), radius: 28, x: 0, y: -5)
         .animation(Self.panelMotion, value: isExpanded)
         .animation(Self.panelMotion, value: selectedTab)
-        .animation(Self.panelMotion, value: layoutContentHeight)
     }
 
     private var collapsiblePanelSection: some View {
         VStack(spacing: 0) {
             panelHandleArea
 
-            panelContent
-                .padding(.top, isExpanded ? Self.panelContentTopPadding : 0)
-                .padding(.bottom, isExpanded ? Self.tabBarTopSpacing : 0)
-                .opacity(isExpanded ? 1 : 0)
-                .accessibilityHidden(!isExpanded)
-                .allowsHitTesting(isExpanded)
+            if isExpanded {
+                panelContent
+                    .padding(.top, Self.panelContentTopPadding)
+                    .padding(.bottom, Self.tabBarTopSpacing)
+                    .transition(.opacity)
+            }
         }
-        .frame(height: collapsibleSectionHeight, alignment: .top)
         .clipped()
     }
 
@@ -222,17 +180,10 @@ struct BottomSheetPanel: View {
             extensionRatio: $extensionRatio,
             extensionSide: $extensionSide,
             backgroundStyle: $backgroundStyle,
+            backgroundColors: $backgroundColors,
             onDrawDots: onDrawDots
         )
         .fixedSize(horizontal: false, vertical: true)
-        .onPreferenceChange(PanelContentHeightKey.self) { height in
-            guard height > 1 else { return }
-            let previous = measuredContentHeights[selectedTab] ?? 0
-            guard abs(previous - height) > 0.5 else { return }
-            withAnimation(Self.panelMotion) {
-                measuredContentHeights[selectedTab] = height
-            }
-        }
         .opacity(isPanelEnabled ? 1 : 0.42)
         .allowsHitTesting(isPanelEnabled)
         .disabled(!isPanelEnabled)
@@ -412,14 +363,6 @@ struct CanvasHistoryControls: View {
     }
 }
 
-private struct PanelContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 private struct PanelContentCard: View {
     let tab: PanelTab
     @Binding var dotCount: Double
@@ -431,6 +374,7 @@ private struct PanelContentCard: View {
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
     @Binding var backgroundStyle: PuzzleBackgroundStyle
+    @Binding var backgroundColors: PuzzleBackgroundColors
     let onDrawDots: () -> Void
 
     var body: some View {
@@ -452,6 +396,7 @@ private struct PanelContentCard: View {
             case .background:
                 BackgroundPanelControls(
                     backgroundStyle: $backgroundStyle,
+                    backgroundColors: $backgroundColors,
                     extensionRatio: $extensionRatio,
                     extensionSide: $extensionSide
                 )
@@ -460,14 +405,6 @@ private struct PanelContentCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: PanelContentHeightKey.self,
-                    value: proxy.size.height
-                )
-            }
-        }
     }
 }
 
@@ -483,6 +420,7 @@ private struct LivePanelPlaceholder: View {
 
 private struct BackgroundPanelControls: View {
     @Binding var backgroundStyle: PuzzleBackgroundStyle
+    @Binding var backgroundColors: PuzzleBackgroundColors
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
 
@@ -494,6 +432,9 @@ private struct BackgroundPanelControls: View {
                 backgroundPositionControl
             }
             .padding(.horizontal, 2)
+
+            backgroundColorPickers
+                .padding(.horizontal, 2)
 
             StyledSlider(
                 title: extensionSizeTitle,
@@ -528,6 +469,36 @@ private struct BackgroundPanelControls: View {
             )
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var backgroundColorPickers: some View {
+        HStack(spacing: 10) {
+            switch backgroundStyle {
+            case .grid:
+                backgroundColorPicker(title: "底色", color: backgroundColorBinding(\.fillColor))
+                backgroundColorPicker(title: "网格线", color: backgroundColorBinding(\.lineColor))
+            case .stripes:
+                backgroundColorPicker(title: "条纹一", color: backgroundColorBinding(\.fillColor))
+                backgroundColorPicker(title: "条纹二", color: backgroundColorBinding(\.alternateColor))
+            }
+        }
+    }
+
+    private func backgroundColorPicker(title: String, color: Binding<Color>) -> some View {
+        ColorPicker(title, selection: color, supportsOpacity: false)
+            .font(controlLabelFont)
+            .foregroundStyle(Color.foreground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 30)
+    }
+
+    private func backgroundColorBinding(
+        _ keyPath: WritableKeyPath<PuzzleBackgroundColors, Color>
+    ) -> Binding<Color> {
+        Binding(
+            get: { backgroundColors[keyPath: keyPath] },
+            set: { backgroundColors[keyPath: keyPath] = $0 }
+        )
     }
 
     private var backgroundPositionControl: some View {
