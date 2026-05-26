@@ -842,8 +842,9 @@ nonisolated enum DotSizeControl {
     static let minControlValue: Double = 1
     static let maxControlValue: Double = 100
     static let minRenderedScale: Double = 8
-    static let maxRenderedScale: Double = 40
-    static let defaultControlValue: Double = 23
+    static let maxRenderedScale: Double = 100
+    /// Keeps default on-screen dot size near the previous 8…40 scale at control 23.
+    static let defaultControlValue: Double = 9
     static let defaultRenderedScale = renderedScale(forControlValue: defaultControlValue)
     /// Matches a typical on-screen photo height so slider values stay intuitive.
     static let referencePhotoHeight: CGFloat = 240

@@ -1021,16 +1021,16 @@ struct PuzzleCanvasModelTests {
 
     @Test func dotSizeControlMapsSmallestValueToUsableRenderedSize() {
         #expect(DotSizeControl.renderedScale(forControlValue: 1) == 8)
-        #expect(DotSizeControl.renderedScale(forControlValue: 100) == 40)
+        #expect(DotSizeControl.renderedScale(forControlValue: 100) == 100)
     }
 
     @Test func dotSizeControlConvertsRenderedScaleBackToControlValue() {
         #expect(DotSizeControl.controlValue(forRenderedScale: 8) == 1)
-        #expect(DotSizeControl.controlValue(forRenderedScale: 40) == 100)
+        #expect(DotSizeControl.controlValue(forRenderedScale: 100) == 100)
     }
 
     @Test func dotSizeControlKeepsDefaultRenderedScaleWhenControlRangeChanges() {
-        #expect(DotSizeControl.defaultRenderedScale == 15.11111111111111)
+        #expect(DotSizeControl.defaultRenderedScale == 15.434343434343433)
     }
 
     @Test func dotDisplaySizeScalesWithPhotoFrameHeight() {
