@@ -60,7 +60,10 @@ struct PuzzleCanvasView: View {
                                 y: referenceLocalPhotoFrame.midY
                             )
 
-                        extensionBackgroundView(photoFrameHeight: referenceLocalPhotoFrame.height)
+                        extensionBackgroundView(
+                            photoFrameHeight: referenceLocalPhotoFrame.height,
+                            extensionSize: extensionGridFrame.size
+                        )
                             .frame(
                                 width: extensionGridFrame.width,
                                 height: extensionGridFrame.height
@@ -182,7 +185,10 @@ struct PuzzleCanvasView: View {
     }
 
     @ViewBuilder
-    private func extensionBackgroundView(photoFrameHeight: CGFloat) -> some View {
+    private func extensionBackgroundView(
+        photoFrameHeight: CGFloat,
+        extensionSize: CGSize
+    ) -> some View {
         switch backgroundStyle {
         case .grid:
             PuzzleGridCanvas(
@@ -193,6 +199,13 @@ struct PuzzleCanvasView: View {
             PuzzleStripesCanvas(
                 photoFrameHeight: photoFrameHeight,
                 colors: backgroundColors
+            )
+        case .halftone:
+            PuzzleHalftoneBackgroundView(
+                sourceImage: image,
+                surfaceSize: extensionSize,
+                backgroundColor: backgroundColors.fillColor,
+                dotColor: backgroundColors.lineColor
             )
         }
     }
@@ -663,6 +676,7 @@ private struct PuzzleDotCollageMirrorFill: View {
             )
 
             PuzzleDotCollageBackgroundFill(
+                sourceImage: image,
                 style: backgroundStyle,
                 colors: backgroundColors,
                 extensionSize: extensionFrame.size,
@@ -690,32 +704,44 @@ private struct PuzzleDotCollageMirrorFill: View {
 }
 
 private struct PuzzleDotCollageBackgroundFill: View {
+    let sourceImage: UIImage
     let style: PuzzleBackgroundStyle
     let colors: PuzzleBackgroundColors
     let extensionSize: CGSize
     let photoFrameHeight: CGFloat
 
     var body: some View {
-        Canvas { context, _ in
+        Group {
             switch style {
             case .grid:
-                PuzzleBackgroundCanvasDrawing.fillBase(
-                    in: &context,
-                    size: extensionSize,
-                    fillColor: colors.fillColor
-                )
-                PuzzleBackgroundCanvasDrawing.strokeGrid(
-                    in: &context,
-                    size: extensionSize,
-                    photoFrameHeight: photoFrameHeight,
-                    lineColor: colors.lineColor
-                )
+                Canvas { context, _ in
+                    PuzzleBackgroundCanvasDrawing.fillBase(
+                        in: &context,
+                        size: extensionSize,
+                        fillColor: colors.fillColor
+                    )
+                    PuzzleBackgroundCanvasDrawing.strokeGrid(
+                        in: &context,
+                        size: extensionSize,
+                        photoFrameHeight: photoFrameHeight,
+                        lineColor: colors.lineColor
+                    )
+                }
             case .stripes:
-                PuzzleBackgroundCanvasDrawing.fillStripes(
-                    in: &context,
-                    size: extensionSize,
-                    photoFrameHeight: photoFrameHeight,
-                    colors: colors
+                Canvas { context, _ in
+                    PuzzleBackgroundCanvasDrawing.fillStripes(
+                        in: &context,
+                        size: extensionSize,
+                        photoFrameHeight: photoFrameHeight,
+                        colors: colors
+                    )
+                }
+            case .halftone:
+                PuzzleHalftoneBackgroundView(
+                    sourceImage: sourceImage,
+                    surfaceSize: extensionSize,
+                    backgroundColor: colors.fillColor,
+                    dotColor: colors.lineColor
                 )
             }
         }

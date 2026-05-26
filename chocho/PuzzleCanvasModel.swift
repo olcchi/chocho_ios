@@ -36,6 +36,7 @@ nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, 
 nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equatable {
     case grid
     case stripes
+    case halftone
 
     var id: Self { self }
 
@@ -45,6 +46,8 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
             "方格"
         case .stripes:
             "条纹"
+        case .halftone:
+            "半调"
         }
     }
 }
@@ -1136,7 +1139,8 @@ nonisolated enum PuzzleDotCollageColor {
                 style: backgroundStyle,
                 colors: backgroundColors,
                 extensionSize: extensionFrame.size,
-                photoFrameHeight: layout.referenceLocalPhotoFrame.height
+                photoFrameHeight: layout.referenceLocalPhotoFrame.height,
+                sourceImage: image
             )
         default:
             return imageColor(at: dot.position, image: image)
@@ -1178,7 +1182,8 @@ nonisolated enum PuzzleDotCollageColor {
         style: PuzzleBackgroundStyle,
         colors: PuzzleBackgroundColors = .default,
         extensionSize: CGSize,
-        photoFrameHeight: CGFloat
+        photoFrameHeight: CGFloat,
+        sourceImage: UIImage? = nil
     ) -> Color {
         guard extensionSize.width > 0, extensionSize.height > 0 else {
             return colors.fillColor
@@ -1212,6 +1217,21 @@ nonisolated enum PuzzleDotCollageColor {
         case .stripes:
             let bandIndex = Int(point.y / spacing)
             return bandIndex.isMultiple(of: 2) ? colors.fillColor : colors.alternateColor
+        case .halftone:
+            guard let sourceImage,
+                  let surface = PuzzleHalftoneBackgroundRenderer.render(
+                      sourceImage: sourceImage,
+                      surfaceSize: extensionSize,
+                      backgroundColor: colors.fillColor,
+                      dotColor: colors.lineColor
+                  ) else {
+                return colors.fillColor
+            }
+            return PuzzleHalftoneBackgroundRenderer.color(
+                at: normalizedPoint,
+                surface: surface,
+                fallback: colors.fillColor
+            )
         }
     }
 

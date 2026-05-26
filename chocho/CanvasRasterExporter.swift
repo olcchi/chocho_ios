@@ -47,7 +47,8 @@ nonisolated enum CanvasRasterExporter {
                 rect: layout.extensionFrame,
                 style: backgroundStyle,
                 colors: backgroundColors,
-                photoFrameHeight: layout.photoFrame.height
+                photoFrameHeight: layout.photoFrame.height,
+                sourceImage: image
             )
 
             image.draw(in: layout.photoFrame)
@@ -73,7 +74,8 @@ nonisolated enum CanvasRasterExporter {
         rect: CGRect,
         style: PuzzleBackgroundStyle,
         colors: PuzzleBackgroundColors,
-        photoFrameHeight: CGFloat
+        photoFrameHeight: CGFloat,
+        sourceImage: UIImage
     ) {
         guard rect.width > 0, rect.height > 0 else { return }
 
@@ -97,6 +99,18 @@ nonisolated enum CanvasRasterExporter {
                 photoFrameHeight: photoFrameHeight,
                 colors: colors
             )
+        case .halftone:
+            if let surface = PuzzleHalftoneBackgroundRenderer.render(
+                sourceImage: sourceImage,
+                surfaceSize: rect.size,
+                backgroundColor: colors.fillColor,
+                dotColor: colors.lineColor
+            ) {
+                surface.draw(in: CGRect(origin: .zero, size: rect.size))
+            } else {
+                context.setFillColor(UIColor(colors.fillColor).cgColor)
+                context.fill(CGRect(origin: .zero, size: rect.size))
+            }
         }
 
         context.restoreGState()
@@ -343,7 +357,8 @@ nonisolated enum CanvasRasterExporter {
                 rect: CGRect(origin: backgroundOrigin, size: extensionSize),
                 style: backgroundStyle,
                 colors: backgroundColors,
-                photoFrameHeight: photoFrameHeight
+                photoFrameHeight: photoFrameHeight,
+                sourceImage: image
             )
         } else {
             let photoOrigin = CGPoint(

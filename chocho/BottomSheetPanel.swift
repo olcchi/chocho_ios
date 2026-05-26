@@ -489,6 +489,9 @@ private struct BackgroundPanelControls: View {
             case .stripes:
                 backgroundColorPicker(title: "条纹一", color: backgroundColorBinding(\.fillColor))
                 backgroundColorPicker(title: "条纹二", color: backgroundColorBinding(\.alternateColor))
+            case .halftone:
+                backgroundColorPicker(title: "底色", color: backgroundColorBinding(\.fillColor))
+                backgroundColorPicker(title: "网点", color: backgroundColorBinding(\.lineColor))
             }
         }
     }
