@@ -23,6 +23,8 @@ struct PuzzleCanvasView: View {
     var isTraceDrawingEnabled = false
     var liveDotAnimation: LiveDotAnimation = .none
     var livePreviewPlaybackStart: Date?
+    var isSourceLiveMotionEnabled = false
+    var sourceLiveVideo: CanvasSourceLiveVideo?
     var onTapCanvas: ((PuzzleCanvasTracePoint) -> Void)?
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
@@ -32,6 +34,20 @@ struct PuzzleCanvasView: View {
 
     @State private var isTracingCurrentStroke = false
     @State private var activeTracePoints: [PuzzleCanvasTracePoint] = []
+
+    private var shouldRunLivePreviewTimeline: Bool {
+        guard livePreviewPlaybackStart != nil else { return false }
+        if liveDotAnimation != .none { return true }
+        return isSourceLiveMotionEnabled && sourceLiveVideo != nil
+    }
+
+    private var previewTimelineDuration: TimeInterval {
+        CanvasLiveMotionTiming.exportDuration(
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            sourceLiveVideoDuration: sourceLiveVideo?.duration
+        )
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -52,8 +68,8 @@ struct PuzzleCanvasView: View {
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
                     Group {
-                        // 有实况动画且用户点了「预览」时，约 60fps 刷新波点透明度/缩放。
-                        if liveDotAnimation != .none, let livePreviewPlaybackStart {
+                        // 实况预览：波点动画和/或原图实况驱动 TimelineView。
+                        if shouldRunLivePreviewTimeline, let livePreviewPlaybackStart {
                             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
                                 composedCanvasLayers(
                                     layout: layout,
@@ -132,7 +148,7 @@ struct PuzzleCanvasView: View {
         blinkTime: TimeInterval?
     ) -> some View {
         ZStack(alignment: .topLeading) {
-            Image(uiImage: image)
+            Image(uiImage: photoImage(for: blinkTime))
                 .resizable()
                 .interpolation(photoInterpolation)
                 .frame(
@@ -172,6 +188,7 @@ struct PuzzleCanvasView: View {
                 usesRandomDotColors: usesRandomDotColors,
                 liveDotAnimation: liveDotAnimation,
                 blinkTime: blinkTime,
+                liveFrameImage: liveFrameImageForDots(blinkTime: blinkTime),
                 backgroundStyle: backgroundStyle,
                 backgroundColors: backgroundColors,
                 photoFrame: referenceLocalPhotoFrame,
@@ -197,6 +214,33 @@ struct PuzzleCanvasView: View {
             x: layout.visibleComposedClipPosition.x,
             y: layout.visibleComposedClipPosition.y
         )
+    }
+
+    private func photoImage(for blinkTime: TimeInterval?) -> UIImage {
+        guard isSourceLiveMotionEnabled,
+              let sourceLiveVideo,
+              let blinkTime else {
+            return image
+        }
+
+        let duration = previewTimelineDuration
+        guard duration > 0 else { return image }
+
+        return sourceLiveVideo.frame(at: blinkTime, timelineDuration: duration) ?? image
+    }
+
+    /// 拼贴波点所需的实况帧：原图实况开启且有帧数据时返回；否则 nil（用静态原图）。
+    private func liveFrameImageForDots(blinkTime: TimeInterval?) -> UIImage? {
+        guard isSourceLiveMotionEnabled,
+              let sourceLiveVideo,
+              let blinkTime else {
+            return nil
+        }
+
+        let duration = previewTimelineDuration
+        guard duration > 0 else { return nil }
+
+        return sourceLiveVideo.frame(at: blinkTime, timelineDuration: duration)
     }
 
     private func displayViewportOffset(
@@ -567,6 +611,8 @@ private struct PuzzleDotsCanvas: View {
     let usesRandomDotColors: Bool
     var liveDotAnimation: LiveDotAnimation = .none
     var blinkTime: TimeInterval?
+    /// 原图实况开启时的当前帧；用于扩展区和照片区拼贴波点的实况采样。
+    var liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
@@ -632,6 +678,7 @@ private struct PuzzleDotsCanvas: View {
                     centerIndex: centerIndex,
                     dot: dot,
                     image: image,
+                    liveFrameImage: liveFrameImage,
                     backgroundStyle: backgroundStyle,
                     backgroundColors: backgroundColors,
                     photoFrame: photoFrame,
@@ -657,6 +704,7 @@ private struct PuzzleDotsCanvas: View {
                 centerIndex: centerIndex,
                 dot: dot,
                 image: image,
+                liveFrameImage: liveFrameImage,
                 backgroundStyle: backgroundStyle,
                 backgroundColors: backgroundColors,
                 photoFrame: photoFrame,
@@ -683,6 +731,8 @@ private struct PuzzleDotCollageBasicShapeView: View {
     let centerIndex: Int
     let dot: PuzzleDot
     let image: UIImage
+    /// 原图实况开启时的当前帧；nil 表示用静态 `image`。
+    let liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
@@ -694,6 +744,7 @@ private struct PuzzleDotCollageBasicShapeView: View {
             centerIndex: centerIndex,
             dot: dot,
             image: image,
+            liveFrameImage: liveFrameImage,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
             photoFrame: photoFrame,
@@ -710,6 +761,8 @@ private struct PuzzleDotCollageAssetShapeView: View {
     let centerIndex: Int
     let dot: PuzzleDot
     let image: UIImage
+    /// 原图实况开启时的当前帧；nil 表示用静态 `image`。
+    let liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
@@ -721,6 +774,7 @@ private struct PuzzleDotCollageAssetShapeView: View {
             centerIndex: centerIndex,
             dot: dot,
             image: image,
+            liveFrameImage: liveFrameImage,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
             photoFrame: photoFrame,
@@ -741,16 +795,22 @@ private struct PuzzleDotCollageMirrorFill: View {
     let centerIndex: Int
     let dot: PuzzleDot
     let image: UIImage
+    /// 原图实况开启时的当前帧；nil 表示用静态 `image`。
+    let liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
     let dotSize: CGFloat
 
+    /// 用于采样的有效帧图像：实况帧优先，否则退回静态原图。
+    private var effectiveImage: UIImage { liveFrameImage ?? image }
+
     var body: some View {
         let extensionFrame = layout.referenceLocalExtensionGridFrame
 
         if centerIndex == 0 {
+            // 主图区：显示背景样式内容（背景本身静止，不受实况影响）。
             let mirrorPosition = PuzzleDotCollageColor.referenceExtensionMirrorPosition(
                 forPhotoPosition: dot.position,
                 extensionSide: layout.extensionSide
@@ -761,7 +821,6 @@ private struct PuzzleDotCollageMirrorFill: View {
                 normalizedPoint: samplePoint,
                 contentSize: extensionFrame.size
             )
-
             PuzzleDotCollageBackgroundFill(
                 sourceImage: image,
                 layout: layout,
@@ -775,13 +834,14 @@ private struct PuzzleDotCollageMirrorFill: View {
             .frame(width: dotSize, height: dotSize, alignment: .topLeading)
             .clipped()
         } else {
+            // 扩展区：显示照片内容；原图实况开启时用当前实况帧。
             let offset = PuzzleDotCollageColor.contentOffsetInDot(
                 dotSize: dotSize,
                 normalizedPoint: dot.position,
                 contentSize: photoFrame.size
             )
 
-            Image(uiImage: image)
+            Image(uiImage: effectiveImage)
                 .resizable()
                 .frame(width: photoFrame.width, height: photoFrame.height, alignment: .topLeading)
                 .offset(x: offset.width, y: offset.height)

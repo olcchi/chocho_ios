@@ -41,6 +41,13 @@ struct ContentView: View {
     @State private var livePreviewPlaybackStart: Date?
     @State private var livePreviewProgress: Double = 0
     @State private var livePreviewPlaybackTask: Task<Void, Never>?
+    /// 当前画布照片是否来自相册 Live Photo（上传时识别，草稿恢复时为 false）。
+    @State private var isSourceLivePhoto = false
+    /// 「原图实况」开关；仅 `isSourceLivePhoto` 为 true 时可交互。
+    @State private var isSourceLiveMotionEnabled = false
+    /// 相册 `PHAsset` local identifier，供后续加载配对视频。
+    @State private var sourcePhotoAssetLocalIdentifier: String?
+    @State private var sourceLiveVideo: CanvasSourceLiveVideo?
 
     @State private var tracePoints: [PuzzleCanvasTracePoint] = []
     @State private var puzzleDots: [PuzzleDot] = []
@@ -102,6 +109,9 @@ struct ContentView: View {
                     selectedDotShapeCategory: $selectedDotShapeCategory,
                     isTraceDrawingEnabled: $isTraceDrawingEnabled,
                     liveDotAnimation: $liveDotAnimation,
+                    isSourceLivePhoto: isSourceLivePhoto,
+                    isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
+                    canPlayLivePreview: canPlayLivePreview,
                     livePreviewProgress: livePreviewProgress,
                     isLivePreviewPlaying: isLivePreviewPlaying,
                     onToggleLivePreviewPlayback: toggleLivePreviewPlayback,
@@ -162,6 +172,11 @@ struct ContentView: View {
         .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
         .onChange(of: liveDotAnimation) { _, _ in
             stopLivePreviewPlayback()
+            scheduleCanvasDraftSave()
+        }
+        .onChange(of: isSourceLiveMotionEnabled) { _, _ in
+            stopLivePreviewPlayback()
+            scheduleCanvasDraftSave()
         }
         .onChange(of: dotCount) { _, newDotCount in
             syncPuzzleDots(to: Int(newDotCount.rounded()))
@@ -215,6 +230,8 @@ struct ContentView: View {
                     isTraceDrawingEnabled: isTraceDrawingEnabled,
                     liveDotAnimation: liveDotAnimation,
                     livePreviewPlaybackStart: livePreviewPlaybackStart,
+                    isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+                    sourceLiveVideo: sourceLiveVideo,
                     onTapCanvas: addPuzzleDot(at:),
                     onDoubleTapBackground: applyCanvasViewportReset,
                     onViewportReset: applyCanvasViewportReset,
@@ -228,7 +245,12 @@ struct ContentView: View {
                 }
             }
         } else {
-            PhotosPicker(selection: $selectedPhotoItem, matching: CanvasPhotoImport.pickerMatching) {
+            PhotosPicker(
+                selection: $selectedPhotoItem,
+                matching: CanvasPhotoImport.pickerMatching,
+                preferredItemEncoding: .current,
+                photoLibrary: CanvasPhotoImport.pickerPhotoLibrary
+            ) {
                 CanvasUploadPlaceholder()
                     .contentShape(Rectangle())
             }
@@ -254,6 +276,23 @@ struct ContentView: View {
         livePreviewPlaybackStart != nil
     }
 
+    private var canPlayLivePreview: Bool {
+        CanvasLiveMotionTiming.canPlayLivePreview(
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            isSourceLivePhoto: isSourceLivePhoto,
+            hasSourceLiveVideo: sourceLiveVideo != nil
+        )
+    }
+
+    private var livePreviewDuration: TimeInterval {
+        CanvasLiveMotionTiming.exportDuration(
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            sourceLiveVideoDuration: sourceLiveVideo?.duration
+        )
+    }
+
     /// 实况 Tab 内的「预览」：按导出时长循环更新 livePreviewProgress，驱动画布 TimelineView。
     private func toggleLivePreviewPlayback() {
         if isLivePreviewPlaying {
@@ -265,10 +304,11 @@ struct ContentView: View {
 
     @MainActor
     private func startLivePreviewPlayback() {
-        guard liveDotAnimation != .none else { return }
+        guard canPlayLivePreview else { return }
 
         livePreviewPlaybackTask?.cancel()
-        let duration = liveDotAnimation.motionExportDuration
+        let duration = livePreviewDuration
+        guard duration > 0 else { return }
         let start = Date()
         livePreviewPlaybackStart = start
         livePreviewProgress = 0
@@ -313,13 +353,25 @@ struct ContentView: View {
         }
 
         do {
+            await CanvasPhotoImport.requestPhotoLibraryReadAccessIfNeeded()
             let importResult = try await CanvasPhotoImport.importPhoto(from: selectedPhotoItem)
-            let image = importResult.source.keyPhoto
+            let source = importResult.source
+            let image = source.keyPhoto
 
             applyPhotoUploadDefaults()
 
             let initialDots = PuzzleCanvasUploadDefaults.initialDots(dotCount: dotCount)
 
+            isSourceLivePhoto = source.isLivePhoto
+            isSourceLiveMotionEnabled = false
+            sourcePhotoAssetLocalIdentifier = source.assetLocalIdentifier
+            sourceLiveVideo?.removeTemporaryFiles()
+            sourceLiveVideo = nil
+            if source.isLivePhoto {
+                sourceLiveVideo = await CanvasSourceLiveVideo.load(
+                    assetLocalIdentifier: source.assetLocalIdentifier
+                )
+            }
             canvasImage = image
             imageViewportResetID = UUID()
             viewportScale = 1
@@ -471,6 +523,17 @@ struct ContentView: View {
         guard let restored = await CanvasDraftStore.load() else { return }
 
         canvasImage = restored.image
+        liveDotAnimation = restored.liveDotAnimation
+        isSourceLiveMotionEnabled = restored.isSourceLiveMotionEnabled
+        sourcePhotoAssetLocalIdentifier = restored.sourcePhotoAssetLocalIdentifier
+        sourceLiveVideo?.removeTemporaryFiles()
+        sourceLiveVideo = nil
+        if let identifier = restored.sourcePhotoAssetLocalIdentifier {
+            sourceLiveVideo = await CanvasSourceLiveVideo.load(assetLocalIdentifier: identifier)
+            isSourceLivePhoto = sourceLiveVideo != nil
+        } else {
+            isSourceLivePhoto = false
+        }
         extensionRatio = restored.extensionRatio
         extensionSide = restored.extensionSide
         backgroundStyle = restored.backgroundStyle
@@ -527,7 +590,10 @@ struct ContentView: View {
             puzzleDots: puzzleDots,
             tracePoints: tracePoints,
             viewportScale: viewportScale,
-            viewportOffset: viewportOffset
+            viewportOffset: viewportOffset,
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
         )
 
         Task {
@@ -554,7 +620,12 @@ struct ContentView: View {
         guard !isExporting else { return }
 
         isExporting = true
-        let exportsLivePhoto = liveDotAnimation.exportsAsLivePhoto
+        let hasSourceLiveVideo = isSourceLiveMotionEnabled && sourceLiveVideo != nil
+        let exportsLivePhoto = CanvasExportWriter.exportsAsLivePhoto(
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            hasSourceLiveVideo: hasSourceLiveVideo
+        )
         exportMessage = exportsLivePhoto ? "正在导出实况…" : "正在导出…"
 
         let snapshot = CanvasExportSnapshot(
@@ -567,14 +638,21 @@ struct ContentView: View {
             dotScale: CGFloat(dotScale),
             dotColor: selectedDotColor,
             usesRandomDotColors: usesRandomDotColors,
-            liveDotAnimation: liveDotAnimation
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
         )
 
         Task {
             defer { isExporting = false }
 
             let exportSize = exportCanvasSize(for: snapshot.image)
-            let exportFormat = CanvasExportWriter.format(liveDotAnimation: snapshot.liveDotAnimation)
+            let exportFormat = CanvasExportWriter.format(
+                liveDotAnimation: snapshot.liveDotAnimation,
+                isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
+                hasSourceLiveVideo: snapshot.isSourceLiveMotionEnabled
+                    && snapshot.sourcePhotoAssetLocalIdentifier != nil
+            )
 
             let product: CanvasExportProduct? = await Task.detached(priority: .userInitiated) {
                 switch exportFormat {
@@ -589,7 +667,9 @@ struct ContentView: View {
                         dotScale: snapshot.dotScale,
                         dotColor: snapshot.dotColor,
                         usesRandomDotColors: snapshot.usesRandomDotColors,
-                        liveDotAnimation: snapshot.liveDotAnimation
+                        liveDotAnimation: snapshot.liveDotAnimation,
+                        isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
+                        sourcePhotoAssetLocalIdentifier: snapshot.sourcePhotoAssetLocalIdentifier
                     )
                     guard let bundle = await CanvasLivePhotoExporter.export(
                         snapshot: liveSnapshot,
@@ -854,4 +934,6 @@ private struct CanvasExportSnapshot {
     let dotColor: Color
     let usesRandomDotColors: Bool
     let liveDotAnimation: LiveDotAnimation
+    let isSourceLiveMotionEnabled: Bool
+    let sourcePhotoAssetLocalIdentifier: String?
 }

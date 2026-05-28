@@ -15,6 +15,23 @@ struct CanvasExportWriterTests {
         )
     }
 
+    @Test func sourceLiveMotionSelectsLivePhotoExportFormat() {
+        #expect(
+            CanvasExportWriter.format(
+                liveDotAnimation: .none,
+                isSourceLiveMotionEnabled: true,
+                hasSourceLiveVideo: true
+            ) == .livePhoto
+        )
+        #expect(
+            CanvasExportWriter.format(
+                liveDotAnimation: .none,
+                isSourceLiveMotionEnabled: true,
+                hasSourceLiveVideo: false
+            ) == .staticJPEG
+        )
+    }
+
     @Test func writesJPEGFileToTemporaryDirectory() throws {
         let image = try #require(makeSolidImage(width: 120, height: 80))
         let fileURL = try #require(CanvasExportWriter.writeTemporaryStillImage(image))

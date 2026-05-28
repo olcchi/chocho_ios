@@ -17,7 +17,8 @@ nonisolated enum CanvasRasterExporter {
         dotColor: Color,
         usesRandomDotColors: Bool,
         liveDotAnimation: LiveDotAnimation = .none,
-        blinkTime: TimeInterval? = nil
+        blinkTime: TimeInterval? = nil,
+        photoFrameImage: UIImage? = nil
     ) -> UIImage? {
         guard exportSize.width > 0, exportSize.height > 0 else { return nil }
 
@@ -57,12 +58,14 @@ nonisolated enum CanvasRasterExporter {
                 sourceImage: image
             )
 
-            image.draw(in: layout.photoFrame)
+            let displayPhoto = photoFrameImage ?? image
+            displayPhoto.draw(in: layout.photoFrame)
 
             drawDots(
                 in: context,
                 layout: layout,
                 image: image,
+                liveFrameImage: photoFrameImage,
                 backgroundStyle: backgroundStyle,
                 backgroundColors: backgroundColors,
                 dots: dots,
@@ -192,6 +195,7 @@ nonisolated enum CanvasRasterExporter {
         in context: CGContext,
         layout: PuzzleCanvasLayoutResult,
         image: UIImage,
+        liveFrameImage: UIImage?,
         backgroundStyle: PuzzleBackgroundStyle,
         backgroundColors: PuzzleBackgroundColors,
         dots: [PuzzleDot],
@@ -239,6 +243,7 @@ nonisolated enum CanvasRasterExporter {
                             in: context,
                             rect: rect,
                             image: image,
+                            liveFrameImage: liveFrameImage,
                             layout: layout,
                             backgroundStyle: backgroundStyle,
                             backgroundColors: backgroundColors,
@@ -272,6 +277,7 @@ nonisolated enum CanvasRasterExporter {
                         in: context,
                         rect: rect,
                         image: image,
+                        liveFrameImage: liveFrameImage,
                         layout: layout,
                         backgroundStyle: backgroundStyle,
                         backgroundColors: backgroundColors,
@@ -326,6 +332,7 @@ nonisolated enum CanvasRasterExporter {
         in context: CGContext,
         rect: CGRect,
         image: UIImage,
+        liveFrameImage: UIImage?,
         layout: PuzzleCanvasLayoutResult,
         backgroundStyle: PuzzleBackgroundStyle,
         backgroundColors: PuzzleBackgroundColors,
@@ -342,6 +349,7 @@ nonisolated enum CanvasRasterExporter {
             in: context,
             rect: rect,
             image: image,
+            liveFrameImage: liveFrameImage,
             layout: layout,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
@@ -358,6 +366,7 @@ nonisolated enum CanvasRasterExporter {
         in context: CGContext,
         rect: CGRect,
         image: UIImage,
+        liveFrameImage: UIImage?,
         layout: PuzzleCanvasLayoutResult,
         backgroundStyle: PuzzleBackgroundStyle,
         backgroundColors: PuzzleBackgroundColors,
@@ -387,6 +396,7 @@ nonisolated enum CanvasRasterExporter {
                 in: offCtx.cgContext,
                 rect: localRect,
                 image: image,
+                liveFrameImage: liveFrameImage,
                 layout: layout,
                 backgroundStyle: backgroundStyle,
                 backgroundColors: backgroundColors,
@@ -400,6 +410,9 @@ nonisolated enum CanvasRasterExporter {
         maskedContent.draw(in: drawRect, blendMode: .normal, alpha: opacity)
     }
 
+    /// 渲染拼贴波点内容。
+    /// - `centerIndex == 0`：波点位于主图区，显示背景样式内容（背景静止，不受实况影响）。
+    /// - `centerIndex == 1`：波点位于扩展区，显示照片内容；`liveFrameImage` 有值时用实况帧。
     private nonisolated static func drawMirrorCollageContent(
         centerIndex: Int,
         dot: PuzzleDot,
@@ -407,6 +420,7 @@ nonisolated enum CanvasRasterExporter {
         in context: CGContext,
         rect: CGRect,
         image: UIImage,
+        liveFrameImage: UIImage?,
         layout: PuzzleCanvasLayoutResult,
         backgroundStyle: PuzzleBackgroundStyle,
         backgroundColors: PuzzleBackgroundColors,
@@ -416,6 +430,7 @@ nonisolated enum CanvasRasterExporter {
         let extensionSize = layout.referenceLocalExtensionGridFrame.size
 
         if centerIndex == 0 {
+            // 主图区：显示背景样式内容（背景静止）。
             let mirrorPosition = PuzzleDotCollageColor.referenceExtensionMirrorPosition(
                 forPhotoPosition: dot.position,
                 extensionSide: layout.extensionSide
@@ -449,11 +464,13 @@ nonisolated enum CanvasRasterExporter {
                 alpha: opacity
             )
         } else {
+            // 扩展区：显示照片内容；原图实况开启时用当前实况帧。
+            let effectiveImage = liveFrameImage ?? image
             let photoOrigin = CGPoint(
                 x: rect.midX - dot.position.x * photoSize.width,
                 y: rect.midY - dot.position.y * photoSize.height
             )
-            image.draw(
+            effectiveImage.draw(
                 in: CGRect(origin: photoOrigin, size: photoSize),
                 blendMode: .normal,
                 alpha: opacity

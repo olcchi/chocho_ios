@@ -26,25 +26,98 @@ enum CanvasPhotoImport {
     /// 顶栏与空态上传区共用的相册筛选：静图 + Live Photo。
     static let pickerMatching = PHPickerFilter.any(of: [.images, .livePhotos])
 
+    /// 必须绑定共享相册，否则 `PhotosPickerItem.itemIdentifier` 为空，无法识别 Live Photo。
+    static let pickerPhotoLibrary = PHPhotoLibrary.shared()
+
     static func isLivePhotoItem(_ item: PhotosPickerItem) -> Bool {
-        item.supportedContentTypes.contains { $0.conforms(to: .livePhoto) }
+        let types = item.supportedContentTypes
+        if types.contains(where: { contentType in
+            contentType.conforms(to: .livePhoto)
+                || contentType.identifier.contains("live-photo")
+        }) {
+            return true
+        }
+
+        let hasStill = types.contains { $0.conforms(to: .image) }
+        let hasVideo = types.contains {
+            $0.conforms(to: .movie)
+                || $0.conforms(to: .video)
+                || $0.identifier.contains("quicktime-movie")
+        }
+        return hasStill && hasVideo
+    }
+
+    /// 读取相册资源前请求权限；无权限时 `PHAsset.fetchAssets` 会返回空。
+    @MainActor
+    static func requestPhotoLibraryReadAccessIfNeeded() async {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .notDetermined else { return }
+        _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+    }
+
+    static func assetHasPairedVideoResource(_ asset: PHAsset) -> Bool {
+        PHAssetResource.assetResources(for: asset).contains { $0.type == .pairedVideo }
+    }
+
+    /// 识别相册来源类型；`PHAsset.mediaSubtypes` 比 `supportedContentTypes` 更可靠。
+    static func resolveKind(for item: PhotosPickerItem) -> Kind {
+        resolvedKind(
+            contentTypesIncludeLivePhoto: isLivePhotoItem(item),
+            assetHasPhotoLiveSubtype: assetHasPhotoLiveSubtype(
+                itemIdentifier: item.itemIdentifier
+            ),
+            assetHasPairedVideo: assetHasPairedVideoResource(
+                itemIdentifier: item.itemIdentifier
+            )
+        )
+    }
+
+    static func resolvedKind(
+        contentTypesIncludeLivePhoto: Bool,
+        assetHasPhotoLiveSubtype: Bool,
+        assetHasPairedVideo: Bool = false
+    ) -> Kind {
+        if contentTypesIncludeLivePhoto
+            || assetHasPhotoLiveSubtype
+            || assetHasPairedVideo {
+            return .livePhoto
+        }
+        return .stillImage
+    }
+
+    static func resolvedKind(for asset: PHAsset, item: PhotosPickerItem) -> Kind {
+        resolvedKind(
+            contentTypesIncludeLivePhoto: isLivePhotoItem(item),
+            assetHasPhotoLiveSubtype: asset.mediaSubtypes.contains(.photoLive),
+            assetHasPairedVideo: assetHasPairedVideoResource(asset)
+        )
+    }
+
+    static func assetHasPhotoLiveSubtype(itemIdentifier: String?) -> Bool {
+        guard let asset = asset(for: itemIdentifier) else { return false }
+        return asset.mediaSubtypes.contains(.photoLive)
+    }
+
+    static func assetHasPairedVideoResource(itemIdentifier: String?) -> Bool {
+        guard let asset = asset(for: itemIdentifier) else { return false }
+        return assetHasPairedVideoResource(asset)
+    }
+
+    static func asset(for itemIdentifier: String?) -> PHAsset? {
+        guard let itemIdentifier else { return nil }
+
+        return PHAsset.fetchAssets(
+            withLocalIdentifiers: [itemIdentifier],
+            options: nil
+        ).firstObject
     }
 
     static func importPhoto(from item: PhotosPickerItem) async throws -> Result {
-        let kind: Kind = isLivePhotoItem(item) ? .livePhoto : .stillImage
-
-        if let keyPhoto = await importAssetKeyFrame(
-            from: item,
-            requiringLivePhoto: kind == .livePhoto
-        ) {
-            return Result(
-                source: CanvasPhotoSource(
-                    keyPhoto: keyPhoto,
-                    kind: kind,
-                    pickerItem: item
-                )
-            )
+        if let source = await importFromPhotoLibraryAsset(from: item) {
+            return Result(source: source)
         }
+
+        let kind = resolveKind(for: item)
 
         guard let data = try await item.loadTransferable(type: Data.self) else {
             throw ImportError.missingData
@@ -54,35 +127,27 @@ enum CanvasPhotoImport {
             throw ImportError.decodeFailed
         }
 
-        return Result(
-            source: CanvasPhotoSource(
-                keyPhoto: keyPhoto,
-                kind: kind,
-                pickerItem: item
-            )
-        )
+        return Result(source: CanvasPhotoSource(keyPhoto: keyPhoto, kind: kind, pickerItem: item))
     }
 
-    /// 优先从 `PHAsset` 拉关键帧；完整 Live Photo 动效导出将来可再走 `pickerItem`。
-    private static func importAssetKeyFrame(
-        from item: PhotosPickerItem,
-        requiringLivePhoto: Bool
-    ) async -> UIImage? {
-        guard let identifier = item.itemIdentifier else { return nil }
+    /// 优先从 `PHAsset` 拉关键帧，并用资源 subtype 判定 Live Photo。
+    private static func importFromPhotoLibraryAsset(
+        from item: PhotosPickerItem
+    ) async -> CanvasPhotoSource? {
+        guard let asset = asset(for: item.itemIdentifier) else { return nil }
 
-        let asset = PHAsset.fetchAssets(
-            withLocalIdentifiers: [identifier],
-            options: nil
-        ).firstObject
-
-        guard let asset else { return nil }
-        if requiringLivePhoto, !asset.mediaSubtypes.contains(.photoLive) {
+        guard let image = await requestKeyPhoto(from: asset) else { return nil }
+        guard let keyPhoto = await CanvasImageLoader.makeDisplayReadyUIImage(from: image) else {
             return nil
         }
 
-        guard let image = await requestKeyPhoto(from: asset) else { return nil }
-
-        return await CanvasImageLoader.makeDisplayReadyUIImage(from: image)
+        let kind = resolvedKind(for: asset, item: item)
+        return CanvasPhotoSource(
+            keyPhoto: keyPhoto,
+            kind: kind,
+            pickerItem: item,
+            assetLocalIdentifier: asset.localIdentifier
+        )
     }
 
     private static func requestKeyPhoto(from asset: PHAsset) async -> UIImage? {
@@ -130,8 +195,25 @@ nonisolated struct CanvasPhotoSource {
     let keyPhoto: UIImage
     let kind: CanvasPhotoImport.Kind
     let pickerItem: PhotosPickerItem
+    let assetLocalIdentifier: String?
+
+    init(
+        keyPhoto: UIImage,
+        kind: CanvasPhotoImport.Kind,
+        pickerItem: PhotosPickerItem,
+        assetLocalIdentifier: String? = nil
+    ) {
+        self.keyPhoto = keyPhoto
+        self.kind = kind
+        self.pickerItem = pickerItem
+        self.assetLocalIdentifier = assetLocalIdentifier ?? pickerItem.itemIdentifier
+    }
 
     var isLivePhoto: Bool {
+        Self.isLivePhotoKind(kind)
+    }
+
+    static func isLivePhotoKind(_ kind: CanvasPhotoImport.Kind) -> Bool {
         kind == .livePhoto
     }
 }

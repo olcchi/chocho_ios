@@ -5,6 +5,7 @@
 //  Created by Codex on 2026/5/24.
 //
 
+import Photos
 import PhotosUI
 import SwiftUI
 
@@ -26,7 +27,12 @@ struct CanvasHeader: View {
 
                 Spacer(minLength: 0)
 
-                PhotosPicker(selection: $selectedPhotoItem, matching: CanvasPhotoImport.pickerMatching) {
+                PhotosPicker(
+                    selection: $selectedPhotoItem,
+                    matching: CanvasPhotoImport.pickerMatching,
+                    preferredItemEncoding: .current,
+                    photoLibrary: CanvasPhotoImport.pickerPhotoLibrary
+                ) {
                     CanvasActionLabel(title: "上传", iconAssetName: "public/upload")
                 }
                 .disabled(isBusy)

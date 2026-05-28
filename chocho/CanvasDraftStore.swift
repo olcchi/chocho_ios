@@ -18,6 +18,9 @@ struct CanvasDraftCapture: Sendable {
     let tracePoints: [PuzzleCanvasTracePoint]
     let viewportScale: CGFloat
     let viewportOffset: CGSize
+    let liveDotAnimation: LiveDotAnimation
+    let isSourceLiveMotionEnabled: Bool
+    let sourcePhotoAssetLocalIdentifier: String?
 }
 
 struct CanvasDraftRestore: Sendable {
@@ -36,6 +39,9 @@ struct CanvasDraftRestore: Sendable {
     let tracePoints: [PuzzleCanvasTracePoint]
     let viewportScale: CGFloat
     let viewportOffset: CGSize
+    let liveDotAnimation: LiveDotAnimation
+    let isSourceLiveMotionEnabled: Bool
+    let sourcePhotoAssetLocalIdentifier: String?
 }
 
 nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendable {
@@ -59,8 +65,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 2
-    static let supportedVersions: Set<Int> = [1, 2]
+    static let currentVersion = 3
+    static let supportedVersions: Set<Int> = [1, 2, 3]
 
     var version: Int
     var savedAt: Date
@@ -79,6 +85,12 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var viewportScale: Double
     var viewportOffsetWidth: Double
     var viewportOffsetHeight: Double
+    /// v3+：波点动画类型（旧草稿缺省为 nil → 恢复为 .none）
+    var liveDotAnimationRawValue: String?
+    /// v3+：原图实况开关（旧草稿缺省为 nil → 恢复为 false）
+    var isSourceLiveMotionEnabled: Bool?
+    /// v3+：相册 PHAsset local identifier（旧草稿缺省为 nil）
+    var sourcePhotoAssetLocalIdentifier: String?
 }
 
 nonisolated struct CanvasDraftColorComponents: Codable, Equatable, Sendable {
@@ -220,7 +232,10 @@ nonisolated enum CanvasDraftStore {
             tracePoints: capture.tracePoints.map(CanvasDraftStoredTracePoint.init(point:)),
             viewportScale: Double(capture.viewportScale),
             viewportOffsetWidth: Double(capture.viewportOffset.width),
-            viewportOffsetHeight: Double(capture.viewportOffset.height)
+            viewportOffsetHeight: Double(capture.viewportOffset.height),
+            liveDotAnimationRawValue: capture.liveDotAnimation.rawValue,
+            isSourceLiveMotionEnabled: capture.isSourceLiveMotionEnabled,
+            sourcePhotoAssetLocalIdentifier: capture.sourcePhotoAssetLocalIdentifier
         )
 
         return await Task.detached(priority: .utility) {
@@ -304,6 +319,9 @@ nonisolated enum CanvasDraftStore {
             let puzzleDots = manifest.puzzleDots.map { $0.puzzleDot() }
             let tracePoints = manifest.tracePoints.compactMap { $0.tracePoint() }
 
+            let liveDotAnimation = manifest.liveDotAnimationRawValue
+                .flatMap { LiveDotAnimation(rawValue: $0) } ?? .none
+
             return CanvasDraftRestore(
                 image: image,
                 extensionRatio: CGFloat(manifest.extensionRatio),
@@ -322,7 +340,10 @@ nonisolated enum CanvasDraftStore {
                 viewportOffset: CGSize(
                     width: manifest.viewportOffsetWidth,
                     height: manifest.viewportOffsetHeight
-                )
+                ),
+                liveDotAnimation: liveDotAnimation,
+                isSourceLiveMotionEnabled: manifest.isSourceLiveMotionEnabled ?? false,
+                sourcePhotoAssetLocalIdentifier: manifest.sourcePhotoAssetLocalIdentifier
             )
         } catch {
             return nil

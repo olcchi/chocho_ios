@@ -55,14 +55,42 @@ nonisolated enum CanvasLivePhotoExporter {
         let dotColor: Color
         let usesRandomDotColors: Bool
         let liveDotAnimation: LiveDotAnimation
+        let isSourceLiveMotionEnabled: Bool
+        let sourcePhotoAssetLocalIdentifier: String?
+
+        var exportsAsLivePhoto: Bool {
+            CanvasLiveMotionTiming.exportsAsLivePhoto(
+                liveDotAnimation: liveDotAnimation,
+                isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+                hasSourceLiveVideo: isSourceLiveMotionEnabled && sourcePhotoAssetLocalIdentifier != nil
+            )
+        }
+
+        func exportDuration(sourceLiveVideo: CanvasSourceLiveVideo?) -> TimeInterval {
+            CanvasLiveMotionTiming.exportDuration(
+                liveDotAnimation: liveDotAnimation,
+                isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+                sourceLiveVideoDuration: sourceLiveVideo?.duration
+            )
+        }
     }
 
     static func export(
         snapshot: Snapshot,
         keyPhotoSize: CGSize
     ) async -> CanvasLivePhotoExportBundle? {
-        guard snapshot.liveDotAnimation.exportsAsLivePhoto else { return nil }
+        guard snapshot.exportsAsLivePhoto else { return nil }
         guard keyPhotoSize.width > 0, keyPhotoSize.height > 0 else { return nil }
+
+        let sourceLiveVideo = snapshot.isSourceLiveMotionEnabled
+            ? await CanvasSourceLiveVideo.load(
+                assetLocalIdentifier: snapshot.sourcePhotoAssetLocalIdentifier
+            )
+            : nil
+        defer { sourceLiveVideo?.removeTemporaryFiles() }
+
+        let exportDuration = snapshot.exportDuration(sourceLiveVideo: sourceLiveVideo)
+        guard exportDuration > 0 else { return nil }
 
         let videoSize = CanvasLivePhotoSizing.videoEncodeSize(for: keyPhotoSize)
         let assetIdentifier = CanvasLivePhotoMetadata.makeAssetIdentifier()
@@ -73,7 +101,10 @@ nonisolated enum CanvasLivePhotoExporter {
             let keyPhoto = renderFrame(
                 snapshot: snapshot,
                 exportSize: keyPhotoSize,
-                blinkTime: 0
+                blinkTime: 0,
+                sourceLiveVideo: sourceLiveVideo,
+                exportDuration: exportDuration,
+                applySourceLivePhotoFrame: false
             ),
             CanvasLivePhotoMetadata.writeJPEG(
                 keyPhoto,
@@ -89,7 +120,9 @@ nonisolated enum CanvasLivePhotoExporter {
             snapshot: snapshot,
             videoSize: videoSize,
             assetIdentifier: assetIdentifier,
-            outputURL: videoURL
+            outputURL: videoURL,
+            sourceLiveVideo: sourceLiveVideo,
+            exportDuration: exportDuration
         ) else {
             try? FileManager.default.removeItem(at: imageURL)
             return nil
@@ -115,9 +148,24 @@ nonisolated enum CanvasLivePhotoExporter {
     private static func renderFrame(
         snapshot: Snapshot,
         exportSize: CGSize,
-        blinkTime: TimeInterval
+        blinkTime: TimeInterval,
+        sourceLiveVideo: CanvasSourceLiveVideo?,
+        exportDuration: TimeInterval,
+        applySourceLivePhotoFrame: Bool = true
     ) -> UIImage? {
-        CanvasRasterExporter.render(
+        let photoFrameImage: UIImage?
+        if applySourceLivePhotoFrame,
+           snapshot.isSourceLiveMotionEnabled,
+           let sourceLiveVideo {
+            photoFrameImage = sourceLiveVideo.frame(
+                at: blinkTime,
+                timelineDuration: exportDuration
+            )
+        } else {
+            photoFrameImage = nil
+        }
+
+        return CanvasRasterExporter.render(
             image: snapshot.image,
             exportSize: exportSize,
             extensionRatio: snapshot.extensionRatio,
@@ -129,7 +177,8 @@ nonisolated enum CanvasLivePhotoExporter {
             dotColor: snapshot.dotColor,
             usesRandomDotColors: snapshot.usesRandomDotColors,
             liveDotAnimation: snapshot.liveDotAnimation,
-            blinkTime: blinkTime
+            blinkTime: blinkTime,
+            photoFrameImage: photoFrameImage
         )
     }
 
@@ -137,7 +186,9 @@ nonisolated enum CanvasLivePhotoExporter {
         snapshot: Snapshot,
         videoSize: CGSize,
         assetIdentifier: String,
-        outputURL: URL
+        outputURL: URL,
+        sourceLiveVideo: CanvasSourceLiveVideo?,
+        exportDuration: TimeInterval
     ) async -> Bool {
         try? FileManager.default.removeItem(at: outputURL)
 
@@ -188,7 +239,7 @@ nonisolated enum CanvasLivePhotoExporter {
         let frameRate = CanvasLivePhotoSizing.videoFrameRate
         let frameCount = max(
             1,
-            Int((snapshot.liveDotAnimation.motionExportDuration * Double(frameRate)).rounded())
+            Int((exportDuration * Double(frameRate)).rounded())
         )
         let frameDuration = CMTime(value: 1, timescale: frameRate)
 
@@ -199,7 +250,9 @@ nonisolated enum CanvasLivePhotoExporter {
                 renderFrame(
                     snapshot: snapshot,
                     exportSize: encodedSize,
-                    blinkTime: blinkTime
+                    blinkTime: blinkTime,
+                    sourceLiveVideo: sourceLiveVideo,
+                    exportDuration: exportDuration
                 )
             }
             guard let frameImage else {

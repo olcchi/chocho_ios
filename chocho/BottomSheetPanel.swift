@@ -126,6 +126,9 @@ struct BottomSheetPanel: View {
     @Binding var selectedDotShapeCategory: DotShapeCategory
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var liveDotAnimation: LiveDotAnimation
+    var isSourceLivePhoto: Bool = false
+    @Binding var isSourceLiveMotionEnabled: Bool
+    var canPlayLivePreview: Bool = false
     var livePreviewProgress: Double = 0
     var isLivePreviewPlaying: Bool = false
     var onToggleLivePreviewPlayback: () -> Void = {}
@@ -194,6 +197,9 @@ struct BottomSheetPanel: View {
             selectedDotShapeCategory: $selectedDotShapeCategory,
             isTraceDrawingEnabled: $isTraceDrawingEnabled,
             liveDotAnimation: $liveDotAnimation,
+            isSourceLivePhoto: isSourceLivePhoto,
+            isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
+            canPlayLivePreview: canPlayLivePreview,
             livePreviewProgress: livePreviewProgress,
             isLivePreviewPlaying: isLivePreviewPlaying,
             onToggleLivePreviewPlayback: onToggleLivePreviewPlayback,
@@ -387,6 +393,9 @@ private struct PanelContentCard: View {
     @Binding var selectedDotShapeCategory: DotShapeCategory
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var liveDotAnimation: LiveDotAnimation
+    var isSourceLivePhoto: Bool
+    @Binding var isSourceLiveMotionEnabled: Bool
+    var canPlayLivePreview: Bool
     var livePreviewProgress: Double
     var isLivePreviewPlaying: Bool
     var onToggleLivePreviewPlayback: () -> Void
@@ -423,6 +432,9 @@ private struct PanelContentCard: View {
             case .livePhoto:
                 LivePanelControls(
                     liveDotAnimation: $liveDotAnimation,
+                    isSourceLivePhoto: isSourceLivePhoto,
+                    isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
+                    canPlayLivePreview: canPlayLivePreview,
                     livePreviewProgress: livePreviewProgress,
                     isLivePreviewPlaying: isLivePreviewPlaying,
                     onToggleLivePreviewPlayback: onToggleLivePreviewPlayback
@@ -474,27 +486,18 @@ private struct PanelRowSeparator: View {
     }
 }
 
-/// 实况 Tab：「动画」菜单绑定 `LiveDotAnimation`，「预览」驱动 `ContentView` 的播放进度。
+/// 实况 Tab：「动画」菜单绑定 `LiveDotAnimation`；「原图实况」与圆环预览按钮同一行。
 private struct LivePanelControls: View {
     @Binding var liveDotAnimation: LiveDotAnimation
+    var isSourceLivePhoto: Bool
+    @Binding var isSourceLiveMotionEnabled: Bool
+    var canPlayLivePreview: Bool
     var livePreviewProgress: Double
     var isLivePreviewPlaying: Bool
     var onToggleLivePreviewPlayback: () -> Void
 
     private var controlLabelFont: Font {
         .system(size: 13, weight: .regular)
-    }
-
-    private var canPlayPreview: Bool {
-        liveDotAnimation != .none
-    }
-
-    private var playbackElapsed: TimeInterval {
-        livePreviewProgress * liveDotAnimation.motionExportDuration
-    }
-
-    private var playbackTimeLabel: String {
-        String(format: "%.1f", playbackElapsed)
     }
 
     var body: some View {
@@ -520,30 +523,88 @@ private struct LivePanelControls: View {
             PanelRowSeparator()
 
             HStack(spacing: 10) {
-                Button(action: onToggleLivePreviewPlayback) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isLivePreviewPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(isLivePreviewPlaying ? "暂停" : "预览")
-                            .font(controlLabelFont)
-                        if canPlayPreview {
-                            Text(playbackTimeLabel)
-                                .font(.system(size: 12, weight: .regular, design: .monospaced))
-                                .foregroundStyle(Color.mutedForeground)
-                        }
-                    }
-                    .foregroundStyle(canPlayPreview ? Color.foreground : Color.mutedForeground)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .background(Color.input, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                PanelCompactToggleButton(
+                    title: "原图实况",
+                    isOn: isSourceLiveMotionEnabled,
+                    isEnabled: isSourceLivePhoto
+                ) {
+                    isSourceLiveMotionEnabled.toggle()
                 }
-                .buttonStyle(.plain)
-                .disabled(!canPlayPreview)
+                .frame(maxWidth: .infinity)
+                .accessibilityHint(
+                    isSourceLivePhoto
+                        ? "播放上传 Live Photo 的原片动效"
+                        : "当前照片不是 Live Photo，无法开启"
+                )
+
+                PanelSeparator(orientation: .vertical)
+
+                HStack(spacing: 8) {
+                    Text("预览")
+                        .font(controlLabelFont)
+                        .foregroundStyle(canPlayLivePreview ? Color.foreground : Color.mutedForeground)
+
+                    Button(action: onToggleLivePreviewPlayback) {
+                        LivePreviewPlaybackButton(
+                            progress: livePreviewProgress,
+                            isPlaying: isLivePreviewPlaying,
+                            isEnabled: canPlayLivePreview
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canPlayLivePreview)
+                    .accessibilityLabel(isLivePreviewPlaying ? "暂停预览" : "预览")
+                    .accessibilityValue(
+                        canPlayLivePreview
+                            ? "\(Int((livePreviewProgress * 100).rounded()))%"
+                            : "不可用"
+                    )
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
+            .frame(height: 30)
             .padding(.horizontal, 2)
-            .padding(.top, 4)
+            .padding(.vertical, 4)
         }
         .frame(maxWidth: .infinity, alignment: .top)
+    }
+}
+
+/// 实况预览：圆环表示 `livePreviewProgress`，中心为播放/暂停图标。
+private struct LivePreviewPlaybackButton: View {
+    var progress: Double
+    var isPlaying: Bool
+    var isEnabled: Bool
+
+    private let size: CGFloat = 28
+    private let lineWidth: CGFloat = 2
+
+    private var clampedProgress: Double {
+        min(1, max(0, progress))
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(
+                    Color.mutedForeground.opacity(isEnabled ? 0.35 : 0.2),
+                    lineWidth: lineWidth
+                )
+
+            Circle()
+                .trim(from: 0, to: clampedProgress)
+                .stroke(
+                    isEnabled ? Color.ring : Color.mutedForeground,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(isEnabled ? Color.foreground : Color.mutedForeground)
+        }
+        .frame(width: size, height: size)
+        .background(Color.input, in: Circle())
     }
 }
 
@@ -848,21 +909,23 @@ private struct DrawPanelControls: View {
                 PanelRowSeparator()
 
                 HStack(spacing: 10) {
-                    compactToggleButton(
+                    PanelCompactToggleButton(
                         title: "随机色彩",
                         isOn: usesRandomDotColors
                     ) {
                         usesRandomDotColors.toggle()
                     }
+                    .frame(maxWidth: .infinity)
 
                     PanelSeparator(orientation: .vertical)
 
-                    compactToggleButton(
+                    PanelCompactToggleButton(
                         title: "手绘轨迹",
                         isOn: isTraceDrawingEnabled
                     ) {
                         isTraceDrawingEnabled.toggle()
                     }
+                    .frame(maxWidth: .infinity)
                 }
                 .frame(height: 30)
                 .padding(.top, 4)
@@ -876,6 +939,10 @@ private struct DrawPanelControls: View {
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private var activeColor: Color {
+        Color.primary
     }
 
     private var drawButton: some View {
@@ -899,19 +966,19 @@ private struct DrawPanelControls: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var activeColor: Color {
-        Color.primary
-    }
+}
 
-    private var inactiveColor: Color {
-        Color.input
-    }
+/// 抽卡 / 实况等面板共用的胶囊开关：按钮即开关，选中时主色底。
+private struct PanelCompactToggleButton: View {
+    let title: String
+    let isOn: Bool
+    var isEnabled: Bool = true
+    let action: () -> Void
 
-    private func compactToggleButton(
-        title: String,
-        isOn: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
+    private var activeColor: Color { Color.primary }
+    private var inactiveColor: Color { Color.input }
+
+    var body: some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: .regular))
@@ -928,6 +995,8 @@ private struct DrawPanelControls: View {
                 }
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.42)
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityLabel(title)
         .accessibilityValue(isOn ? "已开启" : "已关闭")
