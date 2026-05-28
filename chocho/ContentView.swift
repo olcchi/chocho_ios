@@ -279,6 +279,13 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func applyPhotoUploadDefaults() {
+        selectedDotShape = DotShapeAsset(name: PuzzleCanvasUploadDefaults.dotShapeName)
+        dotScale = PuzzleCanvasUploadDefaults.dotScale
+        selectedTab = .draw
+    }
+
+    @MainActor
     private func loadSelectedPhoto() async {
         guard let selectedPhotoItem else { return }
 
@@ -292,10 +299,9 @@ struct ContentView: View {
             let importResult = try await CanvasPhotoImport.importPhoto(from: selectedPhotoItem)
             let image = importResult.source.keyPhoto
 
-            let initialDots = PuzzleCanvasUploadDefaults.initialDots(
-                dotCount: dotCount,
-                shapeAssetName: selectedDotShape.name
-            )
+            applyPhotoUploadDefaults()
+
+            let initialDots = PuzzleCanvasUploadDefaults.initialDots(dotCount: dotCount)
 
             canvasImage = image
             imageViewportResetID = UUID()

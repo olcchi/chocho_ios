@@ -151,6 +151,49 @@ struct CanvasRasterExporterTests {
         )
     }
 
+    @Test func zeroExtensionHalftoneCollageDotStillRendersOnPhoto() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.5, y: 0.5),
+            color: .clear,
+            size: 12,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+        let baseline = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 400, height: 300),
+                extensionRatio: 0,
+                extensionSide: .right,
+                backgroundStyle: .halftone,
+                dots: [],
+                dotScale: 10,
+                dotColor: .clear,
+                usesRandomDotColors: false
+            )
+        )
+
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 400, height: 300),
+                extensionRatio: 0,
+                extensionSide: .right,
+                backgroundStyle: .halftone,
+                dots: [dot],
+                dotScale: 10,
+                dotColor: .clear,
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(
+            sampleColor(in: exported, at: CGPoint(x: 200, y: 150))
+                != sampleColor(in: baseline, at: CGPoint(x: 200, y: 150))
+        )
+    }
+
     @Test func bottomExtensionExportHasNoTopBlankMargin() throws {
         let source = try #require(makeSolidImage(width: 400, height: 300))
         let exported = try #require(makeExportedImage(

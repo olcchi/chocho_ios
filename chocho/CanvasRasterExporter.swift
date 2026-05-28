@@ -436,7 +436,7 @@ nonisolated enum CanvasRasterExporter {
                         style: backgroundStyle,
                         colors: backgroundColors,
                         photoFrameHeight: photoFrameHeight,
-                        extensionRatio: layout.extensionRatio,
+                        extensionRatio: PuzzleCanvasLayout.maxExtensionRatio,
                         extensionSide: layout.extensionSide,
                         sourceImage: image
                     )

@@ -480,6 +480,42 @@ struct PuzzleCanvasModelTests {
         #expect(widePhotoDotColor == narrowPhotoDotColor)
     }
 
+    @Test func collagePhotoDotRemainsVisibleWhenExtensionIsZero() throws {
+        let image = try #require(makeSolidTestImage())
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 100, height: 100),
+            availableSize: CGSize(width: 240, height: 120),
+            extensionRatio: 0,
+            extensionSide: .right
+        )
+        let dot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.7, y: 0.4),
+            index: 0,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+
+        #expect(
+            PuzzleDotCollageColor.shouldRenderCollageContent(
+                for: dot,
+                usesRandomDotColors: false,
+                extensionRatio: layout.extensionRatio,
+                selectedDotColor: .clear
+            )
+        )
+        #expect(
+            PuzzleDotCollageColor.displayColor(
+                for: dot,
+                centerIndex: 0,
+                layout: layout,
+                image: image,
+                backgroundStyle: .stripes,
+                usesRandomDotColors: false,
+                selectedDotColor: .clear
+            )
+            != .clear
+        )
+    }
+
     @Test func opaqueSelectedColorDisablesCollageRendering() {
         let dot = PuzzleDotFactory.makeDot(
             position: CGPoint(x: 0.5, y: 0.5),
@@ -613,14 +649,17 @@ struct PuzzleCanvasModelTests {
         #expect(DotShapeAsset.defaultSelection.builtInShape == .circle)
     }
 
+    @Test func photoUploadDefaultsUseSnowShapeAndSizeTen() {
+        #expect(PuzzleCanvasUploadDefaults.dotShapeName == BuiltInDotShape.snow.rawValue)
+        #expect(PuzzleCanvasUploadDefaults.dotScaleControlValue == 10)
+        #expect(PuzzleCanvasUploadDefaults.dotScale == DotSizeControl.renderedScale(forControlValue: 10))
+    }
+
     @Test func photoUploadDefaultDotsUseCurrentCountAndShape() {
-        let dots = PuzzleCanvasUploadDefaults.initialDots(
-            dotCount: 10.4,
-            shapeAssetName: BuiltInDotShape.circle.rawValue
-        )
+        let dots = PuzzleCanvasUploadDefaults.initialDots(dotCount: 10.4)
 
         #expect(dots.count == 10)
-        #expect(dots.allSatisfy { $0.shapeAssetName == BuiltInDotShape.circle.rawValue })
+        #expect(dots.allSatisfy { $0.shapeAssetName == BuiltInDotShape.snow.rawValue })
         #expect(dots.allSatisfy { 0...1 ~= $0.position.x && 0...1 ~= $0.position.y })
     }
 

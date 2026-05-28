@@ -1032,9 +1032,13 @@ nonisolated enum PuzzleBackgroundGridMetrics {
 }
 
 enum PuzzleCanvasUploadDefaults {
+    static let dotShapeName = BuiltInDotShape.snow.rawValue
+    static let dotScaleControlValue: Double = 10
+    static let dotScale = DotSizeControl.renderedScale(forControlValue: dotScaleControlValue)
+
     static func initialDots(
         dotCount: Double,
-        shapeAssetName: String = DotShapeAsset.defaultSelection.name
+        shapeAssetName: String = dotShapeName
     ) -> [PuzzleDot] {
         PuzzleDotFactory.makeDots(
             count: Int(dotCount.rounded()),
@@ -1181,7 +1185,6 @@ nonisolated enum PuzzleDotCollageColor {
     ) -> Bool {
         dot.supportsCollageTinting
             && !usesRandomDotColors
-            && extensionRatio > 0
             && usesCollageTint(selectedDotColor: selectedDotColor)
     }
 
@@ -1219,10 +1222,6 @@ nonisolated enum PuzzleDotCollageColor {
 
         guard dot.supportsCollageTinting,
               usesCollageTint(selectedDotColor: selectedDotColor) else {
-            return selectedDotColor
-        }
-
-        guard layout.extensionRatio > 0 else {
             return selectedDotColor
         }
 

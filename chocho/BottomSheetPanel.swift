@@ -99,7 +99,7 @@ struct BottomSheetPanel: View {
     }
 
     /// Typical expanded content height for the default tab, used before the panel is measured.
-    static let defaultExpandedContentHeight: CGFloat = 228
+    static let defaultExpandedContentHeight: CGFloat = 268
 
     static var defaultExpandedVisibleHeight: CGFloat {
         visibleHeight(isExpanded: true, contentHeight: defaultExpandedContentHeight)
@@ -540,6 +540,114 @@ private struct LivePanelControls: View {
     }
 }
 
+private struct Y2KBackgroundColorPairRow: View {
+    var backgroundStyle: PuzzleBackgroundStyle
+    @Binding var backgroundColors: PuzzleBackgroundColors
+
+    @State private var shuffledIndices: [Int] = Y2KBackgroundPalette.shuffledIndices()
+    @State private var rowBallSize: CGFloat = 28
+
+    private let spacing: CGFloat = 6
+
+    var body: some View {
+        Color.clear
+            .frame(height: rowBallSize)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                GeometryReader { proxy in
+                    let rowWidth = contentWidth(in: proxy)
+                    let ballSize = Y2KBackgroundPalette.ballSize(
+                        availableWidth: rowWidth,
+                        spacing: spacing
+                    )
+                    let pairs = visiblePairs
+
+                    HStack(spacing: spacing) {
+                        ForEach(pairs) { pair in
+                            Button {
+                                var colors = backgroundColors
+                                Y2KBackgroundPalette.apply(pair, to: &colors, style: backgroundStyle)
+                                backgroundColors = colors
+                            } label: {
+                                SplitColorSwatchBall(
+                                    leading: pair.fill,
+                                    trailing: pair.accent,
+                                    size: ballSize
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Y2K 配色")
+                            .accessibilityHint("将这对颜色应用到背景")
+                        }
+
+                        Button(action: reshuffleVisiblePairs) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: ballSize * 0.38, weight: .semibold))
+                                .foregroundStyle(Color.foreground)
+                                .frame(width: ballSize, height: ballSize)
+                                .background(Color.input, in: Circle())
+                                .overlay {
+                                    Circle()
+                                        .strokeBorder(Color.border, lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("刷新配色")
+                        .accessibilityHint("随机换一批 Y2K 配色圆球")
+                    }
+                    .frame(width: rowWidth, height: ballSize)
+                    .position(
+                        x: proxy.safeAreaInsets.leading + rowWidth / 2,
+                        y: proxy.size.height / 2
+                    )
+                    .onAppear {
+                        rowBallSize = ballSize
+                    }
+                    .onChange(of: ballSize) { _, newSize in
+                        rowBallSize = newSize
+                    }
+                }
+            }
+    }
+
+    private func contentWidth(in proxy: GeometryProxy) -> CGFloat {
+        let horizontalSafe = proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing
+        return max(proxy.size.width - horizontalSafe, 1)
+    }
+
+    private var visiblePairs: [Y2KBackgroundPalette.Pair] {
+        shuffledIndices
+            .prefix(Y2KBackgroundPalette.colorBallCountPerRow)
+            .map { Y2KBackgroundPalette.pairs[$0] }
+    }
+
+    private func reshuffleVisiblePairs() {
+        shuffledIndices = Y2KBackgroundPalette.shuffledIndices()
+    }
+}
+
+private struct SplitColorSwatchBall: View {
+    let leading: Color
+    let trailing: Color
+    let size: CGFloat
+
+    var body: some View {
+        Circle()
+            .fill(
+                LinearGradient(
+                    colors: [leading, leading, trailing, trailing],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(width: size, height: size)
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.border.opacity(0.9), lineWidth: 1)
+            }
+    }
+}
+
 private struct BackgroundPanelControls: View {
     @Binding var backgroundStyle: PuzzleBackgroundStyle
     @Binding var backgroundColors: PuzzleBackgroundColors
@@ -561,6 +669,12 @@ private struct BackgroundPanelControls: View {
             backgroundColorPickers
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
+
+            Y2KBackgroundColorPairRow(
+                backgroundStyle: backgroundStyle,
+                backgroundColors: $backgroundColors
+            )
+            .padding(.bottom, 4)
 
             PanelRowSeparator()
 
@@ -833,7 +947,7 @@ private struct PlaceholderPanelContent: View {
 }
 
 private struct DotShapePickerPanel: View {
-    @State private var selectedCategory: DotShapeCategory = .objects
+    @State private var selectedCategory: DotShapeCategory = .basic
     @Binding var selectedShape: DotShapeAsset
     @Binding var dotScale: Double
     @Binding var selectedDotColor: Color
@@ -843,8 +957,6 @@ private struct DotShapePickerPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             DotShapeCategoryTabs(selectedCategory: $selectedCategory)
                 .padding(.bottom, 3)
-
-            PanelRowSeparator()
 
             DotShapeGrid(
                 shapes: shapes,
