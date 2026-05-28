@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+/// 底部面板 Tab：波点 / 抽卡 / 背景 / 实况（控制 `LiveDotAnimation` 与预览播放）。
 enum PanelTab: String, CaseIterable, Identifiable {
     case dots
     case draw
@@ -55,6 +56,7 @@ enum PanelTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// 可折叠底部面板：Tab 栏、各 Tab 控件、拖拽把手；不负责安全区，由 `ContentView` 贴底并延伸。
 struct BottomSheetPanel: View {
     static let topCornerRadius: CGFloat = 24
     static let panelMotion: Animation = .smooth(duration: 0.24)
@@ -472,6 +474,7 @@ private struct PanelRowSeparator: View {
     }
 }
 
+/// 实况 Tab：「动画」菜单绑定 `LiveDotAnimation`，「预览」驱动 `ContentView` 的播放进度。
 private struct LivePanelControls: View {
     @Binding var liveDotAnimation: LiveDotAnimation
     var livePreviewProgress: Double

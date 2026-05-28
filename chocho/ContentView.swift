@@ -10,8 +10,12 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
+// MARK: - 根屏幕
+/// 全屏布局入口：画布、顶栏、底部面板、导出与草稿均由本视图协调。
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+
+    // MARK: 底部面板与波点编辑状态
     @State private var selectedTab: PanelTab = .dots
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var canvasImage: UIImage?
@@ -31,23 +35,31 @@ struct ContentView: View {
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var selectedDotShapeCategory: DotShapeCategory = .basic
     @State private var isTraceDrawingEnabled = false
+
+    // MARK: 实况动画（预览播放与导出格式由 liveDotAnimation 决定）
     @State private var liveDotAnimation: LiveDotAnimation = .none
     @State private var livePreviewPlaybackStart: Date?
     @State private var livePreviewProgress: Double = 0
     @State private var livePreviewPlaybackTask: Task<Void, Never>?
+
     @State private var tracePoints: [PuzzleCanvasTracePoint] = []
     @State private var puzzleDots: [PuzzleDot] = []
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
     @State private var showsClearCanvasConfirmation = false
+
+    // MARK: 导出与分享
     @State private var exportMessage: String?
     @State private var isPhotoLoading = false
     @State private var isExporting = false
     @State private var shareItem: CanvasShareItem?
     @State private var shareCleanup: (() -> Void)?
+    /// 实况导出含配对视频，需在分享页关闭或保存完成后再删临时文件。
     @State private var retainsLivePhotoExportFilesOnDismiss = false
     @State private var shareSheetDetent: PresentationDetent = .medium
     @GestureState private var gestureOffset: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
+
+    // MARK: 画布草稿（自动保存 / 冷启动恢复）
     @State private var hasAttemptedDraftRestore = false
     @State private var pendingDraftSave: Task<Void, Never>?
 
@@ -113,6 +125,7 @@ struct ContentView: View {
                     .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
                     .offset(y: -BottomSheetPanel.historyControlsClearance)
                 }
+                // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
                 .padding(.bottom, -proxy.safeAreaInsets.bottom)
             }
             .background {
@@ -241,6 +254,7 @@ struct ContentView: View {
         livePreviewPlaybackStart != nil
     }
 
+    /// 实况 Tab 内的「预览」：按导出时长循环更新 livePreviewProgress，驱动画布 TimelineView。
     private func toggleLivePreviewPlayback() {
         if isLivePreviewPlaying {
             stopLivePreviewPlayback()
@@ -325,6 +339,7 @@ struct ContentView: View {
         }
     }
 
+    /// 「抽卡」：沿轨迹或随机布局生成波点，并记入撤销栈。
     @MainActor
     private func drawPuzzleDots() {
         guard canvasImage != nil else {
@@ -448,6 +463,7 @@ struct ContentView: View {
         scheduleCanvasDraftSave()
     }
 
+    /// 仅在没有当前照片时恢复上次草稿，避免覆盖用户刚选中的图。
     @MainActor
     private func restoreCanvasDraftIfNeeded() async {
         guard canvasImage == nil else { return }
@@ -527,6 +543,7 @@ struct ContentView: View {
         }
     }
 
+    /// 下载入口：按 `LiveDotAnimation` 选静态 JPEG 或 Live Photo（关键帧 + 配对视频）。
     @MainActor
     private func shareCanvas() {
         guard let canvasImage else {
@@ -612,18 +629,12 @@ struct ContentView: View {
 
             exportMessage = nil
 
-            // Pre-request photo library authorization while we are still on the main
-            // thread and before the share sheet is presented.  This ensures the system
-            // permission dialog can appear (UIActivityViewController would otherwise
-            // intercept the presentation context, preventing the dialog from showing).
+            // 在弹出分享页之前于主线程预请求相册权限，避免 UIActivityViewController 挡住系统对话框。
             _ = await CanvasPhotoLibrarySaver.requestAuthorization()
 
             shareCleanup?()
             shareCleanup = { product.removeTemporaryFiles() }
-            // Always retain export files until the save result is known.
-            // For still images the save is async; the sheet dismisses before the
-            // PHAssetCreationRequest finishes reading the file, so cleanup must
-            // wait until handleSaveToPhotosResult is called.
+            // 保存到相册是异步的，分享页关闭时文件可能仍被 PHAssetCreationRequest 读取，故延后清理。
             retainsLivePhotoExportFilesOnDismiss = true
             shareItem = CanvasShareItem(product: product)
         }
@@ -654,6 +665,7 @@ struct ContentView: View {
         cleanupShareExportFiles()
     }
 
+    /// 导出像素尺寸：原图边长 + 扩展条比例（与 `PuzzleCanvasLayout` 合成逻辑一致）。
     private func exportCanvasSize(for image: UIImage) -> CGSize {
         let sourceWidth = CGFloat(image.cgImage?.width ?? Int(image.size.width * image.scale))
         let sourceHeight = CGFloat(image.cgImage?.height ?? Int(image.size.height * image.scale))

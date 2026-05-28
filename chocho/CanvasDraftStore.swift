@@ -175,7 +175,9 @@ nonisolated struct CanvasDraftStoredTracePoint: Codable, Equatable, Sendable {
     }
 }
 
+/// 画布草稿：Application Support 下 manifest.json + photo.jpg，支持版本迁移与后台读写。
 nonisolated enum CanvasDraftStore {
+    /// 定时任务与进入后台时触发保存的间隔。
     static let autosaveInterval: Duration = .seconds(30)
 
     private static let directoryName = "chocho-canvas-draft"

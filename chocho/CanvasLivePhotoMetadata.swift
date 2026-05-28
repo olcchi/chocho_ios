@@ -3,7 +3,7 @@ import ImageIO
 import UniformTypeIdentifiers
 import UIKit
 
-/// Embeds the paired `content.identifier` metadata required for Photos to treat resources as a Live Photo.
+/// 在 JPEG / 视频元数据中写入配对的 asset identifier，相册才能识别为 Live Photo。
 nonisolated enum CanvasLivePhotoMetadata {
   /// Maker Apple dictionary key for the asset identifier (`kFigAppleMakerNote_AssetIdentifier`).
   private static let makerAppleAssetIdentifierKey = "17"

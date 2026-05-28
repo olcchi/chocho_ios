@@ -3,6 +3,7 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// Live Photo 导出产物：可预览的 `PHLivePhoto` 及写入磁盘的 JPG/MOV 临时路径。
 nonisolated struct CanvasLivePhotoExportBundle {
     let livePhoto: PHLivePhoto
     let imageURL: URL
@@ -14,7 +15,7 @@ nonisolated struct CanvasLivePhotoExportBundle {
     }
 }
 
-/// Live Photo export sizing: full-quality key frame, lower-resolution paired motion (like iOS camera).
+/// Live Photo 尺寸策略：关键帧用全尺寸导出，配对视频最长边 1080、15fps（接近系统相机）。
 nonisolated enum CanvasLivePhotoSizing {
     static let videoMaxPixelDimension = 1080
     static let videoFrameRate: Int32 = 15
@@ -36,9 +37,13 @@ nonisolated enum CanvasLivePhotoSizing {
     }
 }
 
+/// 1) 渲染关键帧并写入带 asset identifier 的 JPEG
+/// 2) 按动画逐帧编码 MOV
+/// 3) `PHLivePhoto.request` 组装预览
 nonisolated enum CanvasLivePhotoExporter {
     static let livePhotoRequestTimeout: Duration = .seconds(8)
 
+    /// 导出时刻的画布参数快照（在后台队列渲染，不依赖 SwiftUI 状态）。
     struct Snapshot {
         let image: UIImage
         let extensionRatio: CGFloat

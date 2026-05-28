@@ -1,9 +1,9 @@
 import ImageIO
 import UIKit
 
-/// Prepares user photos for the puzzle canvas without decoding full-resolution originals.
+/// 在解码阶段限制最长边，避免把完整分辨率相机图载入内存（画布编辑与导出共用上限）。
 enum CanvasImageLoader {
-    /// Longest edge cap for canvas work and export. Large camera photos are downsampled at decode time.
+    /// 像素最长边上限；超过则在 `CGImageSource` 缩略图路径或 `preparingThumbnail` 时降采样。
     nonisolated static let maxPixelDimension = 2048
 
     nonisolated static func makeUIImage(
@@ -42,7 +42,7 @@ enum CanvasImageLoader {
         return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 
-    /// Decodes and prepares an image for on-screen rendering on a background queue.
+    /// 后台解码并 `preparingForDisplay()`，减轻主线程卡顿。
     nonisolated static func makeDisplayReadyUIImage(
         from data: Data,
         maxPixelDimension: Int = maxPixelDimension
@@ -79,7 +79,7 @@ enum CanvasImageLoader {
         )
     }
 
-    /// Scales a pixel size down so the longest edge fits `maxPixelDimension`.
+    /// 按比例缩小像素尺寸，使最长边不超过给定上限（Live Photo 配对视频编码用）。
     nonisolated static func fittedPixelSize(
         _ size: CGSize,
         maxPixelDimension: Int

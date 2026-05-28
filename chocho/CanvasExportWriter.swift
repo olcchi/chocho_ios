@@ -1,16 +1,19 @@
 import UIKit
 
+/// 分享/保存时的产物类型。
 enum CanvasExportFormat: Equatable {
-    /// Rasterized canvas key frame as JPEG.
+    /// 单张合成画布 JPEG。
     case staticJPEG
-    /// Key frame plus paired motion video.
+    /// 关键帧 JPEG + 配对 MOV（系统 Live Photo）。
     case livePhoto
 }
 
+/// 根据实况动画与图片来源选择导出格式，并写入临时 JPEG。
 enum CanvasExportWriter {
-    /// Balances visual quality and encode speed for photo + grid exports.
+    /// 草稿、静态导出、Live Photo 关键帧共用的 JPEG 质量。
     nonisolated static let jpegCompressionQuality: CGFloat = 0.92
 
+    /// `liveDotAnimation` 非无时走 Live Photo；相册里的 Live Photo 原图目前仍按静图导出。
     nonisolated static func format(
         liveDotAnimation: LiveDotAnimation,
         source: CanvasPhotoSource? = nil

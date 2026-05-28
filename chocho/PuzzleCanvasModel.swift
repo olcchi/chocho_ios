@@ -52,7 +52,8 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
     }
 }
 
-/// Live preview animation applied to canvas dots; animated exports become Live Photos.
+// MARK: - 实况波点动画
+/// 画布波点的预览动画；非「无」时导出为 Live Photo（仅波点动，主图与扩展背景保持静态）。
 nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable {
     case none
     case randomBlink
@@ -71,10 +72,12 @@ nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable
         }
     }
 
+    /// 是否需要导出配对视频（与菜单项「无」相对）。
     var exportsAsLivePhoto: Bool {
         self != .none
     }
 
+    /// 预览进度条与 Live Photo 视频长度的统一时长。
     var motionExportDuration: TimeInterval {
         switch self {
         case .none:
@@ -87,6 +90,7 @@ nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable
     }
 }
 
+/// 「闪烁」：每个波点用独立相位/周期的正弦叠加，导出与预览共用同一公式。
 nonisolated enum DotRandomBlinkOpacity {
     static let minimumOpacity: Double = 0.06
     static let maximumOpacity: Double = 1
@@ -126,6 +130,7 @@ nonisolated enum DotRandomBlinkOpacity {
     }
 }
 
+/// 「呼吸」：整体透明度与缩放同步缓动，由 dotID 决定相位偏移。
 nonisolated enum DotBreatheAnimation {
     static let minimumOpacity: Double = 0.58
     static let maximumOpacity: Double = 1
@@ -170,11 +175,11 @@ nonisolated struct PuzzleCanvasLayoutResult: Equatable {
     let photoFrame: CGRect
     let extensionFrame: CGRect
     let composedSize: CGSize
-    /// Full photo + max extension area; dot/trace positions are stable in this space.
+    /// 照片 + 最大扩展区域的参考坐标系；波点/轨迹位置在此空间内稳定。
     let referenceComposedFrame: CGRect
-    /// Photo bounds inside the reference-local coordinate space.
+    /// 参考系内的照片区域。
     let referenceLocalPhotoFrame: CGRect
-    /// Extension grid bounds inside the reference-local coordinate space.
+    /// 参考系内的扩展背景网格区域。
     let referenceLocalExtensionGridFrame: CGRect
 
     var visibleComposedFrame: CGRect {
@@ -301,6 +306,7 @@ enum PuzzleCanvasTracePath {
     }
 }
 
+/// 根据扩展比例与方向计算照片框、扩展条与参考坐标系（预览与 `CanvasRasterExporter` 共用）。
 nonisolated enum PuzzleCanvasLayout {
     static let maxExtensionRatio: CGFloat = 1
 

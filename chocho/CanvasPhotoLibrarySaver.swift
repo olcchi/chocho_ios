@@ -5,15 +5,14 @@ nonisolated protocol CanvasPhotoLibrarySaving: AnyObject {
     func saveLivePhoto(imageURL: URL, videoURL: URL) async -> Bool
 }
 
+/// 将导出产物写入系统相册；权限请求必须在主线程，实际写入可在后台执行。
 enum CanvasPhotoLibrarySaver {
     @MainActor
     static func save(
         product: CanvasExportProduct,
         using saver: CanvasPhotoLibrarySaving = SystemCanvasPhotoLibrarySaver()
     ) async -> Bool {
-        // Authorization is requested here, on @MainActor, so the system permission
-        // dialog can always be presented on the main thread.  The saver methods are
-        // nonisolated and may run on a background thread where the dialog can't present.
+        // 非隔离的 saver 可能在后台线程跑，系统权限弹窗只能由主线程唤起。
         guard await requestAuthorization() else { return false }
 
         switch product {

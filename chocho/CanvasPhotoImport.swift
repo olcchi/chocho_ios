@@ -4,10 +4,10 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Imports photos from `PhotosPicker` for the puzzle canvas.
+/// 从 `PhotosPicker` 导入照片到画布。
 ///
-/// Today the canvas edits a single key frame (`UIImage`). Live Photo motion is not rendered yet,
-/// but `CanvasPhotoSource` keeps the picker item and kind so export can later produce a Live Photo.
+/// 当前编辑的是单张关键帧（`UIImage`）；若用户选的是相册 Live Photo，会保留 `pickerItem` 与类型，
+/// 便于日后从原资源导出系统 Live Photo，画布上的「实况」动画仍由 `LiveDotAnimation` 控制。
 enum CanvasPhotoImport {
     nonisolated enum Kind: Equatable {
         case stillImage
@@ -23,7 +23,7 @@ enum CanvasPhotoImport {
         case decodeFailed
     }
 
-    /// Picker filter shared by header and empty-state upload controls.
+    /// 顶栏与空态上传区共用的相册筛选：静图 + Live Photo。
     static let pickerMatching = PHPickerFilter.any(of: [.images, .livePhotos])
 
     static func isLivePhotoItem(_ item: PhotosPickerItem) -> Bool {
@@ -63,7 +63,7 @@ enum CanvasPhotoImport {
         )
     }
 
-    /// Key frame for canvas preview. Full `PHLivePhoto` export will load from `pickerItem` later.
+    /// 优先从 `PHAsset` 拉关键帧；完整 Live Photo 动效导出将来可再走 `pickerItem`。
     private static func importAssetKeyFrame(
         from item: PhotosPickerItem,
         requiringLivePhoto: Bool

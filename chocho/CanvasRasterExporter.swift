@@ -1,7 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Renders the composed puzzle canvas with Core Graphics instead of SwiftUI `ImageRenderer`.
+// MARK: - 画布光栅导出
+/// 用 Core Graphics 合成照片、扩展背景与波点，供静图导出与 Live Photo 逐帧编码。
+/// 预览可用 SwiftUI `.opacity()`；此处须对 `UIImage.draw(in:blendMode:alpha:)` 传显式 alpha。
 nonisolated enum CanvasRasterExporter {
     nonisolated static func render(
         image: UIImage,
@@ -295,6 +297,7 @@ nonisolated enum CanvasRasterExporter {
         }
     }
 
+    /// 与 `PuzzleCanvasView` / `DotRandomBlinkOpacity` / `DotBreatheAnimation` 保持同一套时间采样。
     private nonisolated static func dotMotion(
         dotID: UUID,
         liveDotAnimation: LiveDotAnimation,
@@ -423,8 +426,7 @@ nonisolated enum CanvasRasterExporter {
                 y: rect.midY - samplePoint.y * extensionSize.height
             )
 
-            // context.setAlpha is ignored by UIImage.draw(in:) which halftone uses internally.
-            // Render into an offscreen buffer first, then composite with explicit alpha.
+            // `context.setAlpha` 对 `UIImage.draw(in:)` 无效；先离屏绘制再带 alpha 合成。
             let offFormat = UIGraphicsImageRendererFormat()
             offFormat.scale = 1
             offFormat.opaque = false

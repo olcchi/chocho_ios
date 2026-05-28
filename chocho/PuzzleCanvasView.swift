@@ -1,6 +1,8 @@
 import SwiftUI
 import UIKit
 
+// MARK: - 画布预览
+/// 照片 + 扩展背景 + 波点层；实况动画时由 `TimelineView` 驱动 `blinkTime`（仅波点，背景不动）。
 struct PuzzleCanvasView: View {
     let image: UIImage
     let extensionRatio: CGFloat
@@ -8,7 +10,7 @@ struct PuzzleCanvasView: View {
     var backgroundStyle: PuzzleBackgroundStyle = .grid
     var backgroundColors: PuzzleBackgroundColors = .default
     var imageViewportResetID: UUID = UUID()
-    /// Bottom overlay height (expanded/collapsed panel) used to center content above the panel.
+    /// 底部面板占用高度，用于在面板上方垂直居中合成区域。
     var bottomPanelInset: CGFloat = 0
     let dots: [PuzzleDot]
     var dotScale: CGFloat = 1
@@ -25,7 +27,7 @@ struct PuzzleCanvasView: View {
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onTraceChanged: (([PuzzleCanvasTracePoint]) -> Void)?
-    /// Screen preview uses a lighter filter; export keeps high quality when needed.
+    /// 屏幕预览用较轻插值；导出走 `CanvasRasterExporter` 全质量。
     var photoInterpolation: Image.Interpolation = .medium
 
     @State private var isTracingCurrentStroke = false
@@ -50,6 +52,7 @@ struct PuzzleCanvasView: View {
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
                     Group {
+                        // 有实况动画且用户点了「预览」时，约 60fps 刷新波点透明度/缩放。
                         if liveDotAnimation != .none, let livePreviewPlaybackStart {
                             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
                                 composedCanvasLayers(
