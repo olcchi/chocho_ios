@@ -121,6 +121,7 @@ struct BottomSheetPanel: View {
     @Binding var selectedDotColor: Color
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
+    @Binding var selectedDotShapeCategory: DotShapeCategory
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var liveDotAnimation: LiveDotAnimation
     var livePreviewProgress: Double = 0
@@ -188,6 +189,7 @@ struct BottomSheetPanel: View {
             selectedDotColor: $selectedDotColor,
             usesRandomDotColors: $usesRandomDotColors,
             selectedDotShape: $selectedDotShape,
+            selectedDotShapeCategory: $selectedDotShapeCategory,
             isTraceDrawingEnabled: $isTraceDrawingEnabled,
             liveDotAnimation: $liveDotAnimation,
             livePreviewProgress: livePreviewProgress,
@@ -380,6 +382,7 @@ private struct PanelContentCard: View {
     @Binding var selectedDotColor: Color
     @Binding var usesRandomDotColors: Bool
     @Binding var selectedDotShape: DotShapeAsset
+    @Binding var selectedDotShapeCategory: DotShapeCategory
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var liveDotAnimation: LiveDotAnimation
     var livePreviewProgress: Double
@@ -396,6 +399,7 @@ private struct PanelContentCard: View {
             switch tab {
             case .dots:
                 DotShapePickerPanel(
+                    selectedCategory: $selectedDotShapeCategory,
                     selectedShape: $selectedDotShape,
                     dotScale: $dotScale,
                     selectedDotColor: $selectedDotColor
@@ -947,7 +951,7 @@ private struct PlaceholderPanelContent: View {
 }
 
 private struct DotShapePickerPanel: View {
-    @State private var selectedCategory: DotShapeCategory = .basic
+    @Binding var selectedCategory: DotShapeCategory
     @Binding var selectedShape: DotShapeAsset
     @Binding var dotScale: Double
     @Binding var selectedDotColor: Color

@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var selectedDotColor: Color = .clear
     @State private var usesRandomDotColors = false
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
+    @State private var selectedDotShapeCategory: DotShapeCategory = .basic
     @State private var isTraceDrawingEnabled = false
     @State private var liveDotAnimation: LiveDotAnimation = .none
     @State private var livePreviewPlaybackStart: Date?
@@ -86,6 +87,7 @@ struct ContentView: View {
                     selectedDotColor: $selectedDotColor,
                     usesRandomDotColors: $usesRandomDotColors,
                     selectedDotShape: $selectedDotShape,
+                    selectedDotShapeCategory: $selectedDotShapeCategory,
                     isTraceDrawingEnabled: $isTraceDrawingEnabled,
                     liveDotAnimation: $liveDotAnimation,
                     livePreviewProgress: livePreviewProgress,
@@ -281,6 +283,7 @@ struct ContentView: View {
     @MainActor
     private func applyPhotoUploadDefaults() {
         selectedDotShape = DotShapeAsset(name: PuzzleCanvasUploadDefaults.dotShapeName)
+        selectedDotShapeCategory = .basic
         dotScale = PuzzleCanvasUploadDefaults.dotScale
         selectedTab = .draw
     }
