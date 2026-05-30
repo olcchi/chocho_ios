@@ -42,6 +42,11 @@ struct PuzzleCanvasModelTests {
         #expect(shortOcclusion < tallOcclusion)
     }
 
+    @Test func drawPanelTraceButtonsUseTwoToOneWidthRatio() {
+        #expect(DrawPanelTraceButtonLayout.traceToggleWeight == 2)
+        #expect(DrawPanelTraceButtonLayout.clearTraceButtonWeight == 1)
+    }
+
     @Test func panelTrackingOffsetFollowsBottomInsetChanges() {
         let availableSize = CGSize(width: 600, height: 800)
         let layout = PuzzleCanvasLayout.layout(
@@ -1083,6 +1088,21 @@ struct PuzzleCanvasModelTests {
                 PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: 500),
                 500.0 / 240.0
             )
+        )
+    }
+
+    @Test func backgroundPatternSpacingUsesControlValueAsReferenceSize() {
+        #expect(
+            PuzzleBackgroundPatternSpacing.renderedSpacing(
+                controlValue: 24,
+                photoFrameHeight: 240
+            ) == 24
+        )
+        #expect(
+            PuzzleBackgroundPatternSpacing.renderedSpacing(
+                controlValue: 24,
+                photoFrameHeight: 500
+            ) == 50
         )
     }
 

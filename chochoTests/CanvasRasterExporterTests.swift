@@ -205,6 +205,63 @@ struct CanvasRasterExporterTests {
         #expect(sampleColor(in: exported, at: CGPoint(x: 200, y: 1)).isClose(to: .sourceBlue))
         #expect(sampleColor(in: exported, at: CGPoint(x: 200, y: 358)).isClose(to: .extensionBackground))
     }
+
+    @Test func customBackgroundPatternSpacingChangesGridCellSize() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let colors = PuzzleBackgroundColors(
+            fillColor: Color(red: 1, green: 0, blue: 0),
+            alternateColor: Color(red: 0, green: 1, blue: 0),
+            lineColor: Color(red: 0, green: 0, blue: 1)
+        )
+
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 480, height: 300),
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                backgroundColors: colors,
+                backgroundPatternSpacing: 24,
+                dots: [],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false
+            )
+        )
+
+        // 扩展区宽 80pt（x≥400），间距 24：x=410 为格内底色，x=424 落在竖线上。
+        #expect(sampleColor(in: exported, at: CGPoint(x: 410, y: 12)).isClose(to: .red))
+        #expect(sampleColor(in: exported, at: CGPoint(x: 424, y: 12)).isClose(to: .lineBlue))
+    }
+
+    @Test func customBackgroundPatternSpacingChangesStripeThickness() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let colors = PuzzleBackgroundColors(
+            fillColor: Color(red: 1, green: 0, blue: 0),
+            alternateColor: Color(red: 0, green: 1, blue: 0),
+            lineColor: Color(red: 0, green: 0, blue: 1)
+        )
+
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 480, height: 300),
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .stripes,
+                backgroundColors: colors,
+                backgroundPatternSpacing: 24,
+                dots: [],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(sampleColor(in: exported, at: CGPoint(x: 440, y: 18)).isClose(to: .red))
+        #expect(sampleColor(in: exported, at: CGPoint(x: 440, y: 30)).isClose(to: .green))
+    }
 }
 
 private func makeExportedImage(
@@ -232,6 +289,9 @@ private struct SampledColor: Equatable {
 
     static let sourceBlue = SampledColor(red: 51, green: 153, blue: 230)
     static let extensionBackground = SampledColor(red: 238, green: 247, blue: 221)
+    static let red = SampledColor(red: 255, green: 0, blue: 0)
+    static let green = SampledColor(red: 0, green: 255, blue: 0)
+    static let lineBlue = SampledColor(red: 0, green: 0, blue: 255)
 
     func isClose(to expected: SampledColor, tolerance: UInt8 = 3) -> Bool {
         abs(Int(red) - Int(expected.red)) <= Int(tolerance)

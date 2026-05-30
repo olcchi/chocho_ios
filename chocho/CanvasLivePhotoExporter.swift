@@ -50,19 +50,21 @@ nonisolated enum CanvasLivePhotoExporter {
         let extensionSide: PuzzleCanvasExtensionSide
         let backgroundStyle: PuzzleBackgroundStyle
         let backgroundColors: PuzzleBackgroundColors
+        let backgroundPatternSpacing: Double
         let dots: [PuzzleDot]
         let dotScale: CGFloat
         let dotColor: Color
         let usesRandomDotColors: Bool
         let liveDotAnimation: LiveDotAnimation
         let isSourceLiveMotionEnabled: Bool
+        let hasSourceLiveVideo: Bool
         let sourcePhotoAssetLocalIdentifier: String?
 
         var exportsAsLivePhoto: Bool {
             CanvasLiveMotionTiming.exportsAsLivePhoto(
                 liveDotAnimation: liveDotAnimation,
                 isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
-                hasSourceLiveVideo: isSourceLiveMotionEnabled && sourcePhotoAssetLocalIdentifier != nil
+                hasSourceLiveVideo: hasSourceLiveVideo
             )
         }
 
@@ -77,17 +79,30 @@ nonisolated enum CanvasLivePhotoExporter {
 
     static func export(
         snapshot: Snapshot,
-        keyPhotoSize: CGSize
+        keyPhotoSize: CGSize,
+        preloadedSourceLiveVideo: CanvasSourceLiveVideo? = nil
     ) async -> CanvasLivePhotoExportBundle? {
         guard snapshot.exportsAsLivePhoto else { return nil }
         guard keyPhotoSize.width > 0, keyPhotoSize.height > 0 else { return nil }
 
-        let sourceLiveVideo = snapshot.isSourceLiveMotionEnabled
-            ? await CanvasSourceLiveVideo.load(
-                assetLocalIdentifier: snapshot.sourcePhotoAssetLocalIdentifier
-            )
-            : nil
-        defer { sourceLiveVideo?.removeTemporaryFiles() }
+        let sourceLiveVideo: CanvasSourceLiveVideo?
+        if snapshot.hasSourceLiveVideo {
+            if let preloadedSourceLiveVideo {
+                sourceLiveVideo = preloadedSourceLiveVideo
+            } else {
+                sourceLiveVideo = await CanvasSourceLiveVideo.load(
+                    assetLocalIdentifier: snapshot.sourcePhotoAssetLocalIdentifier
+                )
+            }
+        } else {
+            sourceLiveVideo = nil
+        }
+        let shouldRemoveLoadedSourceLiveVideo = sourceLiveVideo != nil && preloadedSourceLiveVideo == nil
+        defer {
+            if shouldRemoveLoadedSourceLiveVideo {
+                sourceLiveVideo?.removeTemporaryFiles()
+            }
+        }
 
         let exportDuration = snapshot.exportDuration(sourceLiveVideo: sourceLiveVideo)
         guard exportDuration > 0 else { return nil }
@@ -172,6 +187,7 @@ nonisolated enum CanvasLivePhotoExporter {
             extensionSide: snapshot.extensionSide,
             backgroundStyle: snapshot.backgroundStyle,
             backgroundColors: snapshot.backgroundColors,
+            backgroundPatternSpacing: snapshot.backgroundPatternSpacing,
             dots: snapshot.dots,
             dotScale: snapshot.dotScale,
             dotColor: snapshot.dotColor,

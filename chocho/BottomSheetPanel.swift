@@ -136,9 +136,12 @@ struct BottomSheetPanel: View {
     @Binding var extensionSide: PuzzleCanvasExtensionSide
     @Binding var backgroundStyle: PuzzleBackgroundStyle
     @Binding var backgroundColors: PuzzleBackgroundColors
+    @Binding var backgroundPatternSpacing: Double
     var bottomSafeAreaInset: CGFloat = 0
     var isPanelEnabled: Bool = true
+    var canClearTrace: Bool = false
     let onDrawDots: () -> Void
+    var onClearTrace: () -> Void = {}
 
     /// Vertical offset for history controls anchored to the panel top edge.
     static let historyControlsClearance: CGFloat = 40
@@ -207,7 +210,10 @@ struct BottomSheetPanel: View {
             extensionSide: $extensionSide,
             backgroundStyle: $backgroundStyle,
             backgroundColors: $backgroundColors,
-            onDrawDots: onDrawDots
+            backgroundPatternSpacing: $backgroundPatternSpacing,
+            canClearTrace: canClearTrace,
+            onDrawDots: onDrawDots,
+            onClearTrace: onClearTrace
         )
         .id(selectedTab)
         .fixedSize(horizontal: false, vertical: true)
@@ -403,7 +409,10 @@ private struct PanelContentCard: View {
     @Binding var extensionSide: PuzzleCanvasExtensionSide
     @Binding var backgroundStyle: PuzzleBackgroundStyle
     @Binding var backgroundColors: PuzzleBackgroundColors
+    @Binding var backgroundPatternSpacing: Double
+    let canClearTrace: Bool
     let onDrawDots: () -> Void
+    let onClearTrace: () -> Void
 
     var body: some View {
         Group {
@@ -420,14 +429,17 @@ private struct PanelContentCard: View {
                     dotCount: $dotCount,
                     usesRandomDotColors: $usesRandomDotColors,
                     isTraceDrawingEnabled: $isTraceDrawingEnabled,
-                    onDrawDots: onDrawDots
+                    canClearTrace: canClearTrace,
+                    onDrawDots: onDrawDots,
+                    onClearTrace: onClearTrace
                 )
             case .background:
                 BackgroundPanelControls(
                     backgroundStyle: $backgroundStyle,
                     backgroundColors: $backgroundColors,
                     extensionRatio: $extensionRatio,
-                    extensionSide: $extensionSide
+                    extensionSide: $extensionSide,
+                    backgroundPatternSpacing: $backgroundPatternSpacing
                 )
             case .livePhoto:
                 LivePanelControls(
@@ -721,6 +733,7 @@ private struct BackgroundPanelControls: View {
     @Binding var backgroundColors: PuzzleBackgroundColors
     @Binding var extensionRatio: CGFloat
     @Binding var extensionSide: PuzzleCanvasExtensionSide
+    @Binding var backgroundPatternSpacing: Double
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -745,6 +758,20 @@ private struct BackgroundPanelControls: View {
             .padding(.bottom, 4)
 
             PanelRowSeparator()
+
+            if backgroundStyle.supportsPatternSpacing {
+                StyledSlider(
+                    title: backgroundPatternSpacingTitle,
+                    value: $backgroundPatternSpacing,
+                    range: PuzzleBackgroundPatternSpacing.minControlValue...PuzzleBackgroundPatternSpacing.maxControlValue,
+                    step: PuzzleBackgroundPatternSpacing.step
+                )
+                .padding(.horizontal, 2)
+                .padding(.top, 4)
+
+                PanelRowSeparator()
+                    .padding(.top, 4)
+            }
 
             StyledSlider(
                 title: extensionSizeTitle,
@@ -838,6 +865,17 @@ private struct BackgroundPanelControls: View {
         extensionSide.isHorizontal ? "背景宽度" : "背景高度"
     }
 
+    private var backgroundPatternSpacingTitle: String {
+        switch backgroundStyle {
+        case .grid:
+            "方格大小"
+        case .stripes:
+            "条纹粗细"
+        case .halftone:
+            "图案间距"
+        }
+    }
+
     private var extensionRatioPercent: Binding<Double> {
         Binding(
             get: {
@@ -889,11 +927,27 @@ private struct PanelValueMenu<Value: Hashable & Equatable>: View {
     }
 }
 
+enum DrawPanelTraceButtonLayout {
+    static let traceToggleWeight: CGFloat = 2
+    static let clearTraceButtonWeight: CGFloat = 1
+    static let spacing: CGFloat = 8
+
+    static var totalWeight: CGFloat {
+        traceToggleWeight + clearTraceButtonWeight
+    }
+
+    static func width(for totalWidth: CGFloat, weight: CGFloat) -> CGFloat {
+        max(0, totalWidth - spacing) * weight / totalWeight
+    }
+}
+
 private struct DrawPanelControls: View {
     @Binding var dotCount: Double
     @Binding var usesRandomDotColors: Bool
     @Binding var isTraceDrawingEnabled: Bool
+    let canClearTrace: Bool
     let onDrawDots: () -> Void
+    let onClearTrace: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -919,13 +973,8 @@ private struct DrawPanelControls: View {
 
                     PanelSeparator(orientation: .vertical)
 
-                    PanelCompactToggleButton(
-                        title: "手绘轨迹",
-                        isOn: isTraceDrawingEnabled
-                    ) {
-                        isTraceDrawingEnabled.toggle()
-                    }
-                    .frame(maxWidth: .infinity)
+                    traceButtonGroup
+                        .frame(maxWidth: .infinity)
                 }
                 .frame(height: 30)
                 .padding(.top, 4)
@@ -943,6 +992,34 @@ private struct DrawPanelControls: View {
 
     private var activeColor: Color {
         Color.primary
+    }
+
+    private var traceButtonGroup: some View {
+        GeometryReader { proxy in
+            HStack(spacing: DrawPanelTraceButtonLayout.spacing) {
+                PanelCompactToggleButton(
+                    title: "手绘轨迹",
+                    isOn: isTraceDrawingEnabled
+                ) {
+                    isTraceDrawingEnabled.toggle()
+                }
+                    .frame(
+                        width: DrawPanelTraceButtonLayout.width(
+                            for: proxy.size.width,
+                            weight: DrawPanelTraceButtonLayout.traceToggleWeight
+                        )
+                    )
+
+                clearTraceButton
+                    .frame(
+                        width: DrawPanelTraceButtonLayout.width(
+                            for: proxy.size.width,
+                            weight: DrawPanelTraceButtonLayout.clearTraceButtonWeight
+                        )
+                    )
+            }
+        }
+        .frame(height: 30)
     }
 
     private var drawButton: some View {
@@ -964,6 +1041,28 @@ private struct DrawPanelControls: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
+    }
+
+    private var clearTraceButton: some View {
+        Button(action: onClearTrace) {
+            Image("public/archive")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 15, height: 15)
+                .foregroundStyle(Color.foreground)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+                .background(Color.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.border, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .disabled(!canClearTrace)
+        .opacity(canClearTrace ? 1 : 0.42)
+        .accessibilityLabel("清空手绘轨迹")
     }
 
 }

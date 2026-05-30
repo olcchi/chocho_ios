@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var extensionSide: PuzzleCanvasExtensionSide = .right
     @State private var backgroundStyle: PuzzleBackgroundStyle = .grid
     @State private var backgroundColors = PuzzleBackgroundColors.default
+    @State private var backgroundPatternSpacing: Double = PuzzleBackgroundPatternSpacing.defaultControlValue
     @State private var imageViewportResetID = UUID()
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
@@ -55,7 +56,7 @@ struct ContentView: View {
     @State private var showsClearCanvasConfirmation = false
 
     // MARK: 导出与分享
-    @State private var exportMessage: String?
+    @State private var toastMessage: CanvasToastMessage?
     @State private var isPhotoLoading = false
     @State private var isExporting = false
     @State private var shareItem: CanvasShareItem?
@@ -71,6 +72,10 @@ struct ContentView: View {
     @State private var pendingDraftSave: Task<Void, Never>?
 
     var body: some View {
+        applyLifecycleModifiers(to: rootLayout)
+    }
+
+    private var rootLayout: some View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 ZStack(alignment: .top) {
@@ -86,7 +91,6 @@ struct ContentView: View {
 
                     CanvasHeader(
                         selectedPhotoItem: $selectedPhotoItem,
-                        exportMessage: exportMessage,
                         canDownload: canvasImage != nil,
                         isBusy: isPhotoLoading || isExporting,
                         onDownload: shareCanvas
@@ -97,107 +101,84 @@ struct ContentView: View {
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
-                BottomSheetPanel(
-                    panelVisibleHeight: $panelVisibleHeight,
-                    selectedTab: $selectedTab,
-                    isExpanded: $isPanelExpanded,
-                    dotCount: $dotCount,
-                    dotScale: $dotScale,
-                    selectedDotColor: $selectedDotColor,
-                    usesRandomDotColors: $usesRandomDotColors,
-                    selectedDotShape: $selectedDotShape,
-                    selectedDotShapeCategory: $selectedDotShapeCategory,
-                    isTraceDrawingEnabled: $isTraceDrawingEnabled,
-                    liveDotAnimation: $liveDotAnimation,
-                    isSourceLivePhoto: isSourceLivePhoto,
-                    isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
-                    canPlayLivePreview: canPlayLivePreview,
-                    livePreviewProgress: livePreviewProgress,
-                    isLivePreviewPlaying: isLivePreviewPlaying,
-                    onToggleLivePreviewPlayback: toggleLivePreviewPlayback,
-                    extensionRatio: $extensionRatio,
-                    extensionSide: $extensionSide,
-                    backgroundStyle: $backgroundStyle,
-                    backgroundColors: $backgroundColors,
-                    bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
-                    isPanelEnabled: canvasImage != nil,
-                    onDrawDots: drawPuzzleDots
-                )
-                .overlay(alignment: .topTrailing) {
-                    CanvasHistoryControls(
-                        canUndo: canvasHistory.canUndo,
-                        canRedo: canvasHistory.canRedo,
-                        canClear: !puzzleDots.isEmpty,
-                        onClear: presentClearCanvasConfirmation,
-                        onUndo: undoCanvasChange,
-                        onRedo: redoCanvasChange
-                    )
-                    .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
-                    .offset(y: -BottomSheetPanel.historyControlsClearance)
-                }
-                // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
-                .padding(.bottom, -proxy.safeAreaInsets.bottom)
+                bottomPanel(proxy: proxy)
             }
             .background {
                 Color.background
                     .ignoresSafeArea()
             }
-        }
-        .task(id: selectedPhotoItem) {
-            await loadSelectedPhoto()
-        }
-        .task {
-            guard !hasAttemptedDraftRestore else { return }
-            hasAttemptedDraftRestore = true
-            await restoreCanvasDraftIfNeeded()
-        }
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: CanvasDraftStore.autosaveInterval)
-                persistCanvasDraft()
+            .overlay {
+                CanvasToastOverlay(message: $toastMessage)
             }
         }
-        .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .background || newPhase == .inactive else { return }
-            persistCanvasDraft()
-        }
-        .onChange(of: extensionRatio) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: extensionSide) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: backgroundStyle) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: backgroundColors) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: dotScale) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: selectedDotColor) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
-        .onChange(of: liveDotAnimation) { _, _ in
-            stopLivePreviewPlayback()
-            scheduleCanvasDraftSave()
-        }
-        .onChange(of: isSourceLiveMotionEnabled) { _, _ in
-            stopLivePreviewPlayback()
-            scheduleCanvasDraftSave()
-        }
-        .onChange(of: dotCount) { _, newDotCount in
-            syncPuzzleDots(to: Int(newDotCount.rounded()))
-        }
-        .sheet(item: $shareItem, onDismiss: handleShareSheetDismiss) { item in
-            CanvasShareSheet(
-                product: item.product,
-                onSaveToPhotos: handleSaveToPhotosResult
+    }
+
+    @ViewBuilder
+    private func applyLifecycleModifiers<Content: View>(to content: Content) -> some View {
+        applyPresentationModifiers(
+            to: applyDraftSaveObservers(
+                to: applyAsyncTasks(to: content)
             )
-                .presentationDetents([.medium, .large], selection: $shareSheetDetent)
-                .presentationDragIndicator(.visible)
-                .onAppear {
-                    shareSheetDetent = .medium
+        )
+    }
+
+    @ViewBuilder
+    private func applyAsyncTasks<Content: View>(to content: Content) -> some View {
+        content
+            .task(id: selectedPhotoItem) {
+                await loadSelectedPhoto()
+            }
+            .task {
+                await restoreCanvasDraftOnLaunch()
+            }
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: CanvasDraftStore.autosaveInterval)
+                    persistCanvasDraft()
                 }
-        }
-        .alert("打扫波点", isPresented: $showsClearCanvasConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("打扫", role: .destructive, action: clearCanvasContent)
-        } message: {
-            Text("你想要把画布上的波点都打扫掉吗？")
-        }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .background || newPhase == .inactive else { return }
+                persistCanvasDraft()
+            }
+    }
+
+    @ViewBuilder
+    private func applyDraftSaveObservers<Content: View>(to content: Content) -> some View {
+        content
+            .onChange(of: extensionRatio) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: extensionSide) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: backgroundStyle) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: backgroundColors) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: backgroundPatternSpacing) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: dotScale) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: selectedDotColor) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: liveDotAnimation) { _, _ in
+                stopLivePreviewPlayback()
+                scheduleCanvasDraftSave()
+            }
+            .onChange(of: isSourceLiveMotionEnabled) { _, _ in
+                stopLivePreviewPlayback()
+                scheduleCanvasDraftSave()
+            }
+            .onChange(of: dotCount) { _, newDotCount in
+                syncPuzzleDots(to: Int(newDotCount.rounded()))
+            }
+    }
+
+    @ViewBuilder
+    private func applyPresentationModifiers<Content: View>(to content: Content) -> some View {
+        content
+            .sheet(item: $shareItem, onDismiss: handleShareSheetDismiss) { item in
+                shareSheet(for: item)
+            }
+            .modifier(ClearCanvasConfirmationAlertModifier(
+                isPresented: $showsClearCanvasConfirmation,
+                onConfirm: clearCanvasContent
+            ))
     }
 
     private var bottomPanelInset: CGFloat {
@@ -205,6 +186,75 @@ struct ContentView: View {
             isExpanded: isPanelExpanded,
             panelVisibleHeight: panelVisibleHeight
         )
+    }
+
+    private var historyControlsOverlay: some View {
+        CanvasHistoryControls(
+            canUndo: canvasHistory.canUndo,
+            canRedo: canvasHistory.canRedo,
+            canClear: !puzzleDots.isEmpty,
+            onClear: presentClearCanvasConfirmation,
+            onUndo: undoCanvasChange,
+            onRedo: redoCanvasChange
+        )
+        .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
+        .offset(y: -BottomSheetPanel.historyControlsClearance)
+    }
+
+    private func bottomPanel(proxy: GeometryProxy) -> some View {
+        BottomSheetPanel(
+            panelVisibleHeight: $panelVisibleHeight,
+            selectedTab: $selectedTab,
+            isExpanded: $isPanelExpanded,
+            dotCount: $dotCount,
+            dotScale: $dotScale,
+            selectedDotColor: $selectedDotColor,
+            usesRandomDotColors: $usesRandomDotColors,
+            selectedDotShape: $selectedDotShape,
+            selectedDotShapeCategory: $selectedDotShapeCategory,
+            isTraceDrawingEnabled: $isTraceDrawingEnabled,
+            liveDotAnimation: $liveDotAnimation,
+            isSourceLivePhoto: isSourceLivePhoto,
+            isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
+            canPlayLivePreview: canPlayLivePreview,
+            livePreviewProgress: livePreviewProgress,
+            isLivePreviewPlaying: isLivePreviewPlaying,
+            onToggleLivePreviewPlayback: toggleLivePreviewPlayback,
+            extensionRatio: $extensionRatio,
+            extensionSide: $extensionSide,
+            backgroundStyle: $backgroundStyle,
+            backgroundColors: $backgroundColors,
+            backgroundPatternSpacing: $backgroundPatternSpacing,
+            bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
+            isPanelEnabled: canvasImage != nil,
+            canClearTrace: !tracePoints.isEmpty,
+            onDrawDots: drawPuzzleDots,
+            onClearTrace: clearTracePoints
+        )
+        .overlay(alignment: .topTrailing) {
+            historyControlsOverlay
+        }
+        // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
+        .padding(.bottom, -proxy.safeAreaInsets.bottom)
+    }
+
+    private func shareSheet(for item: CanvasShareItem) -> some View {
+        CanvasShareSheet(
+            product: item.product,
+            onSaveToPhotos: handleSaveToPhotosResult
+        )
+        .presentationDetents([.medium, .large], selection: $shareSheetDetent)
+        .presentationDragIndicator(.visible)
+        .onAppear {
+            shareSheetDetent = .medium
+        }
+    }
+
+    @MainActor
+    private func restoreCanvasDraftOnLaunch() async {
+        guard !hasAttemptedDraftRestore else { return }
+        hasAttemptedDraftRestore = true
+        await restoreCanvasDraftIfNeeded()
     }
 
     @ViewBuilder
@@ -217,6 +267,7 @@ struct ContentView: View {
                     extensionSide: extensionSide,
                     backgroundStyle: backgroundStyle,
                     backgroundColors: backgroundColors,
+                    backgroundPatternSpacing: backgroundPatternSpacing,
                     imageViewportResetID: imageViewportResetID,
                     bottomPanelInset: bottomPanelInset,
                     dots: puzzleDots,
@@ -285,6 +336,16 @@ struct ContentView: View {
         )
     }
 
+    @MainActor
+    private func showToast(_ title: String) {
+        toastMessage = CanvasToastMessage(title)
+    }
+
+    @MainActor
+    private func dismissToast() {
+        toastMessage = nil
+    }
+
     private var livePreviewDuration: TimeInterval {
         CanvasLiveMotionTiming.exportDuration(
             liveDotAnimation: liveDotAnimation,
@@ -347,7 +408,7 @@ struct ContentView: View {
         guard let selectedPhotoItem else { return }
 
         isPhotoLoading = true
-        exportMessage = "正在加载…"
+        showToast("正在加载…")
         defer {
             isPhotoLoading = false
         }
@@ -384,10 +445,10 @@ struct ContentView: View {
             await Task.yield()
 
             applyPuzzleDots(initialDots)
-            exportMessage = nil
+            dismissToast()
             persistCanvasDraft()
         } catch {
-            exportMessage = "上传失败"
+            showToast("上传失败")
         }
     }
 
@@ -395,7 +456,7 @@ struct ContentView: View {
     @MainActor
     private func drawPuzzleDots() {
         guard canvasImage != nil else {
-            exportMessage = "请先上传图片"
+            showToast("请先上传图片")
             return
         }
 
@@ -407,12 +468,12 @@ struct ContentView: View {
         )
         if isTraceDrawingEnabled {
             guard !tracePoints.isEmpty else {
-                exportMessage = "先画一条轨迹"
+                showToast("先画一条轨迹")
                 return
             }
 
             guard !newDots.isEmpty else {
-                exportMessage = "右侧背景太窄"
+                showToast("右侧背景太窄")
                 return
             }
         }
@@ -422,9 +483,9 @@ struct ContentView: View {
             : PuzzleDotFactory.makeDots(
                 count: Int(dotCount.rounded()),
                 shapeAssetName: selectedDotShape.name
-            )
+        )
         applyPuzzleDots(fallbackDots)
-        exportMessage = nil
+        dismissToast()
     }
 
     @MainActor
@@ -462,13 +523,22 @@ struct ContentView: View {
             shapeAssetName: selectedDotShape.name
         ))
         applyPuzzleDots(newDots)
-        exportMessage = nil
+        dismissToast()
     }
 
     @MainActor
     private func updateTracePoints(_ points: [PuzzleCanvasTracePoint]) {
         tracePoints = points
-        exportMessage = nil
+        dismissToast()
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func clearTracePoints() {
+        guard !tracePoints.isEmpty else { return }
+
+        tracePoints = []
+        dismissToast()
         scheduleCanvasDraftSave()
     }
 
@@ -488,15 +558,15 @@ struct ContentView: View {
         withTransaction(transaction) {
             puzzleDots = canvasHistory.clearValue()
         }
-        exportMessage = nil
+        dismissToast()
     }
 
     @MainActor
     private func undoCanvasChange() {
         guard let previousDots = canvasHistory.undo() else { return }
-	
+
         puzzleDots = previousDots
-        exportMessage = nil
+        dismissToast()
     }
 
     @MainActor
@@ -504,14 +574,14 @@ struct ContentView: View {
         guard let nextDots = canvasHistory.redo() else { return }
 
         puzzleDots = nextDots
-        exportMessage = nil
+        dismissToast()
     }
 
     @MainActor
     private func applyPuzzleDots(_ dots: [PuzzleDot]) {
         canvasHistory.record(dots)
         puzzleDots = canvasHistory.currentValue
-        exportMessage = nil
+        dismissToast()
         scheduleCanvasDraftSave()
     }
 
@@ -538,6 +608,7 @@ struct ContentView: View {
         extensionSide = restored.extensionSide
         backgroundStyle = restored.backgroundStyle
         backgroundColors = restored.backgroundColors
+        backgroundPatternSpacing = restored.backgroundPatternSpacing
         dotCount = restored.dotCount
         dotScale = restored.dotScale
         selectedDotColor = restored.selectedDotColor
@@ -552,7 +623,7 @@ struct ContentView: View {
         imageViewportResetID = UUID()
         canvasHistory.reset(to: restored.puzzleDots)
         puzzleDots = restored.puzzleDots
-        exportMessage = nil
+        dismissToast()
     }
 
     @MainActor
@@ -581,6 +652,7 @@ struct ContentView: View {
             extensionSide: extensionSide,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
+            backgroundPatternSpacing: backgroundPatternSpacing,
             dotCount: dotCount,
             dotScale: dotScale,
             selectedDotColor: selectedDotColor,
@@ -613,7 +685,7 @@ struct ContentView: View {
     @MainActor
     private func shareCanvas() {
         guard let canvasImage else {
-            exportMessage = "请先上传图片"
+            showToast("请先上传图片")
             return
         }
 
@@ -621,38 +693,31 @@ struct ContentView: View {
 
         isExporting = true
         let hasSourceLiveVideo = isSourceLiveMotionEnabled && sourceLiveVideo != nil
-        let exportsLivePhoto = CanvasExportWriter.exportsAsLivePhoto(
-            liveDotAnimation: liveDotAnimation,
-            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
-            hasSourceLiveVideo: hasSourceLiveVideo
-        )
-        exportMessage = exportsLivePhoto ? "正在导出实况…" : "正在导出…"
-
         let snapshot = CanvasExportSnapshot(
             image: canvasImage,
             extensionRatio: extensionRatio,
             extensionSide: extensionSide,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
+            backgroundPatternSpacing: backgroundPatternSpacing,
             dots: puzzleDots,
             dotScale: CGFloat(dotScale),
             dotColor: selectedDotColor,
             usesRandomDotColors: usesRandomDotColors,
             liveDotAnimation: liveDotAnimation,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            hasSourceLiveVideo: hasSourceLiveVideo,
             sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
         )
+        showToast(snapshot.exportsAsLivePhoto ? "正在导出实况…" : "正在导出…")
+
+        let preloadedSourceLiveVideo = sourceLiveVideo
 
         Task {
             defer { isExporting = false }
 
             let exportSize = exportCanvasSize(for: snapshot.image)
-            let exportFormat = CanvasExportWriter.format(
-                liveDotAnimation: snapshot.liveDotAnimation,
-                isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
-                hasSourceLiveVideo: snapshot.isSourceLiveMotionEnabled
-                    && snapshot.sourcePhotoAssetLocalIdentifier != nil
-            )
+            let exportFormat = snapshot.exportFormat
 
             let product: CanvasExportProduct? = await Task.detached(priority: .userInitiated) {
                 switch exportFormat {
@@ -663,17 +728,20 @@ struct ContentView: View {
                         extensionSide: snapshot.extensionSide,
                         backgroundStyle: snapshot.backgroundStyle,
                         backgroundColors: snapshot.backgroundColors,
+                        backgroundPatternSpacing: snapshot.backgroundPatternSpacing,
                         dots: snapshot.dots,
                         dotScale: snapshot.dotScale,
                         dotColor: snapshot.dotColor,
                         usesRandomDotColors: snapshot.usesRandomDotColors,
                         liveDotAnimation: snapshot.liveDotAnimation,
                         isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
+                        hasSourceLiveVideo: snapshot.hasSourceLiveVideo,
                         sourcePhotoAssetLocalIdentifier: snapshot.sourcePhotoAssetLocalIdentifier
                     )
                     guard let bundle = await CanvasLivePhotoExporter.export(
                         snapshot: liveSnapshot,
-                        keyPhotoSize: exportSize
+                        keyPhotoSize: exportSize,
+                        preloadedSourceLiveVideo: preloadedSourceLiveVideo
                     ) else {
                         return nil
                     }
@@ -687,6 +755,7 @@ struct ContentView: View {
                         extensionSide: snapshot.extensionSide,
                         backgroundStyle: snapshot.backgroundStyle,
                         backgroundColors: snapshot.backgroundColors,
+                        backgroundPatternSpacing: snapshot.backgroundPatternSpacing,
                         dots: snapshot.dots,
                         dotScale: snapshot.dotScale,
                         dotColor: snapshot.dotColor,
@@ -703,11 +772,11 @@ struct ContentView: View {
             }.value
 
             guard let product else {
-                exportMessage = exportsLivePhoto ? "实况导出失败" : "导出失败"
+                showToast(snapshot.exportsAsLivePhoto ? "实况导出失败" : "导出失败")
                 return
             }
 
-            exportMessage = nil
+            dismissToast()
 
             // 在弹出分享页之前于主线程预请求相册权限，避免 UIActivityViewController 挡住系统对话框。
             _ = await CanvasPhotoLibrarySaver.requestAuthorization()
@@ -732,13 +801,13 @@ struct ContentView: View {
     @MainActor
     private func handleSaveToPhotosResult(_ didSave: Bool) {
         if didSave {
-            exportMessage = "已保存到相册"
+            showToast("已保存到相册")
         } else {
             let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
             if status == .denied || status == .restricted {
-                exportMessage = "保存失败，请在设置中允许访问相册"
+                showToast("保存失败，请在设置中允许访问相册")
             } else {
-                exportMessage = "保存失败"
+                showToast("保存失败")
             }
         }
         retainsLivePhotoExportFilesOnDismiss = false
@@ -806,6 +875,20 @@ struct ContentView: View {
         shareCleanup?()
         shareCleanup = nil
         retainsLivePhotoExportFilesOnDismiss = false
+    }
+}
+
+private struct ClearCanvasConfirmationAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let onConfirm: () -> Void
+
+    func body(content: Content) -> some View {
+        content.alert("打扫波点", isPresented: $isPresented) {
+            Button("取消", role: .cancel) {}
+            Button("打扫", role: .destructive, action: onConfirm)
+        } message: {
+            Text("你想要把画布上的波点都打扫掉吗？")
+        }
     }
 }
 
@@ -929,11 +1012,30 @@ private struct CanvasExportSnapshot {
     let extensionSide: PuzzleCanvasExtensionSide
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
     let dots: [PuzzleDot]
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
     let liveDotAnimation: LiveDotAnimation
     let isSourceLiveMotionEnabled: Bool
+    /// 与预览一致：内存中已成功加载源 Live 配对视频，而非仅持有相册 identifier。
+    let hasSourceLiveVideo: Bool
     let sourcePhotoAssetLocalIdentifier: String?
+
+    var exportsAsLivePhoto: Bool {
+        CanvasExportWriter.exportsAsLivePhoto(
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            hasSourceLiveVideo: hasSourceLiveVideo
+        )
+    }
+
+    var exportFormat: CanvasExportFormat {
+        CanvasExportWriter.format(
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            hasSourceLiveVideo: hasSourceLiveVideo
+        )
+    }
 }

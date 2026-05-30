@@ -92,6 +92,7 @@ struct CanvasDraftStoreTests {
             extensionSide: .left,
             backgroundStyle: .stripes,
             backgroundColors: backgroundColors,
+            backgroundPatternSpacing: 24,
             dotCount: 12,
             dotScale: 1.2,
             selectedDotColor: Color(red: 0.2, green: 0.4, blue: 0.9),
@@ -101,7 +102,10 @@ struct CanvasDraftStoreTests {
             puzzleDots: dots,
             tracePoints: tracePoints,
             viewportScale: 1.5,
-            viewportOffset: CGSize(width: 12, height: -8)
+            viewportOffset: CGSize(width: 12, height: -8),
+            liveDotAnimation: .breathe,
+            isSourceLiveMotionEnabled: true,
+            sourcePhotoAssetLocalIdentifier: "test-live-asset"
         )
 
         let didSave = await CanvasDraftStore.save(capture, directoryURL: directory)
@@ -111,6 +115,7 @@ struct CanvasDraftStoreTests {
         #expect(loaded.extensionRatio == capture.extensionRatio)
         #expect(loaded.extensionSide == capture.extensionSide)
         #expect(loaded.backgroundStyle == capture.backgroundStyle)
+        #expect(loaded.backgroundPatternSpacing == capture.backgroundPatternSpacing)
         #expect(loaded.dotCount == capture.dotCount)
         #expect(loaded.dotScale == capture.dotScale)
         #expect(loaded.usesRandomDotColors == capture.usesRandomDotColors)
@@ -119,6 +124,9 @@ struct CanvasDraftStoreTests {
         #expect(loaded.tracePoints == capture.tracePoints)
         #expect(loaded.viewportScale == capture.viewportScale)
         #expect(loaded.viewportOffset == capture.viewportOffset)
+        #expect(loaded.liveDotAnimation == capture.liveDotAnimation)
+        #expect(loaded.isSourceLiveMotionEnabled == capture.isSourceLiveMotionEnabled)
+        #expect(loaded.sourcePhotoAssetLocalIdentifier == capture.sourcePhotoAssetLocalIdentifier)
         #expect(loaded.puzzleDots.count == capture.puzzleDots.count)
         for (savedDot, loadedDot) in zip(capture.puzzleDots, loaded.puzzleDots) {
             #expect(savedDot.id == loadedDot.id)
@@ -193,6 +201,51 @@ struct CanvasDraftStoreTests {
 
         let restored = try #require(CanvasDraftStore.readDraft(from: directory))
         #expect(restored.backgroundColors == PuzzleBackgroundColors.default)
+        #expect(restored.backgroundPatternSpacing == PuzzleBackgroundPatternSpacing.defaultControlValue)
+    }
+
+    @Test func restoresDefaultBackgroundPatternSpacingForVersionThreeDrafts() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chocho-draft-v3-spacing-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let image = makeTestImage()
+        guard let photoData = image.jpegData(compressionQuality: 0.92) else {
+            Issue.record("Expected JPEG data for test image")
+            return
+        }
+
+        let manifest = CanvasDraftManifest(
+            version: 3,
+            savedAt: Date(),
+            extensionRatio: 0.2,
+            extensionSide: PuzzleCanvasExtensionSide.right.rawValue,
+            backgroundStyle: PuzzleBackgroundStyle.stripes.rawValue,
+            backgroundColors: CanvasDraftStoredBackgroundColors(.default),
+            dotCount: 2,
+            dotScale: DotSizeControl.defaultRenderedScale,
+            selectedDotColor: CanvasDraftColorComponents(Color(red: 0.2, green: 0.3, blue: 0.4)),
+            usesRandomDotColors: false,
+            selectedDotShapeName: DotShapeAsset.defaultSelection.name,
+            isTraceDrawingEnabled: false,
+            puzzleDots: [],
+            tracePoints: [],
+            viewportScale: 1,
+            viewportOffsetWidth: 0,
+            viewportOffsetHeight: 0,
+            liveDotAnimationRawValue: LiveDotAnimation.none.rawValue
+        )
+
+        try CanvasDraftStore.writeDraft(
+            manifest: manifest,
+            photoData: photoData,
+            to: directory
+        )
+
+        let restored = try #require(CanvasDraftStore.readDraft(from: directory))
+        #expect(restored.backgroundPatternSpacing == PuzzleBackgroundPatternSpacing.defaultControlValue)
     }
 
     @Test func clearRemovesSavedDraft() async throws {
@@ -208,6 +261,7 @@ struct CanvasDraftStoreTests {
             extensionSide: .right,
             backgroundStyle: .grid,
             backgroundColors: .default,
+            backgroundPatternSpacing: PuzzleBackgroundPatternSpacing.defaultControlValue,
             dotCount: 5,
             dotScale: DotSizeControl.defaultRenderedScale,
             selectedDotColor: Color(red: 0.1, green: 0.2, blue: 0.3),
@@ -217,7 +271,10 @@ struct CanvasDraftStoreTests {
             puzzleDots: PuzzleDotFactory.makeDots(count: 2),
             tracePoints: [],
             viewportScale: 1,
-            viewportOffset: .zero
+            viewportOffset: .zero,
+            liveDotAnimation: .none,
+            isSourceLiveMotionEnabled: false,
+            sourcePhotoAssetLocalIdentifier: nil
         )
 
         await CanvasDraftStore.save(capture, directoryURL: directory)

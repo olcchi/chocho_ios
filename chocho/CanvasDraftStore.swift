@@ -8,6 +8,7 @@ struct CanvasDraftCapture: Sendable {
     let extensionSide: PuzzleCanvasExtensionSide
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
     let dotCount: Double
     let dotScale: Double
     let selectedDotColor: Color
@@ -29,6 +30,7 @@ struct CanvasDraftRestore: Sendable {
     let extensionSide: PuzzleCanvasExtensionSide
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
     let dotCount: Double
     let dotScale: Double
     let selectedDotColor: Color
@@ -65,8 +67,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 3
-    static let supportedVersions: Set<Int> = [1, 2, 3]
+    static let currentVersion = 4
+    static let supportedVersions: Set<Int> = [1, 2, 3, 4]
 
     var version: Int
     var savedAt: Date
@@ -74,6 +76,8 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var extensionSide: String
     var backgroundStyle: String
     var backgroundColors: CanvasDraftStoredBackgroundColors?
+    /// v4+：方格大小 / 条纹粗细（旧草稿缺省为 nil → 恢复为默认 12）
+    var backgroundPatternSpacing: Double?
     var dotCount: Double
     var dotScale: Double
     var selectedDotColor: CanvasDraftColorComponents
@@ -222,6 +226,7 @@ nonisolated enum CanvasDraftStore {
             extensionSide: capture.extensionSide.rawValue,
             backgroundStyle: capture.backgroundStyle.rawValue,
             backgroundColors: CanvasDraftStoredBackgroundColors(capture.backgroundColors),
+            backgroundPatternSpacing: capture.backgroundPatternSpacing,
             dotCount: capture.dotCount,
             dotScale: capture.dotScale,
             selectedDotColor: CanvasDraftColorComponents(capture.selectedDotColor),
@@ -328,6 +333,8 @@ nonisolated enum CanvasDraftStore {
                 extensionSide: extensionSide,
                 backgroundStyle: backgroundStyle,
                 backgroundColors: manifest.backgroundColors?.puzzleBackgroundColors ?? .default,
+                backgroundPatternSpacing: manifest.backgroundPatternSpacing
+                    ?? PuzzleBackgroundPatternSpacing.defaultControlValue,
                 dotCount: manifest.dotCount,
                 dotScale: manifest.dotScale,
                 selectedDotColor: manifest.selectedDotColor.color,

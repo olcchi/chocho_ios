@@ -50,6 +50,15 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
             "半调"
         }
     }
+
+    var supportsPatternSpacing: Bool {
+        switch self {
+        case .grid, .stripes:
+            true
+        case .halftone:
+            false
+        }
+    }
 }
 
 // MARK: - 实况波点动画
@@ -1013,11 +1022,21 @@ nonisolated enum DotSizeControl {
 }
 
 nonisolated enum PuzzleBackgroundGridMetrics {
-    private static let referenceSpacing: CGFloat = 12
+    private static let referenceSpacing: CGFloat = CGFloat(PuzzleBackgroundPatternSpacing.defaultControlValue)
     private static let referenceLineWidth: CGFloat = 1
 
     static func spacing(photoFrameHeight: CGFloat) -> CGFloat {
-        scaledMetric(referenceSpacing, photoFrameHeight: photoFrameHeight)
+        PuzzleBackgroundPatternSpacing.renderedSpacing(
+            controlValue: Double(referenceSpacing),
+            photoFrameHeight: photoFrameHeight
+        )
+    }
+
+    static func spacing(controlValue: Double, photoFrameHeight: CGFloat) -> CGFloat {
+        PuzzleBackgroundPatternSpacing.renderedSpacing(
+            controlValue: controlValue,
+            photoFrameHeight: photoFrameHeight
+        )
     }
 
     static func lineWidth(photoFrameHeight: CGFloat) -> CGFloat {
@@ -1034,6 +1053,23 @@ nonisolated enum PuzzleBackgroundGridMetrics {
         }
 
         return value * (photoFrameHeight / DotSizeControl.referencePhotoHeight)
+    }
+}
+
+nonisolated enum PuzzleBackgroundPatternSpacing {
+    static let minControlValue: Double = 6
+    static let maxControlValue: Double = 36
+    static let defaultControlValue: Double = 12
+    static let step: Double = 1
+
+    static func renderedSpacing(controlValue: Double, photoFrameHeight: CGFloat) -> CGFloat {
+        let clampedValue = min(max(controlValue, minControlValue), maxControlValue)
+        guard DotSizeControl.referencePhotoHeight > 0,
+              photoFrameHeight > 0 else {
+            return CGFloat(clampedValue)
+        }
+
+        return CGFloat(clampedValue) * (photoFrameHeight / DotSizeControl.referencePhotoHeight)
     }
 }
 
@@ -1219,6 +1255,7 @@ nonisolated enum PuzzleDotCollageColor {
         image: UIImage,
         backgroundStyle: PuzzleBackgroundStyle,
         backgroundColors: PuzzleBackgroundColors = .default,
+        backgroundPatternSpacing: Double = PuzzleBackgroundPatternSpacing.defaultControlValue,
         usesRandomDotColors: Bool,
         selectedDotColor: Color
     ) -> Color {
@@ -1243,6 +1280,7 @@ nonisolated enum PuzzleDotCollageColor {
                 at: mirrorPosition,
                 style: backgroundStyle,
                 colors: backgroundColors,
+                patternSpacing: backgroundPatternSpacing,
                 extensionSize: extensionFrame.size,
                 photoFrameHeight: layout.referenceLocalPhotoFrame.height,
                 extensionRatio: layout.extensionRatio,
@@ -1288,6 +1326,7 @@ nonisolated enum PuzzleDotCollageColor {
         at normalizedPoint: CGPoint,
         style: PuzzleBackgroundStyle,
         colors: PuzzleBackgroundColors = .default,
+        patternSpacing: Double = PuzzleBackgroundPatternSpacing.defaultControlValue,
         extensionSize: CGSize,
         photoFrameHeight: CGFloat,
         extensionRatio: CGFloat = 0,
@@ -1304,7 +1343,10 @@ nonisolated enum PuzzleDotCollageColor {
             x: u * extensionSize.width,
             y: v * extensionSize.height
         )
-        let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
+        let spacing = PuzzleBackgroundGridMetrics.spacing(
+            controlValue: patternSpacing,
+            photoFrameHeight: photoFrameHeight
+        )
         let lineWidth = PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: photoFrameHeight)
 
         switch style {

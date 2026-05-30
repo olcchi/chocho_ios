@@ -9,6 +9,7 @@ struct PuzzleCanvasView: View {
     var extensionSide: PuzzleCanvasExtensionSide = .right
     var backgroundStyle: PuzzleBackgroundStyle = .grid
     var backgroundColors: PuzzleBackgroundColors = .default
+    var backgroundPatternSpacing: Double = PuzzleBackgroundPatternSpacing.defaultControlValue
     var imageViewportResetID: UUID = UUID()
     /// 底部面板占用高度，用于在面板上方垂直居中合成区域。
     var bottomPanelInset: CGFloat = 0
@@ -93,6 +94,7 @@ struct PuzzleCanvasView: View {
                     .animation(.none, value: extensionSide)
                     .animation(.none, value: backgroundStyle)
                     .animation(.none, value: backgroundColors)
+                    .animation(.none, value: backgroundPatternSpacing)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .scaleEffect(viewportScale)
@@ -191,6 +193,7 @@ struct PuzzleCanvasView: View {
                 liveFrameImage: liveFrameImageForDots(blinkTime: blinkTime),
                 backgroundStyle: backgroundStyle,
                 backgroundColors: backgroundColors,
+                backgroundPatternSpacing: backgroundPatternSpacing,
                 photoFrame: referenceLocalPhotoFrame,
                 layout: layout
             )
@@ -299,12 +302,14 @@ struct PuzzleCanvasView: View {
         case .grid:
             PuzzleGridCanvas(
                 photoFrameHeight: photoFrameHeight,
-                colors: backgroundColors
+                colors: backgroundColors,
+                patternSpacing: backgroundPatternSpacing
             )
         case .stripes:
             PuzzleStripesCanvas(
                 photoFrameHeight: photoFrameHeight,
-                colors: backgroundColors
+                colors: backgroundColors,
+                patternSpacing: backgroundPatternSpacing
             )
         case .halftone:
             PuzzleHalftoneBackgroundView(
@@ -492,6 +497,7 @@ private struct TraceGestureModifier<Trace: Gesture>: ViewModifier {
 private struct PuzzleGridCanvas: View {
     let photoFrameHeight: CGFloat
     let colors: PuzzleBackgroundColors
+    let patternSpacing: Double
 
     var body: some View {
         Canvas { context, size in
@@ -506,6 +512,7 @@ private struct PuzzleGridCanvas: View {
                 in: &context,
                 size: size,
                 photoFrameHeight: photoFrameHeight,
+                patternSpacing: patternSpacing,
                 lineColor: colors.lineColor
             )
         }
@@ -515,6 +522,7 @@ private struct PuzzleGridCanvas: View {
 private struct PuzzleStripesCanvas: View {
     let photoFrameHeight: CGFloat
     let colors: PuzzleBackgroundColors
+    let patternSpacing: Double
 
     var body: some View {
         Canvas { context, size in
@@ -524,6 +532,7 @@ private struct PuzzleStripesCanvas: View {
                 in: &context,
                 size: size,
                 photoFrameHeight: photoFrameHeight,
+                patternSpacing: patternSpacing,
                 colors: colors
             )
         }
@@ -546,9 +555,13 @@ private enum PuzzleBackgroundCanvasDrawing {
         in context: inout GraphicsContext,
         size: CGSize,
         photoFrameHeight: CGFloat,
+        patternSpacing: Double,
         lineColor: Color
     ) {
-        let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
+        let spacing = PuzzleBackgroundGridMetrics.spacing(
+            controlValue: patternSpacing,
+            photoFrameHeight: photoFrameHeight
+        )
         var path = Path()
 
         var x: CGFloat = 0
@@ -572,9 +585,13 @@ private enum PuzzleBackgroundCanvasDrawing {
         in context: inout GraphicsContext,
         size: CGSize,
         photoFrameHeight: CGFloat,
+        patternSpacing: Double,
         colors: PuzzleBackgroundColors
     ) {
-        let spacing = PuzzleBackgroundGridMetrics.spacing(photoFrameHeight: photoFrameHeight)
+        let spacing = PuzzleBackgroundGridMetrics.spacing(
+            controlValue: patternSpacing,
+            photoFrameHeight: photoFrameHeight
+        )
         var y: CGFloat = 0
         var usesPrimaryStripe = true
 
@@ -615,6 +632,7 @@ private struct PuzzleDotsCanvas: View {
     var liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
 
@@ -681,6 +699,7 @@ private struct PuzzleDotsCanvas: View {
                     liveFrameImage: liveFrameImage,
                     backgroundStyle: backgroundStyle,
                     backgroundColors: backgroundColors,
+                    backgroundPatternSpacing: backgroundPatternSpacing,
                     photoFrame: photoFrame,
                     layout: layout,
                     dotSize: size
@@ -707,6 +726,7 @@ private struct PuzzleDotsCanvas: View {
                 liveFrameImage: liveFrameImage,
                 backgroundStyle: backgroundStyle,
                 backgroundColors: backgroundColors,
+                backgroundPatternSpacing: backgroundPatternSpacing,
                 photoFrame: photoFrame,
                 layout: layout,
                 dotSize: size
@@ -735,6 +755,7 @@ private struct PuzzleDotCollageBasicShapeView: View {
     let liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
     let dotSize: CGFloat
@@ -747,6 +768,7 @@ private struct PuzzleDotCollageBasicShapeView: View {
             liveFrameImage: liveFrameImage,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
+            backgroundPatternSpacing: backgroundPatternSpacing,
             photoFrame: photoFrame,
             layout: layout,
             dotSize: dotSize
@@ -765,6 +787,7 @@ private struct PuzzleDotCollageAssetShapeView: View {
     let liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
     let dotSize: CGFloat
@@ -777,6 +800,7 @@ private struct PuzzleDotCollageAssetShapeView: View {
             liveFrameImage: liveFrameImage,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
+            backgroundPatternSpacing: backgroundPatternSpacing,
             photoFrame: photoFrame,
             layout: layout,
             dotSize: dotSize
@@ -799,6 +823,7 @@ private struct PuzzleDotCollageMirrorFill: View {
     let liveFrameImage: UIImage?
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
     let dotSize: CGFloat
@@ -826,6 +851,7 @@ private struct PuzzleDotCollageMirrorFill: View {
                 layout: layout,
                 style: backgroundStyle,
                 colors: backgroundColors,
+                patternSpacing: backgroundPatternSpacing,
                 extensionSize: extensionFrame.size,
                 photoFrameHeight: photoFrame.height
             )
@@ -856,6 +882,7 @@ private struct PuzzleDotCollageBackgroundFill: View {
     let layout: PuzzleCanvasLayoutResult
     let style: PuzzleBackgroundStyle
     let colors: PuzzleBackgroundColors
+    let patternSpacing: Double
     let extensionSize: CGSize
     let photoFrameHeight: CGFloat
 
@@ -873,6 +900,7 @@ private struct PuzzleDotCollageBackgroundFill: View {
                         in: &context,
                         size: extensionSize,
                         photoFrameHeight: photoFrameHeight,
+                        patternSpacing: patternSpacing,
                         lineColor: colors.lineColor
                     )
                 }
@@ -882,6 +910,7 @@ private struct PuzzleDotCollageBackgroundFill: View {
                         in: &context,
                         size: extensionSize,
                         photoFrameHeight: photoFrameHeight,
+                        patternSpacing: patternSpacing,
                         colors: colors
                     )
                 }
