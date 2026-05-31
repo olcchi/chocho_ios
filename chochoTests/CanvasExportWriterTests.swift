@@ -11,6 +11,9 @@ struct CanvasExportWriterTests {
             CanvasExportWriter.format(liveDotAnimation: .breathe) == .livePhoto
         )
         #expect(
+            CanvasExportWriter.format(liveDotAnimation: .rotate) == .livePhoto
+        )
+        #expect(
             CanvasExportWriter.format(liveDotAnimation: .none) == .staticJPEG
         )
     }

@@ -151,6 +151,57 @@ struct CanvasRasterExporterTests {
         )
     }
 
+    @Test func rotateAnimationRotatesRasterizedDotAroundItsCenter() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exportSize = CGSize(width: 400, height: 300)
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.5, y: 0.5),
+            color: .clear,
+            size: 10,
+            shapeAssetName: BuiltInDotShape.lightning.rawValue
+        )
+
+        let initialFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false,
+                liveDotAnimation: .rotate,
+                blinkTime: 0
+            )
+        )
+        let quarterTurnFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false,
+                liveDotAnimation: .rotate,
+                blinkTime: 0.75
+            )
+        )
+
+        #expect(
+            containsDifferentPixels(
+                in: initialFrame,
+                and: quarterTurnFrame,
+                rect: CGRect(x: 150, y: 100, width: 100, height: 100)
+            )
+        )
+    }
+
     @Test func characterDotRendersTypedTextInRasterExport() throws {
         let source = try #require(makeSolidImage(width: 400, height: 300))
         let exportSize = CGSize(width: 480, height: 300)

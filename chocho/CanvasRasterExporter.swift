@@ -276,6 +276,9 @@ nonisolated enum CanvasRasterExporter {
                 )
                 let rect = CGRect(origin: origin, size: CGSize(width: dotSize, height: dotSize))
 
+                context.saveGState()
+                applyDotRotation(motion.rotationRadians, in: context, around: rect)
+
                 if dot.isCharacterDot {
                     if PuzzleDotCollageColor.shouldRenderCollageContent(
                         for: dot,
@@ -385,6 +388,8 @@ nonisolated enum CanvasRasterExporter {
                         opacity: motion.opacity
                     )
                 }
+
+                context.restoreGState()
             }
         }
     }
@@ -394,20 +399,34 @@ nonisolated enum CanvasRasterExporter {
         dotID: UUID,
         liveDotAnimation: LiveDotAnimation,
         blinkTime: TimeInterval?
-    ) -> (opacity: CGFloat, scale: CGFloat) {
-        guard let blinkTime else { return (1, 1) }
+    ) -> (opacity: CGFloat, scale: CGFloat, rotationRadians: CGFloat) {
+        guard let blinkTime else { return (1, 1, 0) }
         switch liveDotAnimation {
         case .none:
-            return (1, 1)
+            return (1, 1, 0)
         case .randomBlink:
             return (
                 CGFloat(DotRandomBlinkOpacity.opacity(dotID: dotID, time: blinkTime)),
-                1
+                1,
+                0
             )
         case .breathe:
             let sample = DotBreatheAnimation.sample(dotID: dotID, time: blinkTime)
-            return (CGFloat(sample.opacity), CGFloat(sample.scale))
+            return (CGFloat(sample.opacity), CGFloat(sample.scale), 0)
+        case .rotate:
+            return (1, 1, CGFloat(DotRotateAnimation.radians(time: blinkTime)))
         }
+    }
+
+    private nonisolated static func applyDotRotation(
+        _ radians: CGFloat,
+        in context: CGContext,
+        around rect: CGRect
+    ) {
+        guard radians != 0 else { return }
+        context.translateBy(x: rect.midX, y: rect.midY)
+        context.rotate(by: radians)
+        context.translateBy(x: -rect.midX, y: -rect.midY)
     }
 
     private nonisolated static func drawBuiltInDotCollage(

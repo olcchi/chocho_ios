@@ -2,6 +2,10 @@ import CoreGraphics
 import SwiftUI
 import UIKit
 
+nonisolated enum PuzzleCanvasDefaults {
+    static let defaultExtensionRatio: CGFloat = 0.15
+}
+
 nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, Equatable {
     case top
     case bottom
@@ -70,6 +74,7 @@ nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable
     case none
     case randomBlink
     case breathe
+    case rotate
 
     var id: Self { self }
 
@@ -81,6 +86,8 @@ nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable
             "闪烁"
         case .breathe:
             "呼吸"
+        case .rotate:
+            "旋转"
         }
     }
 
@@ -98,6 +105,8 @@ nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable
             DotRandomBlinkOpacity.exportDuration
         case .breathe:
             DotBreatheAnimation.exportDuration
+        case .rotate:
+            DotRotateAnimation.exportDuration
         }
     }
 }
@@ -154,6 +163,15 @@ nonisolated enum DotBreatheAnimation {
 
     private static func phaseOffset(for dotID: UUID) -> Double {
         DotAnimationSeed.unit16(dotID, chunk: 4) * 0.45 * .pi
+    }
+}
+
+/// 「旋转」：波点围绕自己的中心匀速旋转，大小与透明度保持不变。
+nonisolated enum DotRotateAnimation {
+    static let exportDuration: TimeInterval = 3
+
+    static func radians(time: TimeInterval) -> Double {
+        (2 * .pi / exportDuration) * time
     }
 }
 

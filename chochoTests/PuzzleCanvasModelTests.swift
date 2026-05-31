@@ -17,6 +17,10 @@ struct PuzzleCanvasModelTests {
         #expect(PuzzleBackgroundStyle.polkaDots.title == "圆点")
     }
 
+    @Test func defaultExtensionRatioIsFifteenPercent() {
+        #expect(PuzzleCanvasDefaults.defaultExtensionRatio == 0.15)
+    }
+
     @Test func zeroUUIDAnimationSamplesAreStableAcrossLaunches() {
         let dotID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
@@ -28,6 +32,9 @@ struct PuzzleCanvasModelTests {
         let breathe = DotBreatheAnimation.sample(dotID: dotID, time: 0)
         #expect(isApproximatelyEqual(breathe.opacity, 0.75))
         #expect(isApproximatelyEqual(breathe.scale, 0.89))
+
+        #expect(isApproximatelyEqual(DotRotateAnimation.radians(time: 0), 0))
+        #expect(isApproximatelyEqual(DotRotateAnimation.radians(time: 0.75), .pi / 2))
     }
 
     @Test func breatheAnimationUsesSlightlyLargerAmplitude() {
@@ -35,6 +42,11 @@ struct PuzzleCanvasModelTests {
         #expect(isApproximatelyEqual(DotBreatheAnimation.minimumScale, 0.78))
         #expect(DotBreatheAnimation.maximumOpacity == 1)
         #expect(DotBreatheAnimation.maximumScale == 1)
+    }
+
+    @Test func rotateAnimationUsesFullTurnExportDuration() {
+        #expect(DotRotateAnimation.exportDuration == 3)
+        #expect(isApproximatelyEqual(DotRotateAnimation.radians(time: 3), 2 * .pi))
     }
 
     @Test func layoutClampsExtensionRatioAndFitsComposedCanvas() {

@@ -19,7 +19,7 @@ struct ContentView: View {
     @State private var selectedTab: PanelTab = .dots
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var canvasImage: UIImage?
-    @State private var extensionRatio: CGFloat = 0.2
+    @State private var extensionRatio: CGFloat = PuzzleCanvasDefaults.defaultExtensionRatio
     @State private var extensionSide: PuzzleCanvasExtensionSide = .right
     @State private var backgroundStyle: PuzzleBackgroundStyle = .grid
     @State private var backgroundColors = PuzzleBackgroundColors.default
@@ -294,7 +294,7 @@ struct ContentView: View {
                     sourceLiveVideo: sourceLiveVideo,
                     onTapCanvas: addPuzzleDot(at:),
                     onDoubleTapBackground: applyCanvasViewportReset,
-                    onViewportReset: applyCanvasViewportReset,
+                    onViewportReset: applyCanvasViewportResetWithoutAnimation,
                     onTraceChanged: updateTracePoints
                 )
 
@@ -687,6 +687,16 @@ struct ContentView: View {
     @MainActor
     private func applyCanvasViewportReset(scale: CGFloat, offset: CGSize) {
         withAnimation(.easeInOut(duration: 0.24)) {
+            viewportScale = scale
+            viewportOffset = offset
+        }
+    }
+
+    @MainActor
+    private func applyCanvasViewportResetWithoutAnimation(scale: CGFloat, offset: CGSize) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             viewportScale = scale
             viewportOffset = offset
         }

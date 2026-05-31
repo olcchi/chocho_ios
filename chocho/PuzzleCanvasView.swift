@@ -694,16 +694,21 @@ private struct PuzzleDotsCanvas: View {
             .animation(.none, value: dots.count)
     }
 
-    private func dotMotion(dotID: UUID, blinkTime: TimeInterval?) -> (opacity: Double, scale: CGFloat) {
-        guard let blinkTime else { return (1, 1) }
+    private func dotMotion(
+        dotID: UUID,
+        blinkTime: TimeInterval?
+    ) -> (opacity: Double, scale: CGFloat, rotationRadians: Double) {
+        guard let blinkTime else { return (1, 1, 0) }
         switch liveDotAnimation {
         case .none:
-            return (1, 1)
+            return (1, 1, 0)
         case .randomBlink:
-            return (DotRandomBlinkOpacity.opacity(dotID: dotID, time: blinkTime), 1)
+            return (DotRandomBlinkOpacity.opacity(dotID: dotID, time: blinkTime), 1, 0)
         case .breathe:
             let sample = DotBreatheAnimation.sample(dotID: dotID, time: blinkTime)
-            return (sample.opacity, CGFloat(sample.scale))
+            return (sample.opacity, CGFloat(sample.scale), 0)
+        case .rotate:
+            return (1, 1, DotRotateAnimation.radians(time: blinkTime))
         }
     }
 
@@ -727,6 +732,7 @@ private struct PuzzleDotsCanvas: View {
                                 .clipped()
                         }
                         .scaleEffect(motion.scale)
+                        .rotationEffect(.radians(motion.rotationRadians))
                         .opacity(motion.opacity)
                         .position(center)
                 }
