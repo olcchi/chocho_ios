@@ -818,6 +818,9 @@ private struct BackgroundPanelControls: View {
             case .stripes:
                 backgroundColorPicker(title: "条纹一", color: backgroundColorBinding(\.fillColor))
                 backgroundColorPicker(title: "条纹二", color: backgroundColorBinding(\.alternateColor))
+            case .polkaDots:
+                backgroundColorPicker(title: "底色", color: backgroundColorBinding(\.fillColor))
+                backgroundColorPicker(title: "圆点", color: backgroundColorBinding(\.lineColor))
             case .halftone:
                 backgroundColorPicker(title: "底色", color: backgroundColorBinding(\.fillColor))
                 backgroundColorPicker(title: "网点", color: backgroundColorBinding(\.lineColor))
@@ -871,6 +874,8 @@ private struct BackgroundPanelControls: View {
             "方格大小"
         case .stripes:
             "条纹粗细"
+        case .polkaDots:
+            "圆点大小"
         case .halftone:
             "图案间距"
         }

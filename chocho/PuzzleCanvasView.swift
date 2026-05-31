@@ -311,6 +311,12 @@ struct PuzzleCanvasView: View {
                 colors: backgroundColors,
                 patternSpacing: backgroundPatternSpacing
             )
+        case .polkaDots:
+            PuzzlePolkaDotsCanvas(
+                photoFrameHeight: photoFrameHeight,
+                colors: backgroundColors,
+                dotSize: backgroundPatternSpacing
+            )
         case .halftone:
             PuzzleHalftoneBackgroundView(
                 sourceImage: image,
@@ -539,6 +545,26 @@ private struct PuzzleStripesCanvas: View {
     }
 }
 
+private struct PuzzlePolkaDotsCanvas: View {
+    let photoFrameHeight: CGFloat
+    let colors: PuzzleBackgroundColors
+    let dotSize: Double
+
+    var body: some View {
+        Canvas { context, size in
+            guard size.width > 0, size.height > 0 else { return }
+
+            PuzzleBackgroundCanvasDrawing.fillPolkaDots(
+                in: &context,
+                size: size,
+                photoFrameHeight: photoFrameHeight,
+                dotSize: dotSize,
+                colors: colors
+            )
+        }
+    }
+}
+
 private enum PuzzleBackgroundCanvasDrawing {
     static func fillBase(
         in context: inout GraphicsContext,
@@ -603,6 +629,45 @@ private enum PuzzleBackgroundCanvasDrawing {
             )
             y += spacing
             usesPrimaryStripe.toggle()
+        }
+    }
+
+    static func fillPolkaDots(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        photoFrameHeight: CGFloat,
+        dotSize: Double,
+        colors: PuzzleBackgroundColors
+    ) {
+        fillBase(in: &context, size: size, fillColor: colors.fillColor)
+
+        let diameter = PuzzleBackgroundPolkaDotMetrics.dotDiameter(
+            controlValue: dotSize,
+            photoFrameHeight: photoFrameHeight
+        )
+        let spacing = PuzzleBackgroundPolkaDotMetrics.tileSpacing(
+            controlValue: dotSize,
+            photoFrameHeight: photoFrameHeight
+        )
+        guard spacing > 0, diameter > 0 else { return }
+
+        let radius = diameter / 2
+        var y = spacing / 2
+        while y - radius <= size.height {
+            var x = spacing / 2
+            while x - radius <= size.width {
+                context.fill(
+                    Path(ellipseIn: CGRect(
+                        x: x - radius,
+                        y: y - radius,
+                        width: diameter,
+                        height: diameter
+                    )),
+                    with: .color(colors.lineColor)
+                )
+                x += spacing
+            }
+            y += spacing
         }
     }
 
@@ -911,6 +976,16 @@ private struct PuzzleDotCollageBackgroundFill: View {
                         size: extensionSize,
                         photoFrameHeight: photoFrameHeight,
                         patternSpacing: patternSpacing,
+                        colors: colors
+                    )
+                }
+            case .polkaDots:
+                Canvas { context, _ in
+                    PuzzleBackgroundCanvasDrawing.fillPolkaDots(
+                        in: &context,
+                        size: extensionSize,
+                        photoFrameHeight: photoFrameHeight,
+                        dotSize: patternSpacing,
                         colors: colors
                     )
                 }

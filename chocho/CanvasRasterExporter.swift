@@ -118,6 +118,14 @@ nonisolated enum CanvasRasterExporter {
                 patternSpacing: patternSpacing,
                 colors: colors
             )
+        case .polkaDots:
+            fillPolkaDots(
+                in: context,
+                size: rect.size,
+                photoFrameHeight: photoFrameHeight,
+                dotSize: patternSpacing,
+                colors: colors
+            )
         case .halftone:
             let renderPixelSize = PuzzleHalftoneBackgroundMetrics.fullExtensionPixelSize(
                 imagePixelSize: CanvasImageLoader.pixelSize(for: sourceImage),
@@ -202,6 +210,45 @@ nonisolated enum CanvasRasterExporter {
             context.fill(CGRect(x: 0, y: y, width: size.width, height: bandHeight))
             y += spacing
             usesPrimaryStripe.toggle()
+        }
+    }
+
+    private nonisolated static func fillPolkaDots(
+        in context: CGContext,
+        size: CGSize,
+        photoFrameHeight: CGFloat,
+        dotSize: Double,
+        colors: PuzzleBackgroundColors
+    ) {
+        context.setFillColor(UIColor(colors.fillColor).cgColor)
+        context.fill(CGRect(origin: .zero, size: size))
+
+        let diameter = PuzzleBackgroundPolkaDotMetrics.dotDiameter(
+            controlValue: dotSize,
+            photoFrameHeight: photoFrameHeight
+        )
+        let spacing = PuzzleBackgroundPolkaDotMetrics.tileSpacing(
+            controlValue: dotSize,
+            photoFrameHeight: photoFrameHeight
+        )
+        guard spacing > 0, diameter > 0 else { return }
+
+        let radius = diameter / 2
+        context.setFillColor(UIColor(colors.lineColor).cgColor)
+
+        var y = spacing / 2
+        while y - radius <= size.height {
+            var x = spacing / 2
+            while x - radius <= size.width {
+                context.fillEllipse(in: CGRect(
+                    x: x - radius,
+                    y: y - radius,
+                    width: diameter,
+                    height: diameter
+                ))
+                x += spacing
+            }
+            y += spacing
         }
     }
 

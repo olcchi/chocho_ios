@@ -65,7 +65,7 @@ enum Y2KBackgroundPalette {
         style: PuzzleBackgroundStyle
     ) {
         switch style {
-        case .grid, .halftone:
+        case .grid, .polkaDots, .halftone:
             colors.fillColor = pair.fill
             colors.lineColor = pair.accent
         case .stripes:

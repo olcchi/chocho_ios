@@ -36,6 +36,7 @@ nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, 
 nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equatable {
     case grid
     case stripes
+    case polkaDots
     case halftone
 
     var id: Self { self }
@@ -46,6 +47,8 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
             "方格"
         case .stripes:
             "条纹"
+        case .polkaDots:
+            "圆点"
         case .halftone:
             "半调"
         }
@@ -53,7 +56,7 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
 
     var supportsPatternSpacing: Bool {
         switch self {
-        case .grid, .stripes:
+        case .grid, .stripes, .polkaDots:
             true
         case .halftone:
             false
@@ -1056,6 +1059,40 @@ nonisolated enum PuzzleBackgroundGridMetrics {
     }
 }
 
+nonisolated enum PuzzleBackgroundPolkaDotMetrics {
+    private static let tileSpacingMultiplier: CGFloat = 2
+
+    static func dotDiameter(controlValue: Double, photoFrameHeight: CGFloat) -> CGFloat {
+        PuzzleBackgroundPatternSpacing.renderedSpacing(
+            controlValue: controlValue,
+            photoFrameHeight: photoFrameHeight
+        )
+    }
+
+    static func tileSpacing(controlValue: Double, photoFrameHeight: CGFloat) -> CGFloat {
+        dotDiameter(
+            controlValue: controlValue,
+            photoFrameHeight: photoFrameHeight
+        ) * tileSpacingMultiplier
+    }
+
+    static func containsDot(
+        point: CGPoint,
+        controlValue: Double,
+        photoFrameHeight: CGFloat
+    ) -> Bool {
+        let spacing = tileSpacing(controlValue: controlValue, photoFrameHeight: photoFrameHeight)
+        let radius = dotDiameter(controlValue: controlValue, photoFrameHeight: photoFrameHeight) / 2
+        guard spacing > 0, radius > 0 else { return false }
+
+        let center = spacing / 2
+        let localX = point.x.truncatingRemainder(dividingBy: spacing)
+        let localY = point.y.truncatingRemainder(dividingBy: spacing)
+        let distance = hypot(localX - center, localY - center)
+        return distance <= radius
+    }
+}
+
 nonisolated enum PuzzleBackgroundPatternSpacing {
     static let minControlValue: Double = 6
     static let maxControlValue: Double = 36
@@ -1368,6 +1405,12 @@ nonisolated enum PuzzleDotCollageColor {
         case .stripes:
             let bandIndex = Int(point.y / spacing)
             return bandIndex.isMultiple(of: 2) ? colors.fillColor : colors.alternateColor
+        case .polkaDots:
+            return PuzzleBackgroundPolkaDotMetrics.containsDot(
+                point: point,
+                controlValue: patternSpacing,
+                photoFrameHeight: photoFrameHeight
+            ) ? colors.lineColor : colors.fillColor
         case .halftone:
             guard let sourceImage else {
                 return colors.fillColor

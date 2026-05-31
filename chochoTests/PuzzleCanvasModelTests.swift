@@ -13,6 +13,10 @@ struct PuzzleCanvasModelTests {
         #expect(PuzzleCanvasDragMode.current(isTraceDrawingEnabled: true) == .trace)
     }
 
+    @Test func polkaDotBackgroundUsesCircleTitle() {
+        #expect(PuzzleBackgroundStyle.polkaDots.title == "圆点")
+    }
+
     @Test func layoutClampsExtensionRatioAndFitsComposedCanvas() {
         let layout = PuzzleCanvasLayout.layout(
             imageSize: CGSize(width: 1000, height: 500),

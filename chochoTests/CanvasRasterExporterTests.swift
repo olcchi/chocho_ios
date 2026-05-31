@@ -262,6 +262,49 @@ struct CanvasRasterExporterTests {
         #expect(sampleColor(in: exported, at: CGPoint(x: 440, y: 18)).isClose(to: .red))
         #expect(sampleColor(in: exported, at: CGPoint(x: 440, y: 30)).isClose(to: .green))
     }
+
+    @Test func customBackgroundPatternSpacingChangesPolkaDotSizeAndDensity() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let colors = PuzzleBackgroundColors(
+            fillColor: Color(red: 1, green: 0, blue: 0),
+            alternateColor: Color(red: 0, green: 1, blue: 0),
+            lineColor: Color(red: 0, green: 0, blue: 1)
+        )
+
+        let smallDots = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 480, height: 300),
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .polkaDots,
+                backgroundColors: colors,
+                backgroundPatternSpacing: 8,
+                dots: [],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false
+            )
+        )
+        let largeDots = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 480, height: 300),
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .polkaDots,
+                backgroundColors: colors,
+                backgroundPatternSpacing: 24,
+                dots: [],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(sampleColor(in: smallDots, at: CGPoint(x: 408, y: 8)).isClose(to: .lineBlue))
+        #expect(sampleColor(in: largeDots, at: CGPoint(x: 408, y: 8)).isClose(to: .red))
+    }
 }
 
 private func makeExportedImage(
