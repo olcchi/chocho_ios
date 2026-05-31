@@ -123,20 +123,12 @@ nonisolated enum DotRandomBlinkOpacity {
         secondaryPhase: Double,
         secondarySpeed: Double
     ) {
-        var hasher = Hasher()
-        hasher.combine(dotID)
-        let seed = UInt64(bitPattern: Int64(hasher.finalize()))
-
-        func unit(_ bits: UInt64) -> Double {
-            Double(bits) / Double(UInt16.max)
-        }
-
-        let primaryPeriod = 0.85 + unit(seed & 0xFFFF) * 1.35
-        let secondaryPeriod = 1.1 + unit((seed >> 16) & 0xFFFF) * 1.6
+        let primaryPeriod = 0.85 + DotAnimationSeed.unit16(dotID, chunk: 0) * 1.35
+        let secondaryPeriod = 1.1 + DotAnimationSeed.unit16(dotID, chunk: 1) * 1.6
         return (
-            primaryPhase: unit((seed >> 32) & 0xFFFF) * 2 * .pi,
+            primaryPhase: DotAnimationSeed.unit16(dotID, chunk: 2) * 2 * .pi,
             primarySpeed: (2 * .pi) / primaryPeriod,
-            secondaryPhase: unit((seed >> 48) & 0xFFFF) * 2 * .pi,
+            secondaryPhase: DotAnimationSeed.unit16(dotID, chunk: 3) * 2 * .pi,
             secondarySpeed: (2 * .pi) / secondaryPeriod
         )
     }
@@ -144,9 +136,9 @@ nonisolated enum DotRandomBlinkOpacity {
 
 /// 「呼吸」：整体透明度与缩放同步缓动，由 dotID 决定相位偏移。
 nonisolated enum DotBreatheAnimation {
-    static let minimumOpacity: Double = 0.58
+    static let minimumOpacity: Double = 0.5
     static let maximumOpacity: Double = 1
-    static let minimumScale: Double = 0.84
+    static let minimumScale: Double = 0.78
     static let maximumScale: Double = 1
     static let exportDuration: TimeInterval = 3
     private static let cyclePeriod: TimeInterval = 2.75
@@ -161,11 +153,26 @@ nonisolated enum DotBreatheAnimation {
     }
 
     private static func phaseOffset(for dotID: UUID) -> Double {
-        var hasher = Hasher()
-        hasher.combine(dotID)
-        let seed = UInt64(bitPattern: Int64(hasher.finalize()))
-        let unit = Double(seed & 0xFFFF) / Double(UInt16.max)
-        return unit * 0.45 * .pi
+        DotAnimationSeed.unit16(dotID, chunk: 4) * 0.45 * .pi
+    }
+}
+
+private nonisolated enum DotAnimationSeed {
+    static func unit16(_ dotID: UUID, chunk: Int) -> Double {
+        let bytes = bytes(for: dotID)
+        let index = min(max(chunk, 0), 7) * 2
+        let value = (UInt16(bytes[index]) << 8) | UInt16(bytes[index + 1])
+        return Double(value) / Double(UInt16.max)
+    }
+
+    private static func bytes(for dotID: UUID) -> [UInt8] {
+        let uuid = dotID.uuid
+        return [
+            uuid.0, uuid.1, uuid.2, uuid.3,
+            uuid.4, uuid.5, uuid.6, uuid.7,
+            uuid.8, uuid.9, uuid.10, uuid.11,
+            uuid.12, uuid.13, uuid.14, uuid.15,
+        ]
     }
 }
 
@@ -174,7 +181,7 @@ struct PuzzleBackgroundColors: Equatable {
     var alternateColor: Color
     var lineColor: Color
 
-    static let `default` = PuzzleBackgroundColors(
+    nonisolated static let `default` = PuzzleBackgroundColors(
         fillColor: .secondary,
         alternateColor: .background,
         lineColor: .border
@@ -464,6 +471,16 @@ struct CanvasViewportResetKey: Equatable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
     let imageViewportResetID: UUID
+}
+
+nonisolated enum CharacterDotText {
+    static let shapeName = "字符"
+    static let defaultText = "字"
+
+    static func displayText(for text: String) -> String {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedText.isEmpty ? defaultText : trimmedText
+    }
 }
 
 enum PuzzleCanvasViewport {
@@ -1091,6 +1108,40 @@ nonisolated enum PuzzleBackgroundPolkaDotMetrics {
         let distance = hypot(localX - center, localY - center)
         return distance <= radius
     }
+
+    static func dotRects(
+        in size: CGSize,
+        controlValue: Double,
+        photoFrameHeight: CGFloat
+    ) -> [CGRect] {
+        let diameter = dotDiameter(
+            controlValue: controlValue,
+            photoFrameHeight: photoFrameHeight
+        )
+        let spacing = tileSpacing(
+            controlValue: controlValue,
+            photoFrameHeight: photoFrameHeight
+        )
+        guard spacing > 0, diameter > 0 else { return [] }
+
+        let radius = diameter / 2
+        var rects: [CGRect] = []
+        var y = spacing / 2
+        while y - radius <= size.height {
+            var x = spacing / 2
+            while x - radius <= size.width {
+                rects.append(CGRect(
+                    x: x - radius,
+                    y: y - radius,
+                    width: diameter,
+                    height: diameter
+                ))
+                x += spacing
+            }
+            y += spacing
+        }
+        return rects
+    }
 }
 
 nonisolated enum PuzzleBackgroundPatternSpacing {
@@ -1201,8 +1252,13 @@ nonisolated struct PuzzleDot: Identifiable, Equatable {
         BuiltInDotShape(rawValue: shapeAssetName)
     }
 
+    var isCharacterDot: Bool {
+        shapeAssetName == CharacterDotText.shapeName
+    }
+
     /// Built-in geometry and basic catalog SVG shapes use mirror collage tinting.
     var supportsCollageTinting: Bool {
+        if isCharacterDot { return true }
         if builtInShape != nil { return true }
         return usesTemplateColor && DotShapeCatalog.assetNames.contains(shapeAssetName)
     }
@@ -1445,6 +1501,38 @@ nonisolated enum PuzzleDotCollageColor {
 
         let remainder = coordinate.truncatingRemainder(dividingBy: spacing)
         return min(remainder, spacing - remainder)
+    }
+}
+
+nonisolated enum DotColorPickerSelection {
+    static let fallbackPickerColor = Color.black
+
+    static func pickerColor(
+        for selectedDotColor: Color,
+        fallbackColor: Color = fallbackPickerColor
+    ) -> Color {
+        PuzzleDotCollageColor.usesCollageTint(selectedDotColor: selectedDotColor)
+            ? fallbackColor
+            : selectedColor(fromPickerColor: selectedDotColor)
+    }
+
+    static func selectedColor(fromPickerColor pickerColor: Color) -> Color {
+        let uiColor = UIColor(pickerColor)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        if uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            return Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
+        }
+
+        var white: CGFloat = 0
+        if uiColor.getWhite(&white, alpha: &alpha) {
+            return Color(.sRGB, red: white, green: white, blue: white, opacity: 1)
+        }
+
+        return Color(uiColor.withAlphaComponent(1))
     }
 }
 

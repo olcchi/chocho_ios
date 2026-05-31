@@ -35,6 +35,7 @@ struct ContentView: View {
     @State private var usesRandomDotColors = false
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var selectedDotShapeCategory: DotShapeCategory = .basic
+    @State private var dotCharacterText = CharacterDotText.defaultText
     @State private var isTraceDrawingEnabled = false
 
     // MARK: 实况动画（预览播放与导出格式由 liveDotAnimation 决定）
@@ -60,9 +61,7 @@ struct ContentView: View {
     @State private var isPhotoLoading = false
     @State private var isExporting = false
     @State private var shareItem: CanvasShareItem?
-    @State private var shareCleanup: (() -> Void)?
-    /// 实况导出含配对视频，需在分享页关闭或保存完成后再删临时文件。
-    @State private var retainsLivePhotoExportFilesOnDismiss = false
+    @State private var exportSession: CanvasExportSession?
     @State private var shareSheetDetent: PresentationDetent = .medium
     @GestureState private var gestureOffset: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
@@ -155,6 +154,7 @@ struct ContentView: View {
             .onChange(of: selectedDotColor) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: dotCharacterText) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: liveDotAnimation) { _, _ in
                 stopLivePreviewPlayback()
@@ -206,25 +206,32 @@ struct ContentView: View {
             panelVisibleHeight: $panelVisibleHeight,
             selectedTab: $selectedTab,
             isExpanded: $isPanelExpanded,
-            dotCount: $dotCount,
-            dotScale: $dotScale,
-            selectedDotColor: $selectedDotColor,
-            usesRandomDotColors: $usesRandomDotColors,
-            selectedDotShape: $selectedDotShape,
-            selectedDotShapeCategory: $selectedDotShapeCategory,
-            isTraceDrawingEnabled: $isTraceDrawingEnabled,
-            liveDotAnimation: $liveDotAnimation,
-            isSourceLivePhoto: isSourceLivePhoto,
-            isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
-            canPlayLivePreview: canPlayLivePreview,
-            livePreviewProgress: livePreviewProgress,
-            isLivePreviewPlaying: isLivePreviewPlaying,
-            onToggleLivePreviewPlayback: toggleLivePreviewPlayback,
-            extensionRatio: $extensionRatio,
-            extensionSide: $extensionSide,
-            backgroundStyle: $backgroundStyle,
-            backgroundColors: $backgroundColors,
-            backgroundPatternSpacing: $backgroundPatternSpacing,
+            dotControls: BottomSheetDotControls(
+                dotCount: $dotCount,
+                dotScale: $dotScale,
+                selectedDotColor: $selectedDotColor,
+                usesRandomDotColors: $usesRandomDotColors,
+                selectedDotShape: $selectedDotShape,
+                selectedDotShapeCategory: $selectedDotShapeCategory,
+                dotCharacterText: $dotCharacterText,
+                isTraceDrawingEnabled: $isTraceDrawingEnabled
+            ),
+            liveControls: BottomSheetLiveControls(
+                liveDotAnimation: $liveDotAnimation,
+                isSourceLivePhoto: isSourceLivePhoto,
+                isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
+                canPlayLivePreview: canPlayLivePreview,
+                livePreviewProgress: livePreviewProgress,
+                isLivePreviewPlaying: isLivePreviewPlaying,
+                onToggleLivePreviewPlayback: toggleLivePreviewPlayback
+            ),
+            backgroundControls: BottomSheetBackgroundControls(
+                extensionRatio: $extensionRatio,
+                extensionSide: $extensionSide,
+                backgroundStyle: $backgroundStyle,
+                backgroundColors: $backgroundColors,
+                backgroundPatternSpacing: $backgroundPatternSpacing
+            ),
             bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
             isPanelEnabled: canvasImage != nil,
             canClearTrace: !tracePoints.isEmpty,
@@ -241,6 +248,7 @@ struct ContentView: View {
     private func shareSheet(for item: CanvasShareItem) -> some View {
         CanvasShareSheet(
             product: item.product,
+            onBeginSaveToPhotos: handleSaveToPhotosStarted,
             onSaveToPhotos: handleSaveToPhotosResult
         )
         .presentationDetents([.medium, .large], selection: $shareSheetDetent)
@@ -274,6 +282,7 @@ struct ContentView: View {
                     dotScale: CGFloat(dotScale),
                     dotColor: selectedDotColor,
                     usesRandomDotColors: usesRandomDotColors,
+                    dotCharacterText: dotCharacterText,
                     viewportScale: viewportScale,
                     viewportOffset: viewportOffset,
                     gestureOffset: gestureOffset,
@@ -615,6 +624,7 @@ struct ContentView: View {
         usesRandomDotColors = restored.usesRandomDotColors
         selectedDotShape = DotShapeAsset.asset(named: restored.selectedDotShapeName)
             ?? .defaultSelection
+        dotCharacterText = restored.dotCharacterText
         isTraceDrawingEnabled = restored.isTraceDrawingEnabled
         tracePoints = restored.tracePoints
         viewportScale = restored.viewportScale
@@ -658,6 +668,7 @@ struct ContentView: View {
             selectedDotColor: selectedDotColor,
             usesRandomDotColors: usesRandomDotColors,
             selectedDotShapeName: selectedDotShape.name,
+            dotCharacterText: dotCharacterText,
             isTraceDrawingEnabled: isTraceDrawingEnabled,
             puzzleDots: puzzleDots,
             tracePoints: tracePoints,
@@ -704,6 +715,7 @@ struct ContentView: View {
             dotScale: CGFloat(dotScale),
             dotColor: selectedDotColor,
             usesRandomDotColors: usesRandomDotColors,
+            dotCharacterText: dotCharacterText,
             liveDotAnimation: liveDotAnimation,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             hasSourceLiveVideo: hasSourceLiveVideo,
@@ -733,6 +745,7 @@ struct ContentView: View {
                         dotScale: snapshot.dotScale,
                         dotColor: snapshot.dotColor,
                         usesRandomDotColors: snapshot.usesRandomDotColors,
+                        dotCharacterText: snapshot.dotCharacterText,
                         liveDotAnimation: snapshot.liveDotAnimation,
                         isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
                         hasSourceLiveVideo: snapshot.hasSourceLiveVideo,
@@ -759,7 +772,8 @@ struct ContentView: View {
                         dots: snapshot.dots,
                         dotScale: snapshot.dotScale,
                         dotColor: snapshot.dotColor,
-                        usesRandomDotColors: snapshot.usesRandomDotColors
+                        usesRandomDotColors: snapshot.usesRandomDotColors,
+                        dotCharacterText: snapshot.dotCharacterText
                     ) else {
                         return nil
                     }
@@ -781,21 +795,27 @@ struct ContentView: View {
             // 在弹出分享页之前于主线程预请求相册权限，避免 UIActivityViewController 挡住系统对话框。
             _ = await CanvasPhotoLibrarySaver.requestAuthorization()
 
-            shareCleanup?()
-            shareCleanup = { product.removeTemporaryFiles() }
-            // 保存到相册是异步的，分享页关闭时文件可能仍被 PHAssetCreationRequest 读取，故延后清理。
-            retainsLivePhotoExportFilesOnDismiss = true
+            cleanupCurrentExportSession()
+            exportSession = CanvasExportSession(product: product)
             shareItem = CanvasShareItem(product: product)
         }
     }
 
     @MainActor
     private func handleShareSheetDismiss() {
-        guard retainsLivePhotoExportFilesOnDismiss else {
-            cleanupShareExportFiles()
+        guard var exportSession else {
             return
         }
-        retainsLivePhotoExportFilesOnDismiss = false
+        exportSession.handleDismiss()
+        self.exportSession = exportSession.hasCleanedUp ? nil : exportSession
+    }
+
+    @MainActor
+    private func handleSaveToPhotosStarted() {
+        guard var exportSession else { return }
+
+        exportSession.markSaveInProgress()
+        self.exportSession = exportSession
     }
 
     @MainActor
@@ -810,8 +830,10 @@ struct ContentView: View {
                 showToast("保存失败")
             }
         }
-        retainsLivePhotoExportFilesOnDismiss = false
-        cleanupShareExportFiles()
+        if var exportSession {
+            exportSession.handleSaveFinished()
+            self.exportSession = nil
+        }
     }
 
     /// 导出像素尺寸：原图边长 + 扩展条比例（与 `PuzzleCanvasLayout` 合成逻辑一致）。
@@ -871,10 +893,11 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func cleanupShareExportFiles() {
-        shareCleanup?()
-        shareCleanup = nil
-        retainsLivePhotoExportFilesOnDismiss = false
+    private func cleanupCurrentExportSession() {
+        guard var exportSession else { return }
+
+        exportSession.cleanupNow()
+        self.exportSession = nil
     }
 }
 
@@ -935,6 +958,7 @@ private struct CanvasUploadPlaceholder: View {
 
 private struct CanvasShareSheet: UIViewControllerRepresentable {
     let product: CanvasExportProduct
+    let onBeginSaveToPhotos: () -> Void
     let onSaveToPhotos: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
@@ -943,6 +967,7 @@ private struct CanvasShareSheet: UIViewControllerRepresentable {
             applicationActivities: [
                 SaveCanvasToPhotosActivity(
                     product: product,
+                    onBeginSaveToPhotos: onBeginSaveToPhotos,
                     onSaveToPhotos: onSaveToPhotos
                 ),
             ]
@@ -967,12 +992,19 @@ private struct CanvasShareSheet: UIViewControllerRepresentable {
     }
 }
 
-private final class SaveCanvasToPhotosActivity: UIActivity {
+final class SaveCanvasToPhotosActivity: UIActivity {
     private let product: CanvasExportProduct
+    private let onBeginSaveToPhotos: () -> Void
     private let onSaveToPhotos: (Bool) -> Void
+    private var didBeginSave = false
 
-    init(product: CanvasExportProduct, onSaveToPhotos: @escaping (Bool) -> Void) {
+    init(
+        product: CanvasExportProduct,
+        onBeginSaveToPhotos: @escaping () -> Void,
+        onSaveToPhotos: @escaping (Bool) -> Void
+    ) {
         self.product = product
+        self.onBeginSaveToPhotos = onBeginSaveToPhotos
         self.onSaveToPhotos = onSaveToPhotos
         super.init()
     }
@@ -997,12 +1029,26 @@ private final class SaveCanvasToPhotosActivity: UIActivity {
         true
     }
 
+    override func prepare(withActivityItems activityItems: [Any]) {
+        super.prepare(withActivityItems: activityItems)
+        beginSaveIfNeeded()
+    }
+
     override func perform() {
         Task { @MainActor in
+            beginSaveIfNeeded()
             let didSave = await CanvasPhotoLibrarySaver.save(product: product)
             onSaveToPhotos(didSave)
             activityDidFinish(didSave)
         }
+    }
+
+    @MainActor
+    private func beginSaveIfNeeded() {
+        guard !didBeginSave else { return }
+
+        didBeginSave = true
+        onBeginSaveToPhotos()
     }
 }
 
@@ -1017,6 +1063,7 @@ private struct CanvasExportSnapshot {
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
+    let dotCharacterText: String
     let liveDotAnimation: LiveDotAnimation
     let isSourceLiveMotionEnabled: Bool
     /// 与预览一致：内存中已成功加载源 Live 配对视频，而非仅持有相册 identifier。

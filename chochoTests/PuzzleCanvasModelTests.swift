@@ -17,6 +17,26 @@ struct PuzzleCanvasModelTests {
         #expect(PuzzleBackgroundStyle.polkaDots.title == "圆点")
     }
 
+    @Test func zeroUUIDAnimationSamplesAreStableAcrossLaunches() {
+        let dotID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+
+        #expect(isApproximatelyEqual(
+            DotRandomBlinkOpacity.opacity(dotID: dotID, time: 0),
+            0.53
+        ))
+
+        let breathe = DotBreatheAnimation.sample(dotID: dotID, time: 0)
+        #expect(isApproximatelyEqual(breathe.opacity, 0.75))
+        #expect(isApproximatelyEqual(breathe.scale, 0.89))
+    }
+
+    @Test func breatheAnimationUsesSlightlyLargerAmplitude() {
+        #expect(isApproximatelyEqual(DotBreatheAnimation.minimumOpacity, 0.5))
+        #expect(isApproximatelyEqual(DotBreatheAnimation.minimumScale, 0.78))
+        #expect(DotBreatheAnimation.maximumOpacity == 1)
+        #expect(DotBreatheAnimation.maximumScale == 1)
+    }
+
     @Test func layoutClampsExtensionRatioAndFitsComposedCanvas() {
         let layout = PuzzleCanvasLayout.layout(
             imageSize: CGSize(width: 1000, height: 500),
@@ -552,6 +572,23 @@ struct PuzzleCanvasModelTests {
         )
     }
 
+    @Test func dotColorPickerWriteBackMakesTransparentPickerColorOpaque() {
+        let pickerColor = Color(.sRGB, red: 0.25, green: 0.5, blue: 0.75, opacity: 0)
+        let selectedColor = DotColorPickerSelection.selectedColor(fromPickerColor: pickerColor)
+        let uiColor = UIColor(selectedColor)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        #expect(uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+        #expect(isApproximatelyEqual(red, 0.25))
+        #expect(isApproximatelyEqual(green, 0.5))
+        #expect(isApproximatelyEqual(blue, 0.75))
+        #expect(isApproximatelyEqual(alpha, 1))
+        #expect(!PuzzleDotCollageColor.usesCollageTint(selectedDotColor: selectedColor))
+    }
+
     @Test func basicSvgDotSupportsCollageTinting() {
         let svgDot = PuzzleDotFactory.makeDot(
             position: CGPoint(x: 0.5, y: 0.5),
@@ -624,6 +661,28 @@ struct PuzzleCanvasModelTests {
         #expect(basicShapeNames.starts(with: builtInNames))
         #expect(dot.builtInShape == .star)
         #expect(dot.usesTemplateColor)
+    }
+
+    @Test func characterDotShapeIsAvailableInBasicCategory() {
+        let characterShape = DotShapeAsset.characterSelection
+        let basicShapeNames = DotShapeAsset.shapes(for: .basic, recentNames: []).map(\.name)
+        let dot = PuzzleDotFactory.makeDot(
+            position: CGPoint(x: 0.25, y: 0.75),
+            index: 0,
+            shapeAssetName: characterShape.name
+        )
+
+        #expect(characterShape.name == "字符")
+        #expect(characterShape.matches(category: .basic))
+        #expect(basicShapeNames.contains(characterShape.name))
+        #expect(dot.isCharacterDot)
+        #expect(dot.supportsCollageTinting)
+    }
+
+    @Test func characterDotTextUsesFullTrimmedInput() {
+        #expect(CharacterDotText.displayText(for: "  CHO") == "CHO")
+        #expect(CharacterDotText.displayText(for: "波点") == "波点")
+        #expect(CharacterDotText.displayText(for: "   ") == CharacterDotText.defaultText)
     }
 
     @Test func categorizedAssetDotsRenderLargerThanBasicDots() {
@@ -1248,6 +1307,15 @@ private func isApproximatelyEqual(
     _ lhs: CGFloat,
     _ rhs: CGFloat,
     tolerance: CGFloat = 0.000001
+) -> Bool {
+    abs(lhs - rhs) <= tolerance
+}
+
+@discardableResult
+private func isApproximatelyEqual(
+    _ lhs: Double,
+    _ rhs: Double,
+    tolerance: Double = 0.000001
 ) -> Bool {
     abs(lhs - rhs) <= tolerance
 }

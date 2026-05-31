@@ -55,7 +55,7 @@ enum CanvasPhotoImport {
         _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
     }
 
-    static func assetHasPairedVideoResource(_ asset: PHAsset) -> Bool {
+    nonisolated static func assetHasPairedVideoResource(_ asset: PHAsset) -> Bool {
         PHAssetResource.assetResources(for: asset).contains { $0.type == .pairedVideo }
     }
 
@@ -93,17 +93,17 @@ enum CanvasPhotoImport {
         )
     }
 
-    static func assetHasPhotoLiveSubtype(itemIdentifier: String?) -> Bool {
+    nonisolated static func assetHasPhotoLiveSubtype(itemIdentifier: String?) -> Bool {
         guard let asset = asset(for: itemIdentifier) else { return false }
         return asset.mediaSubtypes.contains(.photoLive)
     }
 
-    static func assetHasPairedVideoResource(itemIdentifier: String?) -> Bool {
+    nonisolated static func assetHasPairedVideoResource(itemIdentifier: String?) -> Bool {
         guard let asset = asset(for: itemIdentifier) else { return false }
         return assetHasPairedVideoResource(asset)
     }
 
-    static func asset(for itemIdentifier: String?) -> PHAsset? {
+    nonisolated static func asset(for itemIdentifier: String?) -> PHAsset? {
         guard let itemIdentifier else { return nil }
 
         return PHAsset.fetchAssets(

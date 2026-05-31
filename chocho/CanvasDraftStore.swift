@@ -14,6 +14,7 @@ struct CanvasDraftCapture: Sendable {
     let selectedDotColor: Color
     let usesRandomDotColors: Bool
     let selectedDotShapeName: String
+    let dotCharacterText: String
     let isTraceDrawingEnabled: Bool
     let puzzleDots: [PuzzleDot]
     let tracePoints: [PuzzleCanvasTracePoint]
@@ -36,6 +37,7 @@ struct CanvasDraftRestore: Sendable {
     let selectedDotColor: Color
     let usesRandomDotColors: Bool
     let selectedDotShapeName: String
+    let dotCharacterText: String
     let isTraceDrawingEnabled: Bool
     let puzzleDots: [PuzzleDot]
     let tracePoints: [PuzzleCanvasTracePoint]
@@ -67,8 +69,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 4
-    static let supportedVersions: Set<Int> = [1, 2, 3, 4]
+    static let currentVersion = 5
+    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5]
 
     var version: Int
     var savedAt: Date
@@ -83,6 +85,8 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var selectedDotColor: CanvasDraftColorComponents
     var usesRandomDotColors: Bool
     var selectedDotShapeName: String
+    /// v5+：字符波点输入内容（旧草稿缺省为 nil → 恢复为默认“字”）
+    var dotCharacterText: String?
     var isTraceDrawingEnabled: Bool
     var puzzleDots: [CanvasDraftStoredDot]
     var tracePoints: [CanvasDraftStoredTracePoint]
@@ -232,6 +236,7 @@ nonisolated enum CanvasDraftStore {
             selectedDotColor: CanvasDraftColorComponents(capture.selectedDotColor),
             usesRandomDotColors: capture.usesRandomDotColors,
             selectedDotShapeName: capture.selectedDotShapeName,
+            dotCharacterText: capture.dotCharacterText,
             isTraceDrawingEnabled: capture.isTraceDrawingEnabled,
             puzzleDots: capture.puzzleDots.map(CanvasDraftStoredDot.init(dot:)),
             tracePoints: capture.tracePoints.map(CanvasDraftStoredTracePoint.init(point:)),
@@ -340,6 +345,7 @@ nonisolated enum CanvasDraftStore {
                 selectedDotColor: manifest.selectedDotColor.color,
                 usesRandomDotColors: manifest.usesRandomDotColors,
                 selectedDotShapeName: manifest.selectedDotShapeName,
+                dotCharacterText: manifest.dotCharacterText ?? CharacterDotText.defaultText,
                 isTraceDrawingEnabled: manifest.isTraceDrawingEnabled,
                 puzzleDots: puzzleDots,
                 tracePoints: tracePoints,

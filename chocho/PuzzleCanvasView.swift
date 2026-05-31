@@ -17,6 +17,7 @@ struct PuzzleCanvasView: View {
     var dotScale: CGFloat = 1
     var dotColor: Color = .primary
     var usesRandomDotColors = false
+    var dotCharacterText = CharacterDotText.defaultText
     var viewportScale: CGFloat = 1
     var viewportOffset: CGSize = .zero
     var gestureOffset: CGSize = .zero
@@ -188,6 +189,7 @@ struct PuzzleCanvasView: View {
                 dotScale: dotScale,
                 dotColor: dotColor,
                 usesRandomDotColors: usesRandomDotColors,
+                dotCharacterText: dotCharacterText,
                 liveDotAnimation: liveDotAnimation,
                 blinkTime: blinkTime,
                 liveFrameImage: liveFrameImageForDots(blinkTime: blinkTime),
@@ -641,33 +643,17 @@ private enum PuzzleBackgroundCanvasDrawing {
     ) {
         fillBase(in: &context, size: size, fillColor: colors.fillColor)
 
-        let diameter = PuzzleBackgroundPolkaDotMetrics.dotDiameter(
+        let dotRects = PuzzleBackgroundPolkaDotMetrics.dotRects(
+            in: size,
             controlValue: dotSize,
             photoFrameHeight: photoFrameHeight
         )
-        let spacing = PuzzleBackgroundPolkaDotMetrics.tileSpacing(
-            controlValue: dotSize,
-            photoFrameHeight: photoFrameHeight
-        )
-        guard spacing > 0, diameter > 0 else { return }
 
-        let radius = diameter / 2
-        var y = spacing / 2
-        while y - radius <= size.height {
-            var x = spacing / 2
-            while x - radius <= size.width {
-                context.fill(
-                    Path(ellipseIn: CGRect(
-                        x: x - radius,
-                        y: y - radius,
-                        width: diameter,
-                        height: diameter
-                    )),
-                    with: .color(colors.lineColor)
-                )
-                x += spacing
-            }
-            y += spacing
+        for rect in dotRects {
+            context.fill(
+                Path(ellipseIn: rect),
+                with: .color(colors.lineColor)
+            )
         }
     }
 
@@ -691,6 +677,7 @@ private struct PuzzleDotsCanvas: View {
     let dotScale: CGFloat
     let dotColor: Color
     let usesRandomDotColors: Bool
+    let dotCharacterText: String
     var liveDotAnimation: LiveDotAnimation = .none
     var blinkTime: TimeInterval?
     /// 原图实况开启时的当前帧；用于扩展区和照片区拼贴波点的实况采样。
@@ -749,7 +736,36 @@ private struct PuzzleDotsCanvas: View {
 
     @ViewBuilder
     private func dotImage(for dot: PuzzleDot, centerIndex: Int, size: CGFloat) -> some View {
-        if let builtInShape = dot.builtInShape {
+        if dot.isCharacterDot {
+            if PuzzleDotCollageColor.shouldRenderCollageContent(
+                for: dot,
+                usesRandomDotColors: usesRandomDotColors,
+                extensionRatio: layout.extensionRatio,
+                selectedDotColor: dotColor
+            ) {
+                PuzzleDotCollageCharacterShapeView(
+                    text: dotCharacterText,
+                    centerIndex: centerIndex,
+                    dot: dot,
+                    image: image,
+                    liveFrameImage: liveFrameImage,
+                    backgroundStyle: backgroundStyle,
+                    backgroundColors: backgroundColors,
+                    backgroundPatternSpacing: backgroundPatternSpacing,
+                    photoFrame: photoFrame,
+                    layout: layout,
+                    dotSize: size
+                )
+            } else {
+                CharacterDotGlyphView(
+                    text: dotCharacterText,
+                    color: dot.displayColor(
+                        usesRandomColor: usesRandomDotColors,
+                        selectedColor: dotColor
+                    )
+                )
+            }
+        } else if let builtInShape = dot.builtInShape {
             if PuzzleDotCollageColor.shouldRenderCollageContent(
                 for: dot,
                 usesRandomDotColors: usesRandomDotColors,
@@ -807,6 +823,39 @@ private struct PuzzleDotsCanvas: View {
                 renderingMode: dot.usesTemplateColor ? .template : .original,
                 tintColor: dot.usesTemplateColor ? stickerColor : nil
             )
+        }
+    }
+}
+
+private struct PuzzleDotCollageCharacterShapeView: View {
+    let text: String
+    let centerIndex: Int
+    let dot: PuzzleDot
+    let image: UIImage
+    /// 原图实况开启时的当前帧；nil 表示用静态 `image`。
+    let liveFrameImage: UIImage?
+    let backgroundStyle: PuzzleBackgroundStyle
+    let backgroundColors: PuzzleBackgroundColors
+    let backgroundPatternSpacing: Double
+    let photoFrame: CGRect
+    let layout: PuzzleCanvasLayoutResult
+    let dotSize: CGFloat
+
+    var body: some View {
+        PuzzleDotCollageMirrorFill(
+            centerIndex: centerIndex,
+            dot: dot,
+            image: image,
+            liveFrameImage: liveFrameImage,
+            backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
+            backgroundPatternSpacing: backgroundPatternSpacing,
+            photoFrame: photoFrame,
+            layout: layout,
+            dotSize: dotSize
+        )
+        .mask {
+            CharacterDotGlyphView(text: text, color: .white)
         }
     }
 }

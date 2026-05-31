@@ -311,6 +311,138 @@ struct DotShapeDrawing: View {
     }
 }
 
+struct CharacterDotGlyphView: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            Image(uiImage: CharacterDotGlyphImageCache.shared.image(
+                text: text,
+                size: proxy.size,
+                color: UIColor(color)
+            ))
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+}
+
+@MainActor
+private final class CharacterDotGlyphImageCache {
+    static let shared = CharacterDotGlyphImageCache()
+
+    private let cache = NSCache<NSString, UIImage>()
+
+    private init() {
+        cache.countLimit = 240
+    }
+
+    func image(text: String, size: CGSize, color: UIColor) -> UIImage {
+        let displayText = CharacterDotText.displayText(for: text)
+        let resolvedColor = color.resolvedColor(with: UITraitCollection.current)
+        let scale = max(1, UITraitCollection.current.displayScale)
+        let pixelWidth = max(1, Int((size.width * scale).rounded(.up)))
+        let pixelHeight = max(1, Int((size.height * scale).rounded(.up)))
+        let key = "\(displayText)|\(pixelWidth)x\(pixelHeight)|\(resolvedColor.cacheKey)"
+
+        if let cachedImage = cache.object(forKey: key as NSString) {
+            return cachedImage
+        }
+
+        let image = renderImage(
+            text: displayText,
+            size: CGSize(width: CGFloat(pixelWidth) / scale, height: CGFloat(pixelHeight) / scale),
+            scale: scale,
+            color: resolvedColor
+        )
+        cache.setObject(image, forKey: key as NSString)
+        return image
+    }
+
+    private func renderImage(
+        text: String,
+        size: CGSize,
+        scale: CGFloat,
+        color: UIColor
+    ) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = false
+
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            let displayText = text as NSString
+            let fontSize = CharacterDotGlyphRasterLayout.fittedFontSize(for: displayText, in: size)
+            let font = UIFont.systemFont(ofSize: fontSize, weight: .black)
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .center
+            paragraphStyle.lineBreakMode = .byClipping
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color,
+                .paragraphStyle: paragraphStyle,
+            ]
+            let measuredSize = displayText.size(withAttributes: attributes)
+            let drawRect = CGRect(
+                x: (size.width - measuredSize.width) / 2,
+                y: (size.height - measuredSize.height) / 2,
+                width: measuredSize.width,
+                height: measuredSize.height
+            )
+            displayText.draw(in: drawRect, withAttributes: attributes)
+        }
+    }
+}
+
+private extension UIColor {
+    var cacheKey: String {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        if getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            return [red, green, blue, alpha]
+                .map { String(Int(($0 * 255).rounded())) }
+                .joined(separator: ",")
+        }
+
+        var white: CGFloat = 0
+        if getWhite(&white, alpha: &alpha) {
+            let component = String(Int((white * 255).rounded()))
+            let alphaComponent = String(Int((alpha * 255).rounded()))
+            return "\(component),\(component),\(component),\(alphaComponent)"
+        }
+
+        return description
+    }
+}
+
+nonisolated enum CharacterDotGlyphRasterLayout {
+    static func fittedFontSize(for text: NSString, in size: CGSize) -> CGFloat {
+        let maximumFontSize = max(1, min(size.width, size.height) * 0.86)
+        var low: CGFloat = 1
+        var high = maximumFontSize
+
+        for _ in 0..<8 {
+            let candidate = (low + high) / 2
+            let measuredSize = text.size(withAttributes: [
+                .font: UIFont.systemFont(ofSize: candidate, weight: .black),
+            ])
+            if measuredSize.width <= size.width, measuredSize.height <= size.height {
+                low = candidate
+            } else {
+                high = candidate
+            }
+        }
+
+        return low
+    }
+}
+
 private struct BuiltInDotShapeVector: Shape {
     let shape: BuiltInDotShape
 

@@ -17,6 +17,7 @@ nonisolated enum CanvasRasterExporter {
         dotScale: CGFloat,
         dotColor: Color,
         usesRandomDotColors: Bool,
+        dotCharacterText: String = CharacterDotText.defaultText,
         liveDotAnimation: LiveDotAnimation = .none,
         blinkTime: TimeInterval? = nil,
         photoFrameImage: UIImage? = nil
@@ -75,6 +76,7 @@ nonisolated enum CanvasRasterExporter {
                 dotScale: dotScale,
                 dotColor: dotColor,
                 usesRandomDotColors: usesRandomDotColors,
+                dotCharacterText: dotCharacterText,
                 liveDotAnimation: liveDotAnimation,
                 blinkTime: blinkTime
             )
@@ -223,32 +225,15 @@ nonisolated enum CanvasRasterExporter {
         context.setFillColor(UIColor(colors.fillColor).cgColor)
         context.fill(CGRect(origin: .zero, size: size))
 
-        let diameter = PuzzleBackgroundPolkaDotMetrics.dotDiameter(
+        let dotRects = PuzzleBackgroundPolkaDotMetrics.dotRects(
+            in: size,
             controlValue: dotSize,
             photoFrameHeight: photoFrameHeight
         )
-        let spacing = PuzzleBackgroundPolkaDotMetrics.tileSpacing(
-            controlValue: dotSize,
-            photoFrameHeight: photoFrameHeight
-        )
-        guard spacing > 0, diameter > 0 else { return }
-
-        let radius = diameter / 2
         context.setFillColor(UIColor(colors.lineColor).cgColor)
 
-        var y = spacing / 2
-        while y - radius <= size.height {
-            var x = spacing / 2
-            while x - radius <= size.width {
-                context.fillEllipse(in: CGRect(
-                    x: x - radius,
-                    y: y - radius,
-                    width: diameter,
-                    height: diameter
-                ))
-                x += spacing
-            }
-            y += spacing
+        for rect in dotRects {
+            context.fillEllipse(in: rect)
         }
     }
 
@@ -264,6 +249,7 @@ nonisolated enum CanvasRasterExporter {
         dotScale: CGFloat,
         dotColor: Color,
         usesRandomDotColors: Bool,
+        dotCharacterText: String,
         liveDotAnimation: LiveDotAnimation,
         blinkTime: TimeInterval?
     ) {
@@ -290,7 +276,43 @@ nonisolated enum CanvasRasterExporter {
                 )
                 let rect = CGRect(origin: origin, size: CGSize(width: dotSize, height: dotSize))
 
-                if let builtInShape = dot.builtInShape {
+                if dot.isCharacterDot {
+                    if PuzzleDotCollageColor.shouldRenderCollageContent(
+                        for: dot,
+                        usesRandomDotColors: usesRandomDotColors,
+                        extensionRatio: layout.extensionRatio,
+                        selectedDotColor: dotColor
+                    ) {
+                        drawCharacterDotCollage(
+                            text: dotCharacterText,
+                            centerIndex: centerIndex,
+                            dot: dot,
+                            opacity: motion.opacity,
+                            in: context,
+                            rect: rect,
+                            image: image,
+                            liveFrameImage: liveFrameImage,
+                            layout: layout,
+                            backgroundStyle: backgroundStyle,
+                            backgroundColors: backgroundColors,
+                            backgroundPatternSpacing: backgroundPatternSpacing,
+                            photoFrameHeight: photoFrameHeight
+                        )
+                    } else {
+                        let uiColor = UIColor(
+                            dot.displayColor(
+                                usesRandomColor: usesRandomDotColors,
+                                selectedColor: dotColor
+                            )
+                        )
+                        drawCharacterDot(
+                            text: dotCharacterText,
+                            in: context,
+                            rect: rect,
+                            color: uiColor.withAlphaComponent(motion.opacity)
+                        )
+                    }
+                } else if let builtInShape = dot.builtInShape {
                     if PuzzleDotCollageColor.shouldRenderCollageContent(
                         for: dot,
                         usesRandomDotColors: usesRandomDotColors,
@@ -422,6 +444,50 @@ nonisolated enum CanvasRasterExporter {
             photoFrameHeight: photoFrameHeight
         )
         context.restoreGState()
+    }
+
+    private nonisolated static func drawCharacterDotCollage(
+        text: String,
+        centerIndex: Int,
+        dot: PuzzleDot,
+        opacity: CGFloat,
+        in context: CGContext,
+        rect: CGRect,
+        image: UIImage,
+        liveFrameImage: UIImage?,
+        layout: PuzzleCanvasLayoutResult,
+        backgroundStyle: PuzzleBackgroundStyle,
+        backgroundColors: PuzzleBackgroundColors,
+        backgroundPatternSpacing: Double,
+        photoFrameHeight: CGFloat
+    ) {
+        guard rect.width > 0, rect.height > 0 else { return }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let localSize = rect.size
+        let maskedContent = UIGraphicsImageRenderer(size: localSize, format: format).image { offCtx in
+            let localRect = CGRect(origin: .zero, size: localSize)
+            drawMirrorCollageContent(
+                centerIndex: centerIndex,
+                dot: dot,
+                opacity: 1,
+                in: offCtx.cgContext,
+                rect: localRect,
+                image: image,
+                liveFrameImage: liveFrameImage,
+                layout: layout,
+                backgroundStyle: backgroundStyle,
+                backgroundColors: backgroundColors,
+                backgroundPatternSpacing: backgroundPatternSpacing,
+                photoFrameHeight: photoFrameHeight
+            )
+            offCtx.cgContext.setBlendMode(.destinationIn)
+            drawCharacterDot(text: text, in: offCtx.cgContext, rect: localRect, color: .white)
+        }
+
+        maskedContent.draw(in: rect, blendMode: .normal, alpha: opacity)
     }
 
     private nonisolated static func drawAssetDotCollage(
@@ -576,6 +642,39 @@ nonisolated enum CanvasRasterExporter {
         context.addPath(path.cgPath)
         context.setFillColor(color.cgColor)
         context.fillPath(using: path.usesEvenOddFillRule ? .evenOdd : .winding)
+        context.restoreGState()
+    }
+
+    private nonisolated static func drawCharacterDot(
+        text: String,
+        in context: CGContext,
+        rect: CGRect,
+        color: UIColor
+    ) {
+        let displayText = CharacterDotText.displayText(for: text) as NSString
+        let fontSize = CharacterDotGlyphRasterLayout.fittedFontSize(
+            for: displayText,
+            in: rect.size
+        )
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .black)
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        paragraphStyle.lineBreakMode = .byClipping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+            .paragraphStyle: paragraphStyle,
+        ]
+        let measuredSize = displayText.size(withAttributes: attributes)
+        let drawRect = CGRect(
+            x: rect.midX - measuredSize.width / 2,
+            y: rect.midY - measuredSize.height / 2,
+            width: measuredSize.width,
+            height: measuredSize.height
+        )
+
+        context.saveGState()
+        displayText.draw(in: drawRect, withAttributes: attributes)
         context.restoreGState()
     }
 

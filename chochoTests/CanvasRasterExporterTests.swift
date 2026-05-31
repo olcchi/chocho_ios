@@ -151,6 +151,89 @@ struct CanvasRasterExporterTests {
         )
     }
 
+    @Test func characterDotRendersTypedTextInRasterExport() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exportSize = CGSize(width: 480, height: 300)
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.5, y: 0.5),
+            color: .clear,
+            size: 12,
+            shapeAssetName: DotShapeAsset.characterSelection.name
+        )
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false,
+                dotCharacterText: "字"
+            )
+        )
+
+        #expect(
+            containsDifferentColor(
+                in: exported,
+                rect: CGRect(x: 170, y: 110, width: 60, height: 80),
+                from: .sourceBlue
+            )
+        )
+    }
+
+    @Test func characterDotUsesCollageTintWhenDotColorIsClear() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exportSize = CGSize(width: 480, height: 300)
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.5, y: 0.5),
+            color: .clear,
+            size: 12,
+            shapeAssetName: DotShapeAsset.characterSelection.name
+        )
+
+        let collageFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: .clear,
+                usesRandomDotColors: false,
+                dotCharacterText: "字"
+            )
+        )
+        let blackFrame = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false,
+                dotCharacterText: "字"
+            )
+        )
+
+        #expect(
+            containsDifferentPixels(
+                in: collageFrame,
+                and: blackFrame,
+                rect: CGRect(x: 170, y: 110, width: 60, height: 80)
+            )
+        )
+    }
+
     @Test func zeroExtensionHalftoneCollageDotStillRendersOnPhoto() throws {
         let source = try #require(makeSolidImage(width: 400, height: 300))
         let dot = PuzzleDot(
@@ -323,6 +406,49 @@ private func makeExportedImage(
         dotColor: Color(red: 0, green: 0, blue: 0),
         usesRandomDotColors: false
     )
+}
+
+private func containsDifferentColor(
+    in image: UIImage,
+    rect: CGRect,
+    from expected: SampledColor
+) -> Bool {
+    let minX = Int(rect.minX)
+    let maxX = Int(rect.maxX)
+    let minY = Int(rect.minY)
+    let maxY = Int(rect.maxY)
+
+    for y in stride(from: minY, through: maxY, by: 4) {
+        for x in stride(from: minX, through: maxX, by: 4) {
+            if !sampleColor(in: image, at: CGPoint(x: x, y: y)).isClose(to: expected) {
+                return true
+            }
+        }
+    }
+
+    return false
+}
+
+private func containsDifferentPixels(
+    in lhs: UIImage,
+    and rhs: UIImage,
+    rect: CGRect
+) -> Bool {
+    let minX = Int(rect.minX)
+    let maxX = Int(rect.maxX)
+    let minY = Int(rect.minY)
+    let maxY = Int(rect.maxY)
+
+    for y in stride(from: minY, through: maxY, by: 4) {
+        for x in stride(from: minX, through: maxX, by: 4) {
+            let point = CGPoint(x: x, y: y)
+            if sampleColor(in: lhs, at: point) != sampleColor(in: rhs, at: point) {
+                return true
+            }
+        }
+    }
+
+    return false
 }
 
 private struct SampledColor: Equatable {

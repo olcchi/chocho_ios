@@ -55,6 +55,7 @@ nonisolated enum CanvasLivePhotoExporter {
         let dotScale: CGFloat
         let dotColor: Color
         let usesRandomDotColors: Bool
+        let dotCharacterText: String
         let liveDotAnimation: LiveDotAnimation
         let isSourceLiveMotionEnabled: Bool
         let hasSourceLiveVideo: Bool
@@ -192,6 +193,7 @@ nonisolated enum CanvasLivePhotoExporter {
             dotScale: snapshot.dotScale,
             dotColor: snapshot.dotColor,
             usesRandomDotColors: snapshot.usesRandomDotColors,
+            dotCharacterText: snapshot.dotCharacterText,
             liveDotAnimation: snapshot.liveDotAnimation,
             blinkTime: blinkTime,
             photoFrameImage: photoFrameImage

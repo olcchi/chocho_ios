@@ -48,8 +48,10 @@ nonisolated final class CanvasSourceLiveVideo: @unchecked Sendable {
         // 预览帧只需屏幕分辨率；不限制时 generator 返回视频原始分辨率（可达 4K+），
         // 对 ~390pt 宽的画布来说是大量冗余解码和内存占用。
         // 导出路径使用 CanvasRasterExporter 独立解码，此限制不影响导出质量。
-        let previewPixelSize = Self.previewMaxPixelSize()
-        generator.maximumSize = CGSize(width: previewPixelSize, height: previewPixelSize)
+        generator.maximumSize = CGSize(
+            width: Self.previewMaxPixelDimension,
+            height: Self.previewMaxPixelDimension
+        )
 
         return CanvasSourceLiveVideo(
             videoURL: videoURL,
@@ -89,16 +91,14 @@ nonisolated final class CanvasSourceLiveVideo: @unchecked Sendable {
             lock.unlock()
             return frame
         }
-        lock.unlock()
 
         let cmTime = CMTime(seconds: mappedTime, preferredTimescale: 600)
         guard let cgImage = try? generator.copyCGImage(at: cmTime, actualTime: nil) else {
+            lock.unlock()
             return nil
         }
 
         let frame = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
-
-        lock.lock()
         cachedSourceTime = mappedTime
         cachedFrame = frame
         lock.unlock()
@@ -110,15 +110,8 @@ nonisolated final class CanvasSourceLiveVideo: @unchecked Sendable {
         try? FileManager.default.removeItem(at: videoURL)
     }
 
-    /// 预览帧输出的最大边（像素）：取主屏幕短边像素的 1.5 倍，覆盖全屏竖排展示所需，
-    /// 同时对横向超宽视频也保持合理上限。主屏为空时回退到 1280。
-    private static func previewMaxPixelSize() -> Int {
-        let screen = UIScreen.main
-        let scale = screen.scale
-        let shortEdge = min(screen.bounds.width, screen.bounds.height)
-        let pixels = Int((shortEdge * scale * 1.5).rounded())
-        return max(pixels, 1280)
-    }
+    /// Preview decoding is capped; export renders from the full source path separately.
+    private static let previewMaxPixelDimension = 1280
 
     private static func exportPairedVideo(from asset: PHAsset) async -> URL? {
         let resources = PHAssetResource.assetResources(for: asset)

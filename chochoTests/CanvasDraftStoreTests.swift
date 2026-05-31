@@ -36,6 +36,7 @@ struct CanvasDraftStoreTests {
             selectedDotColor: CanvasDraftColorComponents(Color(red: 0.2, green: 0.3, blue: 0.4)),
             usesRandomDotColors: false,
             selectedDotShapeName: DotShapeAsset.defaultSelection.name,
+            dotCharacterText: CharacterDotText.defaultText,
             isTraceDrawingEnabled: false,
             puzzleDots: dots.map(CanvasDraftStoredDot.init(dot:)),
             tracePoints: [],
@@ -98,6 +99,7 @@ struct CanvasDraftStoreTests {
             selectedDotColor: Color(red: 0.2, green: 0.4, blue: 0.9),
             usesRandomDotColors: true,
             selectedDotShapeName: BuiltInDotShape.star.rawValue,
+            dotCharacterText: "呱",
             isTraceDrawingEnabled: true,
             puzzleDots: dots,
             tracePoints: tracePoints,
@@ -120,6 +122,7 @@ struct CanvasDraftStoreTests {
         #expect(loaded.dotScale == capture.dotScale)
         #expect(loaded.usesRandomDotColors == capture.usesRandomDotColors)
         #expect(loaded.selectedDotShapeName == capture.selectedDotShapeName)
+        #expect(loaded.dotCharacterText == capture.dotCharacterText)
         #expect(loaded.isTraceDrawingEnabled == capture.isTraceDrawingEnabled)
         #expect(loaded.tracePoints == capture.tracePoints)
         #expect(loaded.viewportScale == capture.viewportScale)
@@ -185,6 +188,7 @@ struct CanvasDraftStoreTests {
             selectedDotColor: CanvasDraftColorComponents(Color(red: 0.2, green: 0.3, blue: 0.4)),
             usesRandomDotColors: false,
             selectedDotShapeName: DotShapeAsset.defaultSelection.name,
+            dotCharacterText: nil,
             isTraceDrawingEnabled: false,
             puzzleDots: [],
             tracePoints: [],
@@ -202,6 +206,7 @@ struct CanvasDraftStoreTests {
         let restored = try #require(CanvasDraftStore.readDraft(from: directory))
         #expect(restored.backgroundColors == PuzzleBackgroundColors.default)
         #expect(restored.backgroundPatternSpacing == PuzzleBackgroundPatternSpacing.defaultControlValue)
+        #expect(restored.dotCharacterText == CharacterDotText.defaultText)
     }
 
     @Test func restoresDefaultBackgroundPatternSpacingForVersionThreeDrafts() throws {
@@ -229,6 +234,7 @@ struct CanvasDraftStoreTests {
             selectedDotColor: CanvasDraftColorComponents(Color(red: 0.2, green: 0.3, blue: 0.4)),
             usesRandomDotColors: false,
             selectedDotShapeName: DotShapeAsset.defaultSelection.name,
+            dotCharacterText: nil,
             isTraceDrawingEnabled: false,
             puzzleDots: [],
             tracePoints: [],
@@ -267,6 +273,7 @@ struct CanvasDraftStoreTests {
             selectedDotColor: Color(red: 0.1, green: 0.2, blue: 0.3),
             usesRandomDotColors: false,
             selectedDotShapeName: DotShapeAsset.defaultSelection.name,
+            dotCharacterText: CharacterDotText.defaultText,
             isTraceDrawingEnabled: false,
             puzzleDots: PuzzleDotFactory.makeDots(count: 2),
             tracePoints: [],

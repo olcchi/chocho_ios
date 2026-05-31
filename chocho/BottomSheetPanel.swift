@@ -56,6 +56,35 @@ enum PanelTab: String, CaseIterable, Identifiable {
     }
 }
 
+struct BottomSheetDotControls {
+    var dotCount: Binding<Double>
+    var dotScale: Binding<Double>
+    var selectedDotColor: Binding<Color>
+    var usesRandomDotColors: Binding<Bool>
+    var selectedDotShape: Binding<DotShapeAsset>
+    var selectedDotShapeCategory: Binding<DotShapeCategory>
+    var dotCharacterText: Binding<String>
+    var isTraceDrawingEnabled: Binding<Bool>
+}
+
+struct BottomSheetLiveControls {
+    var liveDotAnimation: Binding<LiveDotAnimation>
+    var isSourceLivePhoto: Bool = false
+    var isSourceLiveMotionEnabled: Binding<Bool>
+    var canPlayLivePreview: Bool = false
+    var livePreviewProgress: Double = 0
+    var isLivePreviewPlaying: Bool = false
+    var onToggleLivePreviewPlayback: () -> Void = {}
+}
+
+struct BottomSheetBackgroundControls {
+    var extensionRatio: Binding<CGFloat>
+    var extensionSide: Binding<PuzzleCanvasExtensionSide>
+    var backgroundStyle: Binding<PuzzleBackgroundStyle>
+    var backgroundColors: Binding<PuzzleBackgroundColors>
+    var backgroundPatternSpacing: Binding<Double>
+}
+
 /// 可折叠底部面板：Tab 栏、各 Tab 控件、拖拽把手；不负责安全区，由 `ContentView` 贴底并延伸。
 struct BottomSheetPanel: View {
     static let topCornerRadius: CGFloat = 24
@@ -118,25 +147,9 @@ struct BottomSheetPanel: View {
     @Binding var panelVisibleHeight: CGFloat
     @Binding var selectedTab: PanelTab
     @Binding var isExpanded: Bool
-    @Binding var dotCount: Double
-    @Binding var dotScale: Double
-    @Binding var selectedDotColor: Color
-    @Binding var usesRandomDotColors: Bool
-    @Binding var selectedDotShape: DotShapeAsset
-    @Binding var selectedDotShapeCategory: DotShapeCategory
-    @Binding var isTraceDrawingEnabled: Bool
-    @Binding var liveDotAnimation: LiveDotAnimation
-    var isSourceLivePhoto: Bool = false
-    @Binding var isSourceLiveMotionEnabled: Bool
-    var canPlayLivePreview: Bool = false
-    var livePreviewProgress: Double = 0
-    var isLivePreviewPlaying: Bool = false
-    var onToggleLivePreviewPlayback: () -> Void = {}
-    @Binding var extensionRatio: CGFloat
-    @Binding var extensionSide: PuzzleCanvasExtensionSide
-    @Binding var backgroundStyle: PuzzleBackgroundStyle
-    @Binding var backgroundColors: PuzzleBackgroundColors
-    @Binding var backgroundPatternSpacing: Double
+    let dotControls: BottomSheetDotControls
+    let liveControls: BottomSheetLiveControls
+    let backgroundControls: BottomSheetBackgroundControls
     var bottomSafeAreaInset: CGFloat = 0
     var isPanelEnabled: Bool = true
     var canClearTrace: Bool = false
@@ -192,25 +205,9 @@ struct BottomSheetPanel: View {
     private var panelContent: some View {
         PanelContentCard(
             tab: selectedTab,
-            dotCount: $dotCount,
-            dotScale: $dotScale,
-            selectedDotColor: $selectedDotColor,
-            usesRandomDotColors: $usesRandomDotColors,
-            selectedDotShape: $selectedDotShape,
-            selectedDotShapeCategory: $selectedDotShapeCategory,
-            isTraceDrawingEnabled: $isTraceDrawingEnabled,
-            liveDotAnimation: $liveDotAnimation,
-            isSourceLivePhoto: isSourceLivePhoto,
-            isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
-            canPlayLivePreview: canPlayLivePreview,
-            livePreviewProgress: livePreviewProgress,
-            isLivePreviewPlaying: isLivePreviewPlaying,
-            onToggleLivePreviewPlayback: onToggleLivePreviewPlayback,
-            extensionRatio: $extensionRatio,
-            extensionSide: $extensionSide,
-            backgroundStyle: $backgroundStyle,
-            backgroundColors: $backgroundColors,
-            backgroundPatternSpacing: $backgroundPatternSpacing,
+            dotControls: dotControls,
+            liveControls: liveControls,
+            backgroundControls: backgroundControls,
             canClearTrace: canClearTrace,
             onDrawDots: onDrawDots,
             onClearTrace: onClearTrace
@@ -391,25 +388,9 @@ struct CanvasHistoryControls: View {
 
 private struct PanelContentCard: View {
     let tab: PanelTab
-    @Binding var dotCount: Double
-    @Binding var dotScale: Double
-    @Binding var selectedDotColor: Color
-    @Binding var usesRandomDotColors: Bool
-    @Binding var selectedDotShape: DotShapeAsset
-    @Binding var selectedDotShapeCategory: DotShapeCategory
-    @Binding var isTraceDrawingEnabled: Bool
-    @Binding var liveDotAnimation: LiveDotAnimation
-    var isSourceLivePhoto: Bool
-    @Binding var isSourceLiveMotionEnabled: Bool
-    var canPlayLivePreview: Bool
-    var livePreviewProgress: Double
-    var isLivePreviewPlaying: Bool
-    var onToggleLivePreviewPlayback: () -> Void
-    @Binding var extensionRatio: CGFloat
-    @Binding var extensionSide: PuzzleCanvasExtensionSide
-    @Binding var backgroundStyle: PuzzleBackgroundStyle
-    @Binding var backgroundColors: PuzzleBackgroundColors
-    @Binding var backgroundPatternSpacing: Double
+    let dotControls: BottomSheetDotControls
+    let liveControls: BottomSheetLiveControls
+    let backgroundControls: BottomSheetBackgroundControls
     let canClearTrace: Bool
     let onDrawDots: () -> Void
     let onClearTrace: () -> Void
@@ -419,37 +400,38 @@ private struct PanelContentCard: View {
             switch tab {
             case .dots:
                 DotShapePickerPanel(
-                    selectedCategory: $selectedDotShapeCategory,
-                    selectedShape: $selectedDotShape,
-                    dotScale: $dotScale,
-                    selectedDotColor: $selectedDotColor
+                    selectedCategory: dotControls.selectedDotShapeCategory,
+                    selectedShape: dotControls.selectedDotShape,
+                    dotScale: dotControls.dotScale,
+                    selectedDotColor: dotControls.selectedDotColor,
+                    dotCharacterText: dotControls.dotCharacterText
                 )
             case .draw:
                 DrawPanelControls(
-                    dotCount: $dotCount,
-                    usesRandomDotColors: $usesRandomDotColors,
-                    isTraceDrawingEnabled: $isTraceDrawingEnabled,
+                    dotCount: dotControls.dotCount,
+                    usesRandomDotColors: dotControls.usesRandomDotColors,
+                    isTraceDrawingEnabled: dotControls.isTraceDrawingEnabled,
                     canClearTrace: canClearTrace,
                     onDrawDots: onDrawDots,
                     onClearTrace: onClearTrace
                 )
             case .background:
                 BackgroundPanelControls(
-                    backgroundStyle: $backgroundStyle,
-                    backgroundColors: $backgroundColors,
-                    extensionRatio: $extensionRatio,
-                    extensionSide: $extensionSide,
-                    backgroundPatternSpacing: $backgroundPatternSpacing
+                    backgroundStyle: backgroundControls.backgroundStyle,
+                    backgroundColors: backgroundControls.backgroundColors,
+                    extensionRatio: backgroundControls.extensionRatio,
+                    extensionSide: backgroundControls.extensionSide,
+                    backgroundPatternSpacing: backgroundControls.backgroundPatternSpacing
                 )
             case .livePhoto:
                 LivePanelControls(
-                    liveDotAnimation: $liveDotAnimation,
-                    isSourceLivePhoto: isSourceLivePhoto,
-                    isSourceLiveMotionEnabled: $isSourceLiveMotionEnabled,
-                    canPlayLivePreview: canPlayLivePreview,
-                    livePreviewProgress: livePreviewProgress,
-                    isLivePreviewPlaying: isLivePreviewPlaying,
-                    onToggleLivePreviewPlayback: onToggleLivePreviewPlayback
+                    liveDotAnimation: liveControls.liveDotAnimation,
+                    isSourceLivePhoto: liveControls.isSourceLivePhoto,
+                    isSourceLiveMotionEnabled: liveControls.isSourceLiveMotionEnabled,
+                    canPlayLivePreview: liveControls.canPlayLivePreview,
+                    livePreviewProgress: liveControls.livePreviewProgress,
+                    isLivePreviewPlaying: liveControls.isLivePreviewPlaying,
+                    onToggleLivePreviewPlayback: liveControls.onToggleLivePreviewPlayback
                 )
             }
         }
@@ -1131,6 +1113,7 @@ private struct DotShapePickerPanel: View {
     @Binding var selectedShape: DotShapeAsset
     @Binding var dotScale: Double
     @Binding var selectedDotColor: Color
+    @Binding var dotCharacterText: String
     @AppStorage("chocho.dotShape.recentNames") private var recentShapeNamesStore = DotShapeAsset.defaultSelection.name
 
     var body: some View {
@@ -1153,6 +1136,14 @@ private struct DotShapePickerPanel: View {
             }
             .padding(.vertical, 3)
 
+            if selectedShape.isCharacterDot {
+                DotCharacterTextField(text: $dotCharacterText)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 3)
+
+                PanelRowSeparator()
+            }
+
             DotSizeSlider(dotScale: $dotScale)
                 .padding(.vertical, 3)
 
@@ -1171,6 +1162,31 @@ private struct DotShapePickerPanel: View {
 
     private var recentShapeNames: [String] {
         DotShapeRecentList.names(from: recentShapeNamesStore)
+    }
+}
+
+private struct DotCharacterTextField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("字符")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(Color.foreground)
+
+            TextField("输入文字", text: $text)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(Color.foreground)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .multilineTextAlignment(.center)
+                .frame(height: 30)
+                .background(Color.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.border, lineWidth: 1)
+                }
+        }
     }
 }
 
@@ -1200,6 +1216,7 @@ private struct DotSizeSlider: View {
 
 private struct DotColorPicker: View {
     @Binding var selectedDotColor: Color
+    @State private var lastPickerColor = DotColorPickerSelection.fallbackPickerColor
 
     private var usesCollageTint: Bool {
         PuzzleDotCollageColor.usesCollageTint(selectedDotColor: selectedDotColor)
@@ -1207,7 +1224,7 @@ private struct DotColorPicker: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ColorPicker("颜色", selection: $selectedDotColor, supportsOpacity: false)
+            ColorPicker("颜色", selection: colorPickerSelection, supportsOpacity: false)
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(Color.foreground)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1238,6 +1255,31 @@ private struct DotColorPicker: View {
             .accessibilityAddTraits(usesCollageTint ? .isSelected : [])
         }
         .padding(.horizontal, 2)
+        .onAppear(perform: rememberSelectedColorIfNeeded)
+        .onChange(of: selectedDotColor) { _, _ in
+            rememberSelectedColorIfNeeded()
+        }
+    }
+
+    private var colorPickerSelection: Binding<Color> {
+        Binding(
+            get: {
+                DotColorPickerSelection.pickerColor(
+                    for: selectedDotColor,
+                    fallbackColor: lastPickerColor
+                )
+            },
+            set: { newValue in
+                let opaqueColor = DotColorPickerSelection.selectedColor(fromPickerColor: newValue)
+                lastPickerColor = opaqueColor
+                selectedDotColor = opaqueColor
+            }
+        )
+    }
+
+    private func rememberSelectedColorIfNeeded() {
+        guard !usesCollageTint else { return }
+        lastPickerColor = DotColorPickerSelection.selectedColor(fromPickerColor: selectedDotColor)
     }
 }
 
@@ -1372,7 +1414,12 @@ private struct DotShapeTile: View {
 
     @ViewBuilder
     private var shapePreview: some View {
-        if let builtInShape = shape.builtInShape {
+        if shape.isCharacterDot {
+            CharacterDotGlyphView(
+                text: CharacterDotText.defaultText,
+                color: isSelected ? Color.primaryForeground : Color.foreground
+            )
+        } else if let builtInShape = shape.builtInShape {
             DotShapeDrawing(
                 shape: builtInShape,
                 color: isSelected ? Color.primaryForeground : Color.foreground
@@ -1539,6 +1586,10 @@ struct DotShapeAsset: Identifiable, Equatable {
         BuiltInDotShape(rawValue: name)
     }
 
+    var isCharacterDot: Bool {
+        name == CharacterDotText.shapeName
+    }
+
     func matches(category: DotShapeCategory) -> Bool {
         switch category {
         case .recent:
@@ -1567,10 +1618,14 @@ struct DotShapeAsset: Identifiable, Equatable {
 
     static let defaultSelection = DotShapeAsset(name: BuiltInDotShape.circle.rawValue)
 
+    static let characterSelection = DotShapeAsset(name: CharacterDotText.shapeName)
+
     static let all: [DotShapeAsset] =
         BuiltInDotShape.allCases.map { DotShapeAsset(name: $0.rawValue) }
+        + [characterSelection]
         + DotShapeCatalog.assetNames
             .filter { BuiltInDotShape(rawValue: $0) == nil }
+            .filter { $0 != characterSelection.name }
             .map { DotShapeAsset(name: $0) }
 }
 
