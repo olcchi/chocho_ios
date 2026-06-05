@@ -1,7 +1,5 @@
 # Dot Puzzle Canvas Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Build a SwiftUI dot puzzle canvas where an uploaded photo sits directly beside a right-side adjustable grid canvas, with generated dot/star marks and export support.
 
 **Architecture:** `ContentView` owns app-level state and export, `PuzzleCanvasView` owns internal photo-plus-grid composition, and `BottomSheetPanel` owns bottom controls. Testable layout and dot generation logic live in small Swift files so behavior can be verified before UI wiring.
