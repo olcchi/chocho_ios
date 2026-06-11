@@ -275,7 +275,7 @@ nonisolated enum CanvasLivePhotoExporter {
             }
             guard let frameImage else {
                 input.markAsFinished()
-                await finishWriting(writer)
+                _ = await finishWriting(writer)
                 return false
             }
 
@@ -284,7 +284,7 @@ nonisolated enum CanvasLivePhotoExporter {
             }
             guard let pixelBuffer else {
                 input.markAsFinished()
-                await finishWriting(writer)
+                _ = await finishWriting(writer)
                 return false
             }
 
@@ -296,7 +296,7 @@ nonisolated enum CanvasLivePhotoExporter {
             while !input.isReadyForMoreMediaData {
                 if writer.status == .failed {
                     input.markAsFinished()
-                    await finishWriting(writer)
+                    _ = await finishWriting(writer)
                     return false
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000)
@@ -304,7 +304,7 @@ nonisolated enum CanvasLivePhotoExporter {
 
             guard adaptor.append(pixelBuffer, withPresentationTime: presentationTime) else {
                 input.markAsFinished()
-                await finishWriting(writer)
+                _ = await finishWriting(writer)
                 return false
             }
 
@@ -318,9 +318,10 @@ nonisolated enum CanvasLivePhotoExporter {
     }
 
     private static func finishWriting(_ writer: AVAssetWriter) async -> Bool {
-        await withCheckedContinuation { continuation in
-            writer.finishWriting {
-                continuation.resume(returning: writer.status == .completed)
+        let writerBox = SendableAVAssetWriter(writer)
+        return await withCheckedContinuation { continuation in
+            writerBox.writer.finishWriting {
+                continuation.resume(returning: writerBox.writer.status == .completed)
             }
         }
     }
@@ -403,7 +404,15 @@ nonisolated enum CanvasLivePhotoExporter {
     }
 }
 
-private final class LivePhotoRequestGate: @unchecked Sendable {
+private nonisolated struct SendableAVAssetWriter: @unchecked Sendable {
+    let writer: AVAssetWriter
+
+    init(_ writer: AVAssetWriter) {
+        self.writer = writer
+    }
+}
+
+private nonisolated final class LivePhotoRequestGate: @unchecked Sendable {
     private let lock = NSLock()
     private var didResume = false
     private var bestLivePhoto: PHLivePhoto?

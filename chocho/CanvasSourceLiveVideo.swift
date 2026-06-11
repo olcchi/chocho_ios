@@ -93,7 +93,7 @@ nonisolated final class CanvasSourceLiveVideo: @unchecked Sendable {
         }
 
         let cmTime = CMTime(seconds: mappedTime, preferredTimescale: 600)
-        guard let cgImage = try? generator.copyCGImage(at: cmTime, actualTime: nil) else {
+        guard let cgImage = generateCGImage(at: cmTime) else {
             lock.unlock()
             return nil
         }
@@ -104,6 +104,14 @@ nonisolated final class CanvasSourceLiveVideo: @unchecked Sendable {
         lock.unlock()
 
         return frame
+    }
+
+    private func generateCGImage(at time: CMTime) -> CGImage? {
+        let request = SourceLiveFrameRequest()
+        generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, result, _ in
+            request.finish(image: result == .succeeded ? image : nil)
+        }
+        return request.wait()
     }
 
     func removeTemporaryFiles() {
@@ -141,6 +149,26 @@ nonisolated final class CanvasSourceLiveVideo: @unchecked Sendable {
                 }
             }
         }
+    }
+}
+
+private nonisolated final class SourceLiveFrameRequest: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var image: CGImage?
+
+    func finish(image: CGImage?) {
+        lock.lock()
+        self.image = image
+        lock.unlock()
+        semaphore.signal()
+    }
+
+    func wait() -> CGImage? {
+        semaphore.wait()
+        lock.lock()
+        defer { lock.unlock() }
+        return image
     }
 }
 

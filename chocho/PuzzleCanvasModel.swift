@@ -111,6 +111,46 @@ nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable
     }
 }
 
+nonisolated struct DotMotionSample: Equatable {
+    let opacity: Double
+    let scale: Double
+    let rotationRadians: Double
+
+    static let identity = DotMotionSample(opacity: 1, scale: 1, rotationRadians: 0)
+
+    static func sample(
+        dotID: UUID,
+        liveDotAnimation: LiveDotAnimation,
+        time: TimeInterval?
+    ) -> DotMotionSample {
+        guard let time else { return .identity }
+
+        switch liveDotAnimation {
+        case .none:
+            return .identity
+        case .randomBlink:
+            return DotMotionSample(
+                opacity: DotRandomBlinkOpacity.opacity(dotID: dotID, time: time),
+                scale: 1,
+                rotationRadians: 0
+            )
+        case .breathe:
+            let sample = DotBreatheAnimation.sample(dotID: dotID, time: time)
+            return DotMotionSample(
+                opacity: sample.opacity,
+                scale: sample.scale,
+                rotationRadians: 0
+            )
+        case .rotate:
+            return DotMotionSample(
+                opacity: 1,
+                scale: 1,
+                rotationRadians: DotRotateAnimation.radians(time: time)
+            )
+        }
+    }
+}
+
 /// 「闪烁」：每个波点用独立相位/周期的正弦叠加，导出与预览共用同一公式。
 nonisolated enum DotRandomBlinkOpacity {
     static let minimumOpacity: Double = 0.06

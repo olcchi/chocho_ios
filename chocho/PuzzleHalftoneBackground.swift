@@ -532,7 +532,7 @@ private nonisolated enum HalftoneMath {
     }
 }
 
-private enum HalftoneHash {
+private nonisolated enum HalftoneHash {
     static func fnv1a(_ value: String) -> UInt32 {
         var hash: UInt32 = 2_166_136_261
         for byte in value.utf8 {
@@ -567,7 +567,7 @@ private nonisolated enum HalftoneColor {
         if let rgb = rgbComponents(color) {
             return UIColor(red: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1)
         }
-        return UIColor(hex: PuzzleHalftoneBackgroundMetrics.defaultPaperHex)
+        return uiColor(hex: PuzzleHalftoneBackgroundMetrics.defaultPaperHex)
     }
 
     static func hazeColor(_ color: Color) -> UIColor {
@@ -606,11 +606,9 @@ private nonisolated enum HalftoneColor {
         }
         return (red, green, blue)
     }
-}
 
-private extension UIColor {
-    convenience init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+    private static func uiColor(hex hexString: String) -> UIColor {
+        let hex = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
         Scanner(string: hex).scanHexInt64(&int)
         let r, g, b: CGFloat
@@ -624,7 +622,7 @@ private extension UIColor {
             g = 238 / 255
             b = 230 / 255
         }
-        self.init(red: r, green: g, blue: b, alpha: 1)
+        return UIColor(red: r, green: g, blue: b, alpha: 1)
     }
 }
 

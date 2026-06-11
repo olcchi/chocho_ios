@@ -261,12 +261,12 @@ nonisolated enum CanvasRasterExporter {
                 renderedScale: dot.size * dotScale * dot.displaySizeScale,
                 photoFrameHeight: photoFrameHeight
             )
-            let motion = dotMotion(
+            let motion = DotMotionSample.sample(
                 dotID: dot.id,
                 liveDotAnimation: liveDotAnimation,
-                blinkTime: blinkTime
+                time: blinkTime
             )
-            let dotSize = baseDotSize * motion.scale
+            let dotSize = baseDotSize * CGFloat(motion.scale)
             let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
 
             for (centerIndex, center) in centers.enumerated() {
@@ -277,7 +277,7 @@ nonisolated enum CanvasRasterExporter {
                 let rect = CGRect(origin: origin, size: CGSize(width: dotSize, height: dotSize))
 
                 context.saveGState()
-                applyDotRotation(motion.rotationRadians, in: context, around: rect)
+                applyDotRotation(CGFloat(motion.rotationRadians), in: context, around: rect)
 
                 if dot.isCharacterDot {
                     if PuzzleDotCollageColor.shouldRenderCollageContent(
@@ -290,7 +290,7 @@ nonisolated enum CanvasRasterExporter {
                             text: dotCharacterText,
                             centerIndex: centerIndex,
                             dot: dot,
-                            opacity: motion.opacity,
+                            opacity: CGFloat(motion.opacity),
                             in: context,
                             rect: rect,
                             image: image,
@@ -312,7 +312,7 @@ nonisolated enum CanvasRasterExporter {
                             text: dotCharacterText,
                             in: context,
                             rect: rect,
-                            color: uiColor.withAlphaComponent(motion.opacity)
+                            color: uiColor.withAlphaComponent(CGFloat(motion.opacity))
                         )
                     }
                 } else if let builtInShape = dot.builtInShape {
@@ -326,7 +326,7 @@ nonisolated enum CanvasRasterExporter {
                             builtInShape,
                             centerIndex: centerIndex,
                             dot: dot,
-                            opacity: motion.opacity,
+                            opacity: CGFloat(motion.opacity),
                             in: context,
                             rect: rect,
                             image: image,
@@ -348,7 +348,7 @@ nonisolated enum CanvasRasterExporter {
                             builtInShape,
                             in: context,
                             rect: rect,
-                            color: uiColor.withAlphaComponent(motion.opacity)
+                            color: uiColor.withAlphaComponent(CGFloat(motion.opacity))
                         )
                     }
                 } else if PuzzleDotCollageColor.shouldRenderCollageContent(
@@ -361,7 +361,7 @@ nonisolated enum CanvasRasterExporter {
                         assetName: dot.shapeAssetName,
                         centerIndex: centerIndex,
                         dot: dot,
-                        opacity: motion.opacity,
+                        opacity: CGFloat(motion.opacity),
                         in: context,
                         rect: rect,
                         image: image,
@@ -385,36 +385,12 @@ nonisolated enum CanvasRasterExporter {
                         rect: rect,
                         color: uiColor,
                         usesTemplateColor: dot.usesTemplateColor,
-                        opacity: motion.opacity
+                        opacity: CGFloat(motion.opacity)
                     )
                 }
 
                 context.restoreGState()
             }
-        }
-    }
-
-    /// 与 `PuzzleCanvasView` / `DotRandomBlinkOpacity` / `DotBreatheAnimation` 保持同一套时间采样。
-    private nonisolated static func dotMotion(
-        dotID: UUID,
-        liveDotAnimation: LiveDotAnimation,
-        blinkTime: TimeInterval?
-    ) -> (opacity: CGFloat, scale: CGFloat, rotationRadians: CGFloat) {
-        guard let blinkTime else { return (1, 1, 0) }
-        switch liveDotAnimation {
-        case .none:
-            return (1, 1, 0)
-        case .randomBlink:
-            return (
-                CGFloat(DotRandomBlinkOpacity.opacity(dotID: dotID, time: blinkTime)),
-                1,
-                0
-            )
-        case .breathe:
-            let sample = DotBreatheAnimation.sample(dotID: dotID, time: blinkTime)
-            return (CGFloat(sample.opacity), CGFloat(sample.scale), 0)
-        case .rotate:
-            return (1, 1, CGFloat(DotRotateAnimation.radians(time: blinkTime)))
         }
     }
 

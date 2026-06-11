@@ -694,24 +694,6 @@ private struct PuzzleDotsCanvas: View {
             .animation(.none, value: dots.count)
     }
 
-    private func dotMotion(
-        dotID: UUID,
-        blinkTime: TimeInterval?
-    ) -> (opacity: Double, scale: CGFloat, rotationRadians: Double) {
-        guard let blinkTime else { return (1, 1, 0) }
-        switch liveDotAnimation {
-        case .none:
-            return (1, 1, 0)
-        case .randomBlink:
-            return (DotRandomBlinkOpacity.opacity(dotID: dotID, time: blinkTime), 1, 0)
-        case .breathe:
-            let sample = DotBreatheAnimation.sample(dotID: dotID, time: blinkTime)
-            return (sample.opacity, CGFloat(sample.scale), 0)
-        case .rotate:
-            return (1, 1, DotRotateAnimation.radians(time: blinkTime))
-        }
-    }
-
     @ViewBuilder
     private func dotsLayer(blinkTime: TimeInterval?) -> some View {
         ZStack(alignment: .topLeading) {
@@ -721,7 +703,11 @@ private struct PuzzleDotsCanvas: View {
                     photoFrameHeight: photoFrame.height
                 )
                 let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
-                let motion = dotMotion(dotID: dot.id, blinkTime: blinkTime)
+                let motion = DotMotionSample.sample(
+                    dotID: dot.id,
+                    liveDotAnimation: liveDotAnimation,
+                    time: blinkTime
+                )
 
                 ForEach(Array(centers.enumerated()), id: \.offset) { centerIndex, center in
                     Color.clear
@@ -731,7 +717,7 @@ private struct PuzzleDotsCanvas: View {
                                 .frame(width: size, height: size, alignment: .topLeading)
                                 .clipped()
                         }
-                        .scaleEffect(motion.scale)
+                        .scaleEffect(CGFloat(motion.scale))
                         .rotationEffect(.radians(motion.rotationRadians))
                         .opacity(motion.opacity)
                         .position(center)
