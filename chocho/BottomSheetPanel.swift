@@ -139,7 +139,7 @@ struct BottomSheetPanel: View {
         .padding(.horizontal, Self.contentHorizontalInset)
         .padding(.bottom, Self.contentBottomInset + bottomSafeAreaInset)
         .frame(maxWidth: .infinity, alignment: .bottom)
-        .onGeometryChange(for: CGFloat.self, of: \.size.height) { _, newHeight in
+        .onGeometryChange(for: CGFloat.self, of: \.size.height) { newHeight in
             guard newHeight > 0 else { return }
             panelVisibleHeight = newHeight
         }
