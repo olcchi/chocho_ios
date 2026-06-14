@@ -54,6 +54,62 @@ struct CanvasRasterExporterTests {
         #expect(sampleColor(in: exported, at: CGPoint(x: 200, y: 358)).isClose(to: .sourceBlue))
     }
 
+    @Test func centerBackgroundExportPlacesPhotoAboveLargerBackground() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 400, height: 300),
+                extensionRatio: 0.15,
+                extensionSide: .center,
+                backgroundStyle: .solid,
+                backgroundColors: PuzzleBackgroundColors(
+                    fillColor: Color(red: 1, green: 0, blue: 0),
+                    alternateColor: Color(red: 0, green: 1, blue: 0),
+                    lineColor: Color(red: 0, green: 0, blue: 1)
+                ),
+                dots: [],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(sampleColor(in: exported, at: CGPoint(x: 4, y: 4)).isClose(to: .red))
+        #expect(sampleColor(in: exported, at: CGPoint(x: 200, y: 150)).isClose(to: .sourceBlue))
+    }
+
+    @Test func centerBackgroundDotsAreOccludedByPhoto() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.25, y: 0.5),
+            color: .clear,
+            size: 8,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 400, height: 300),
+                extensionRatio: 0.4,
+                extensionSide: .center,
+                backgroundStyle: .solid,
+                backgroundColors: PuzzleBackgroundColors(
+                    fillColor: .red,
+                    alternateColor: .green,
+                    lineColor: .red
+                ),
+                dots: [dot],
+                dotScale: 1,
+                dotColor: .red,
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(sampleColor(in: exported, at: CGPoint(x: 100, y: 150)).isClose(to: .sourceBlue))
+    }
+
     @Test func liveExportAnimatesExtensionSideMirrorDots() throws {
         let source = try #require(makeSolidImage(width: 400, height: 300))
         let exportSize = CGSize(width: 480, height: 300)
@@ -367,6 +423,35 @@ struct CanvasRasterExporterTests {
         // 扩展区宽 80pt（x≥400），间距 24：x=410 为格内底色，x=424 落在竖线上。
         #expect(sampleColor(in: exported, at: CGPoint(x: 410, y: 12)).isClose(to: .red))
         #expect(sampleColor(in: exported, at: CGPoint(x: 424, y: 12)).isClose(to: .lineBlue))
+    }
+
+    @Test func solidBackgroundExportUsesOnlyFillColorInExtensionArea() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let colors = PuzzleBackgroundColors(
+            fillColor: Color(red: 1, green: 0, blue: 0),
+            alternateColor: Color(red: 0, green: 1, blue: 0),
+            lineColor: Color(red: 0, green: 0, blue: 1)
+        )
+
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 480, height: 300),
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .solid,
+                backgroundColors: colors,
+                backgroundPatternSpacing: 8,
+                dots: [],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(sampleColor(in: exported, at: CGPoint(x: 410, y: 12)).isClose(to: .red))
+        #expect(sampleColor(in: exported, at: CGPoint(x: 424, y: 12)).isClose(to: .red))
+        #expect(sampleColor(in: exported, at: CGPoint(x: 440, y: 150)).isClose(to: .red))
     }
 
     @Test func customBackgroundPatternSpacingChangesStripeThickness() throws {

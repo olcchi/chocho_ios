@@ -11,9 +11,14 @@ import SwiftUI
 
 struct CanvasHeader: View {
     @Binding var selectedPhotoItem: PhotosPickerItem?
+    let hasCanvasImage: Bool
     let canDownload: Bool
     var isBusy = false
     let onDownload: () -> Void
+
+    nonisolated static func uploadActionTitle(hasCanvasImage: Bool) -> String {
+        hasCanvasImage ? "换图" : "上传"
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -31,7 +36,10 @@ struct CanvasHeader: View {
                 preferredItemEncoding: .current,
                 photoLibrary: CanvasPhotoImport.pickerPhotoLibrary
             ) {
-                CanvasActionLabel(title: "上传", iconAssetName: "public/upload")
+                CanvasActionLabel(
+                    title: Self.uploadActionTitle(hasCanvasImage: hasCanvasImage),
+                    iconAssetName: "public/upload"
+                )
             }
             .disabled(isBusy)
 

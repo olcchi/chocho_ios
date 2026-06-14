@@ -765,6 +765,8 @@ private struct BackgroundPanelControls: View {
     private var backgroundColorPickers: some View {
         HStack(spacing: 10) {
             switch backgroundStyle {
+            case .solid:
+                backgroundColorPicker(title: "颜色", color: backgroundColorBinding(\.fillColor))
             case .grid:
                 backgroundColorPicker(title: "底色", color: backgroundColorBinding(\.fillColor))
                 backgroundColorPicker(title: "网格线", color: backgroundColorBinding(\.lineColor))
@@ -818,19 +820,25 @@ private struct BackgroundPanelControls: View {
     }
 
     private var extensionSizeTitle: String {
-        extensionSide.isHorizontal ? "背景宽度" : "背景高度"
+        if extensionSide == .center {
+            return "背景边距"
+        }
+
+        return extensionSide.isHorizontal ? "背景宽度" : "背景高度"
     }
 
     private var backgroundPatternSpacingTitle: String {
         switch backgroundStyle {
+        case .solid:
+            return "图案间距"
         case .grid:
-            "方格大小"
+            return "方格大小"
         case .stripes:
-            "条纹粗细"
+            return "条纹粗细"
         case .polkaDots:
-            "圆点大小"
+            return "圆点大小"
         case .halftone:
-            "图案间距"
+            return "图案间距"
         }
     }
 

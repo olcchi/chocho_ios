@@ -95,24 +95,16 @@ extension BuiltInDotShape {
         let source = DotShapeSourceSpace(width: 24, height: 24, rect: rect)
         let path = UIBezierPath()
         [
-            CGRect(x: 11, y: 20, width: 2, height: 2),
-            CGRect(x: 9, y: 18, width: 2, height: 2),
-            CGRect(x: 13, y: 18, width: 2, height: 2),
-            CGRect(x: 7, y: 16, width: 2, height: 2),
-            CGRect(x: 15, y: 16, width: 2, height: 2),
-            CGRect(x: 5, y: 14, width: 2, height: 2),
-            CGRect(x: 17, y: 14, width: 2, height: 2),
-            CGRect(x: 3, y: 12, width: 2, height: 2),
-            CGRect(x: 19, y: 12, width: 2, height: 2),
-            CGRect(x: 1, y: 6, width: 2, height: 6),
-            CGRect(x: 21, y: 6, width: 2, height: 6),
-            CGRect(x: 11, y: 6, width: 2, height: 2),
-            CGRect(x: 3, y: 4, width: 2, height: 2),
-            CGRect(x: 9, y: 4, width: 2, height: 2),
-            CGRect(x: 13, y: 4, width: 2, height: 2),
-            CGRect(x: 19, y: 4, width: 2, height: 2),
             CGRect(x: 5, y: 2, width: 4, height: 2),
-            CGRect(x: 15, y: 2, width: 4, height: 2)
+            CGRect(x: 15, y: 2, width: 4, height: 2),
+            CGRect(x: 3, y: 4, width: 8, height: 2),
+            CGRect(x: 13, y: 4, width: 8, height: 2),
+            CGRect(x: 1, y: 6, width: 22, height: 6),
+            CGRect(x: 3, y: 12, width: 18, height: 2),
+            CGRect(x: 5, y: 14, width: 14, height: 2),
+            CGRect(x: 7, y: 16, width: 10, height: 2),
+            CGRect(x: 9, y: 18, width: 6, height: 2),
+            CGRect(x: 11, y: 20, width: 2, height: 2)
         ].forEach { path.append(UIBezierPath(rect: source.rect($0))) }
         return path
     }

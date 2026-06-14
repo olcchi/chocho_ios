@@ -151,6 +151,35 @@ struct PuzzleCanvasView: View {
         blinkTime: TimeInterval?
     ) -> some View {
         ZStack(alignment: .topLeading) {
+            halftoneAwareExtensionBackground(
+                photoFrameHeight: layout.backgroundPatternReferenceHeight,
+                extensionGridFrame: extensionGridFrame
+            )
+
+            if layout.extensionSide == .center {
+                PuzzleDotsCanvas(
+                    image: image,
+                    dots: dots,
+                    dotScale: dotScale,
+                    dotColor: dotColor,
+                    usesRandomDotColors: usesRandomDotColors,
+                    dotCharacterText: dotCharacterText,
+                    liveDotAnimation: liveDotAnimation,
+                    blinkTime: blinkTime,
+                    liveFrameImage: liveFrameImageForDots(blinkTime: blinkTime),
+                    backgroundStyle: backgroundStyle,
+                    backgroundColors: backgroundColors,
+                    backgroundPatternSpacing: backgroundPatternSpacing,
+                    photoFrame: referenceLocalPhotoFrame,
+                    layout: layout,
+                    centerIndexFilter: .background
+                )
+                .frame(
+                    width: referenceFrame.width,
+                    height: referenceFrame.height
+                )
+            }
+
             Image(uiImage: photoImage(for: blinkTime))
                 .resizable()
                 .interpolation(photoInterpolation)
@@ -162,11 +191,6 @@ struct PuzzleCanvasView: View {
                     x: referenceLocalPhotoFrame.midX,
                     y: referenceLocalPhotoFrame.midY
                 )
-
-            halftoneAwareExtensionBackground(
-                photoFrameHeight: referenceLocalPhotoFrame.height,
-                extensionGridFrame: extensionGridFrame
-            )
 
             PuzzleTraceCanvas(
                 tracePoints: tracePoints,
@@ -197,7 +221,8 @@ struct PuzzleCanvasView: View {
                 backgroundColors: backgroundColors,
                 backgroundPatternSpacing: backgroundPatternSpacing,
                 photoFrame: referenceLocalPhotoFrame,
-                layout: layout
+                layout: layout,
+                centerIndexFilter: layout.extensionSide == .center ? .photo : .all
             )
             .frame(
                 width: referenceFrame.width,
@@ -301,6 +326,8 @@ struct PuzzleCanvasView: View {
         displaySize: CGSize
     ) -> some View {
         switch backgroundStyle {
+        case .solid:
+            Color(backgroundColors.fillColor)
         case .grid:
             PuzzleGridCanvas(
                 photoFrameHeight: photoFrameHeight,
@@ -687,6 +714,7 @@ private struct PuzzleDotsCanvas: View {
     let backgroundPatternSpacing: Double
     let photoFrame: CGRect
     let layout: PuzzleCanvasLayoutResult
+    var centerIndexFilter: PuzzleDotCenterIndexFilter = .all
 
     var body: some View {
         dotsLayer(blinkTime: blinkTime)
@@ -698,10 +726,6 @@ private struct PuzzleDotsCanvas: View {
     private func dotsLayer(blinkTime: TimeInterval?) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(dots) { dot in
-                let size = DotSizeControl.displaySize(
-                    renderedScale: dot.size * dotScale * dot.displaySizeScale,
-                    photoFrameHeight: photoFrame.height
-                )
                 let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
                 let motion = DotMotionSample.sample(
                     dotID: dot.id,
@@ -710,17 +734,23 @@ private struct PuzzleDotsCanvas: View {
                 )
 
                 ForEach(Array(centers.enumerated()), id: \.offset) { centerIndex, center in
-                    Color.clear
-                        .frame(width: size, height: size)
-                        .overlay {
-                            dotImage(for: dot, centerIndex: centerIndex, size: size)
-                                .frame(width: size, height: size, alignment: .topLeading)
-                                .clipped()
-                        }
-                        .scaleEffect(CGFloat(motion.scale))
-                        .rotationEffect(.radians(motion.rotationRadians))
-                        .opacity(motion.opacity)
-                        .position(center)
+                    if centerIndexFilter.includes(centerIndex) {
+                        let size = DotSizeControl.displaySize(
+                            renderedScale: dot.size * dotScale * dot.displaySizeScale,
+                            photoFrameHeight: layout.dotReferenceHeight(forCenterIndex: centerIndex)
+                        )
+                        Color.clear
+                            .frame(width: size, height: size)
+                            .overlay {
+                                dotImage(for: dot, centerIndex: centerIndex, size: size)
+                                    .frame(width: size, height: size, alignment: .topLeading)
+                                    .clipped()
+                            }
+                            .scaleEffect(CGFloat(motion.scale))
+                            .rotationEffect(.radians(motion.rotationRadians))
+                            .opacity(motion.opacity)
+                            .position(center)
+                    }
                 }
             }
         }
@@ -815,6 +845,23 @@ private struct PuzzleDotsCanvas: View {
                 renderingMode: dot.usesTemplateColor ? .template : .original,
                 tintColor: dot.usesTemplateColor ? stickerColor : nil
             )
+        }
+    }
+}
+
+private enum PuzzleDotCenterIndexFilter {
+    case all
+    case photo
+    case background
+
+    func includes(_ centerIndex: Int) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .photo:
+            return centerIndex == 0
+        case .background:
+            return centerIndex != 0
         }
     }
 }
@@ -959,7 +1006,7 @@ private struct PuzzleDotCollageMirrorFill: View {
                 colors: backgroundColors,
                 patternSpacing: backgroundPatternSpacing,
                 extensionSize: extensionFrame.size,
-                photoFrameHeight: photoFrame.height
+                photoFrameHeight: layout.backgroundPatternReferenceHeight
             )
             .frame(width: extensionFrame.width, height: extensionFrame.height, alignment: .topLeading)
             .offset(x: offset.width, y: offset.height)
@@ -995,6 +1042,8 @@ private struct PuzzleDotCollageBackgroundFill: View {
     var body: some View {
         Group {
             switch style {
+            case .solid:
+                Color(colors.fillColor)
             case .grid:
                 Canvas { context, _ in
                     PuzzleBackgroundCanvasDrawing.fillBase(

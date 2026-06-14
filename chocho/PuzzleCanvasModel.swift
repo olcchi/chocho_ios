@@ -11,6 +11,7 @@ nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, 
     case bottom
     case left
     case right
+    case center
 
     var id: Self { self }
 
@@ -24,6 +25,8 @@ nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, 
             "在左"
         case .right:
             "在右"
+        case .center:
+            "中间"
         }
     }
 
@@ -31,13 +34,14 @@ nonisolated enum PuzzleCanvasExtensionSide: String, CaseIterable, Identifiable, 
         switch self {
         case .left, .right:
             true
-        case .top, .bottom:
+        case .top, .bottom, .center:
             false
         }
     }
 }
 
 nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equatable {
+    case solid
     case grid
     case stripes
     case polkaDots
@@ -47,6 +51,8 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
 
     var title: String {
         switch self {
+        case .solid:
+            "纯色"
         case .grid:
             "方格"
         case .stripes:
@@ -62,7 +68,7 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
         switch self {
         case .grid, .stripes, .polkaDots:
             true
-        case .halftone:
+        case .solid, .halftone:
             false
         }
     }
@@ -259,6 +265,22 @@ nonisolated struct PuzzleCanvasLayoutResult: Equatable {
     /// 参考系内的扩展背景网格区域。
     let referenceLocalExtensionGridFrame: CGRect
 
+    var backgroundPatternReferenceHeight: CGFloat {
+        if extensionSide == .center {
+            return referenceLocalExtensionGridFrame.height
+        }
+
+        return referenceLocalPhotoFrame.height
+    }
+
+    func dotReferenceHeight(forCenterIndex centerIndex: Int) -> CGFloat {
+        if extensionSide == .center, centerIndex == 0 {
+            return referenceLocalPhotoFrame.height
+        }
+
+        return backgroundPatternReferenceHeight
+    }
+
     var visibleComposedFrame: CGRect {
         switch extensionSide {
         case .right:
@@ -289,6 +311,8 @@ nonisolated struct PuzzleCanvasLayoutResult: Equatable {
                 width: referenceComposedFrame.width,
                 height: composedSize.height
             )
+        case .center:
+            referenceComposedFrame
         }
     }
 
@@ -302,6 +326,8 @@ nonisolated struct PuzzleCanvasLayoutResult: Equatable {
             .topLeading
         case .top:
             .bottomLeading
+        case .center:
+            .topLeading
         }
     }
 
@@ -386,6 +412,7 @@ enum PuzzleCanvasTracePath {
 /// 根据扩展比例与方向计算照片框、扩展条与参考坐标系（预览与 `CanvasRasterExporter` 共用）。
 nonisolated enum PuzzleCanvasLayout {
     static let maxExtensionRatio: CGFloat = 1
+    static let minimumCenteredPhotoScale: CGFloat = 0.05
 
     static func layout(
         imageSize: CGSize,
@@ -408,6 +435,14 @@ nonisolated enum PuzzleCanvasLayout {
                 referenceComposedFrame: .zero,
                 referenceLocalPhotoFrame: .zero,
                 referenceLocalExtensionGridFrame: .zero
+            )
+        }
+
+        if extensionSide == .center {
+            return centeredLayout(
+                imageSize: imageSize,
+                availableSize: availableSize,
+                extensionRatio: clampedRatio
             )
         }
 
@@ -521,7 +556,57 @@ nonisolated enum PuzzleCanvasLayout {
                 width: photoSize.width,
                 height: visibleExtensionLength
             )
+        case .center:
+            CGRect(origin: photoOrigin, size: photoSize)
         }
+    }
+
+    private static func centeredLayout(
+        imageSize: CGSize,
+        availableSize: CGSize,
+        extensionRatio: CGFloat
+    ) -> PuzzleCanvasLayoutResult {
+        let backgroundScale = min(
+            availableSize.width / imageSize.width,
+            availableSize.height / imageSize.height
+        )
+        let backgroundSize = CGSize(
+            width: imageSize.width * backgroundScale,
+            height: imageSize.height * backgroundScale
+        )
+        let backgroundOrigin = CGPoint(
+            x: (availableSize.width - backgroundSize.width) / 2,
+            y: (availableSize.height - backgroundSize.height) / 2
+        )
+        let photoScale = max(1 - extensionRatio, minimumCenteredPhotoScale)
+        let photoSize = CGSize(
+            width: backgroundSize.width * photoScale,
+            height: backgroundSize.height * photoScale
+        )
+        let photoOrigin = CGPoint(
+            x: backgroundOrigin.x + (backgroundSize.width - photoSize.width) / 2,
+            y: backgroundOrigin.y + (backgroundSize.height - photoSize.height) / 2
+        )
+        let backgroundFrame = CGRect(origin: backgroundOrigin, size: backgroundSize)
+        let localPhotoFrame = CGRect(
+            origin: CGPoint(
+                x: (backgroundSize.width - photoSize.width) / 2,
+                y: (backgroundSize.height - photoSize.height) / 2
+            ),
+            size: photoSize
+        )
+        let localBackgroundFrame = CGRect(origin: .zero, size: backgroundSize)
+
+        return PuzzleCanvasLayoutResult(
+            extensionRatio: extensionRatio,
+            extensionSide: .center,
+            photoFrame: CGRect(origin: photoOrigin, size: photoSize),
+            extensionFrame: backgroundFrame,
+            composedSize: backgroundSize,
+            referenceComposedFrame: backgroundFrame,
+            referenceLocalPhotoFrame: localPhotoFrame,
+            referenceLocalExtensionGridFrame: localBackgroundFrame
+        )
     }
 }
 
@@ -763,6 +848,11 @@ nonisolated enum PuzzleCanvasCoordinate {
                 x: (unscaledLocation.x - extensionFrame.minX) / photoFrame.width,
                 y: (extensionFrame.maxY - unscaledLocation.y) / photoFrame.height
             )
+        case .center:
+            return CGPoint(
+                x: (unscaledLocation.x - extensionFrame.minX) / extensionFrame.width,
+                y: (unscaledLocation.y - extensionFrame.minY) / extensionFrame.height
+            )
         }
     }
 
@@ -834,6 +924,13 @@ nonisolated enum PuzzleCanvasCoordinate {
                     x: tracePoint.point.x,
                     y: extensionSpan + tracePoint.point.y * photoSpan
                 )
+            case .center:
+                let photoScale = max(1 - clampedRatio, PuzzleCanvasLayout.minimumCenteredPhotoScale)
+                let inset = (1 - photoScale) / 2
+                return CGPoint(
+                    x: inset + tracePoint.point.x * photoScale,
+                    y: inset + tracePoint.point.y * photoScale
+                )
             }
         case .background:
             guard clampedRatio > 0 else { return nil }
@@ -863,6 +960,10 @@ nonisolated enum PuzzleCanvasCoordinate {
                     x: tracePoint.point.x,
                     y: extensionSpan - tracePoint.point.y / (1 + clampedRatio)
                 )
+            case .center:
+                guard 0...1 ~= tracePoint.point.x,
+                      0...1 ~= tracePoint.point.y else { return nil }
+                return tracePoint.point
             }
         }
     }
@@ -895,6 +996,8 @@ nonisolated enum PuzzleCanvasCoordinate {
             return CGPoint(x: 1 - background.x, y: background.y)
         case .top:
             return CGPoint(x: background.x, y: 1 - background.y)
+        case .center:
+            return background
         }
     }
 
@@ -906,7 +1009,10 @@ nonisolated enum PuzzleCanvasCoordinate {
         dotCentersInReferenceFrame(
             position: position,
             referenceFrame: CGRect(origin: .zero, size: layout.referenceComposedFrame.size),
-            extensionSide: layout.extensionSide
+            extensionSide: layout.extensionSide,
+            maxExtensionRatio: layout.extensionSide == .center
+                ? layout.extensionRatio
+                : PuzzleCanvasLayout.maxExtensionRatio
         )
     }
 
@@ -986,6 +1092,19 @@ nonisolated enum PuzzleCanvasCoordinate {
                 width: referenceFrame.width,
                 height: referenceFrame.height * extensionSpan
             )
+        case .center:
+            let photoScale = max(1 - clampedMaxRatio, PuzzleCanvasLayout.minimumCenteredPhotoScale)
+            let photoSize = CGSize(
+                width: referenceFrame.width * photoScale,
+                height: referenceFrame.height * photoScale
+            )
+            photoFrame = CGRect(
+                x: referenceFrame.midX - photoSize.width / 2,
+                y: referenceFrame.midY - photoSize.height / 2,
+                width: photoSize.width,
+                height: photoSize.height
+            )
+            mirrorFrame = referenceFrame
         }
 
         var centers = [
@@ -1348,6 +1467,8 @@ nonisolated enum PuzzleDotCollageColor {
                 x: position.x,
                 y: position.y / divisor
             )
+        case .center:
+            return position
         }
     }
 
@@ -1433,7 +1554,7 @@ nonisolated enum PuzzleDotCollageColor {
                 colors: backgroundColors,
                 patternSpacing: backgroundPatternSpacing,
                 extensionSize: extensionFrame.size,
-                photoFrameHeight: layout.referenceLocalPhotoFrame.height,
+                photoFrameHeight: layout.backgroundPatternReferenceHeight,
                 extensionRatio: layout.extensionRatio,
                 extensionSide: layout.extensionSide,
                 sourceImage: image
@@ -1501,6 +1622,8 @@ nonisolated enum PuzzleDotCollageColor {
         let lineWidth = PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: photoFrameHeight)
 
         switch style {
+        case .solid:
+            return colors.fillColor
         case .grid:
             let nearestVerticalDistance = distanceToGridLine(
                 coordinate: point.x,

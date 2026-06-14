@@ -21,22 +21,9 @@
 		753DD5C42FC00A5100CCB06F /* chochoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = chochoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		758E33FE2FDBA81000DC6468 /* Exceptions for "chocho" folder in "chocho" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 753DD5A82FC009C000CCB06F /* chocho */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		753DD5AB2FC009C000CCB06F /* chocho */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				758E33FE2FDBA81000DC6468 /* Exceptions for "chocho" folder in "chocho" target */,
-			);
 			path = chocho;
 			sourceTree = "<group>";
 		};
@@ -342,7 +329,6 @@
 				DEVELOPMENT_TEAM = VPNZ99CB35;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = chocho/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = chocho;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "用于将你导出的图片、视频或 Live Photo 保存到相册。";
@@ -384,7 +370,6 @@
 				DEVELOPMENT_TEAM = VPNZ99CB35;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = chocho/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = chocho;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "用于将你导出的图片、视频或 Live Photo 保存到相册。";

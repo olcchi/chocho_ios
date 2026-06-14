@@ -16,6 +16,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     // MARK: 底部面板与波点编辑状态
+    @State private var hasEnteredHome = false
     @State private var selectedTab: PanelTab = .dots
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var canvasImage: UIImage?
@@ -71,7 +72,17 @@ struct ContentView: View {
     @State private var pendingDraftSave: Task<Void, Never>?
 
     var body: some View {
-        applyLifecycleModifiers(to: rootLayout)
+        if hasEnteredHome {
+            applyLifecycleModifiers(to: rootLayout)
+                .transition(.opacity)
+        } else {
+            HomeLandingView {
+                withAnimation(.easeInOut(duration: 0.32)) {
+                    hasEnteredHome = true
+                }
+            }
+            .transition(.opacity)
+        }
     }
 
     private var rootLayout: some View {
@@ -90,6 +101,7 @@ struct ContentView: View {
 
                     CanvasHeader(
                         selectedPhotoItem: $selectedPhotoItem,
+                        hasCanvasImage: canvasImage != nil,
                         canDownload: canvasImage != nil,
                         isBusy: isPhotoLoading || isExporting,
                         onDownload: shareCanvas
@@ -863,6 +875,8 @@ struct ContentView: View {
                 width: sourceWidth,
                 height: sourceHeight * (1 + clampedRatio)
             )
+        case .center:
+            return CGSize(width: sourceWidth, height: sourceHeight)
         }
     }
 

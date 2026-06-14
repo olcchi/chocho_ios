@@ -55,11 +55,31 @@ nonisolated enum CanvasRasterExporter {
                 style: backgroundStyle,
                 colors: backgroundColors,
                 patternSpacing: backgroundPatternSpacing,
-                photoFrameHeight: layout.photoFrame.height,
+                photoFrameHeight: layout.backgroundPatternReferenceHeight,
                 extensionRatio: layout.extensionRatio,
                 extensionSide: layout.extensionSide,
                 sourceImage: image
             )
+
+            if layout.extensionSide == .center {
+                drawDots(
+                    in: context,
+                    layout: layout,
+                    image: image,
+                    liveFrameImage: photoFrameImage,
+                    backgroundStyle: backgroundStyle,
+                    backgroundColors: backgroundColors,
+                    backgroundPatternSpacing: backgroundPatternSpacing,
+                    dots: dots,
+                    dotScale: dotScale,
+                    dotColor: dotColor,
+                    usesRandomDotColors: usesRandomDotColors,
+                    dotCharacterText: dotCharacterText,
+                    liveDotAnimation: liveDotAnimation,
+                    blinkTime: blinkTime,
+                    centerIndexFilter: .background
+                )
+            }
 
             let displayPhoto = photoFrameImage ?? image
             displayPhoto.draw(in: layout.photoFrame)
@@ -78,7 +98,8 @@ nonisolated enum CanvasRasterExporter {
                 usesRandomDotColors: usesRandomDotColors,
                 dotCharacterText: dotCharacterText,
                 liveDotAnimation: liveDotAnimation,
-                blinkTime: blinkTime
+                blinkTime: blinkTime,
+                centerIndexFilter: layout.extensionSide == .center ? .photo : .all
             )
 
             context.restoreGState()
@@ -102,6 +123,9 @@ nonisolated enum CanvasRasterExporter {
         context.translateBy(x: rect.minX, y: rect.minY)
 
         switch style {
+        case .solid:
+            context.setFillColor(UIColor(colors.fillColor).cgColor)
+            context.fill(CGRect(origin: .zero, size: rect.size))
         case .grid:
             context.setFillColor(UIColor(colors.fillColor).cgColor)
             context.fill(CGRect(origin: .zero, size: rect.size))
@@ -237,6 +261,23 @@ nonisolated enum CanvasRasterExporter {
         }
     }
 
+    private enum DotCenterIndexFilter {
+        case all
+        case photo
+        case background
+
+        func includes(_ centerIndex: Int) -> Bool {
+            switch self {
+            case .all:
+                return true
+            case .photo:
+                return centerIndex == 0
+            case .background:
+                return centerIndex != 0
+            }
+        }
+    }
+
     private nonisolated static func drawDots(
         in context: CGContext,
         layout: PuzzleCanvasLayoutResult,
@@ -251,25 +292,28 @@ nonisolated enum CanvasRasterExporter {
         usesRandomDotColors: Bool,
         dotCharacterText: String,
         liveDotAnimation: LiveDotAnimation,
-        blinkTime: TimeInterval?
+        blinkTime: TimeInterval?,
+        centerIndexFilter: DotCenterIndexFilter = .all
     ) {
         let referenceOrigin = layout.referenceComposedFrame.origin
-        let photoFrameHeight = layout.referenceLocalPhotoFrame.height
 
         for dot in dots {
-            let baseDotSize = DotSizeControl.displaySize(
-                renderedScale: dot.size * dotScale * dot.displaySizeScale,
-                photoFrameHeight: photoFrameHeight
-            )
             let motion = DotMotionSample.sample(
                 dotID: dot.id,
                 liveDotAnimation: liveDotAnimation,
                 time: blinkTime
             )
-            let dotSize = baseDotSize * CGFloat(motion.scale)
             let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
 
             for (centerIndex, center) in centers.enumerated() {
+                guard centerIndexFilter.includes(centerIndex) else { continue }
+
+                let photoFrameHeight = layout.dotReferenceHeight(forCenterIndex: centerIndex)
+                let baseDotSize = DotSizeControl.displaySize(
+                    renderedScale: dot.size * dotScale * dot.displaySizeScale,
+                    photoFrameHeight: photoFrameHeight
+                )
+                let dotSize = baseDotSize * CGFloat(motion.scale)
                 let origin = CGPoint(
                     x: referenceOrigin.x + center.x - dotSize / 2,
                     y: referenceOrigin.y + center.y - dotSize / 2

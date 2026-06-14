@@ -17,8 +17,17 @@ struct PuzzleCanvasModelTests {
         #expect(PuzzleBackgroundStyle.polkaDots.title == "圆点")
     }
 
+    @Test func solidBackgroundUsesSolidTitleAndNoPatternSpacing() {
+        #expect(PuzzleBackgroundStyle.solid.title == "纯色")
+        #expect(PuzzleBackgroundStyle.solid.supportsPatternSpacing == false)
+    }
+
     @Test func defaultExtensionRatioIsFifteenPercent() {
         #expect(PuzzleCanvasDefaults.defaultExtensionRatio == 0.15)
+    }
+
+    @Test func centerBackgroundPositionUsesCenterTitle() {
+        #expect(PuzzleCanvasExtensionSide.center.title == "中间")
     }
 
     @Test func zeroUUIDAnimationSamplesAreStableAcrossLaunches() {
@@ -83,6 +92,11 @@ struct PuzzleCanvasModelTests {
         #expect(DrawPanelTraceButtonLayout.clearTraceButtonWeight == 1)
     }
 
+    @Test func canvasHeaderUploadTitleChangesWhenCanvasHasImage() {
+        #expect(CanvasHeader.uploadActionTitle(hasCanvasImage: false) == "上传")
+        #expect(CanvasHeader.uploadActionTitle(hasCanvasImage: true) == "换图")
+    }
+
     @Test func panelTrackingOffsetFollowsBottomInsetChanges() {
         let availableSize = CGSize(width: 600, height: 800)
         let layout = PuzzleCanvasLayout.layout(
@@ -126,6 +140,75 @@ struct PuzzleCanvasModelTests {
         #expect(extended.composedSize.width > baseline.composedSize.width)
         #expect(extended.extensionFrame.width == baseline.photoFrame.width * 0.8)
         #expect(extended.referenceComposedFrame == baseline.referenceComposedFrame)
+    }
+
+    @Test func centerLayoutOverlaysPhotoOnLargerBackground() {
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 300),
+            extensionRatio: 0.15,
+            extensionSide: .center
+        )
+
+        #expect(layout.extensionRatio == 0.15)
+        #expect(layout.extensionFrame == CGRect(x: 0, y: 0, width: 600, height: 300))
+        #expect(layout.composedSize == CGSize(width: 600, height: 300))
+        #expect(layout.visibleComposedFrame == layout.referenceComposedFrame)
+        #expect(layout.referenceLocalExtensionGridFrame == CGRect(x: 0, y: 0, width: 600, height: 300))
+        #expect(layout.photoFrame.width == 510)
+        #expect(layout.photoFrame.height == 255)
+        #expect(layout.photoFrame.midX == layout.extensionFrame.midX)
+        #expect(layout.photoFrame.midY == layout.extensionFrame.midY)
+    }
+
+    @Test func centerBackgroundPatternScaleDoesNotChangeWithMargin() {
+        let baseline = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 300),
+            extensionRatio: 0.15,
+            extensionSide: .center
+        )
+        let widerMargin = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 300),
+            extensionRatio: 0.4,
+            extensionSide: .center
+        )
+
+        let baselineSpacing = PuzzleBackgroundGridMetrics.spacing(
+            controlValue: PuzzleBackgroundPatternSpacing.defaultControlValue,
+            photoFrameHeight: baseline.backgroundPatternReferenceHeight
+        )
+        let widerMarginSpacing = PuzzleBackgroundGridMetrics.spacing(
+            controlValue: PuzzleBackgroundPatternSpacing.defaultControlValue,
+            photoFrameHeight: widerMargin.backgroundPatternReferenceHeight
+        )
+
+        #expect(isApproximatelyEqual(baselineSpacing, widerMarginSpacing))
+    }
+
+    @Test func centerDotScaleUsesPhotoForPhotoDotsAndBackgroundForBackgroundDots() {
+        let baseline = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 300),
+            extensionRatio: 0.15,
+            extensionSide: .center
+        )
+        let widerMargin = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 300),
+            extensionRatio: 0.4,
+            extensionSide: .center
+        )
+
+        #expect(
+            baseline.dotReferenceHeight(forCenterIndex: 0)
+            > widerMargin.dotReferenceHeight(forCenterIndex: 0)
+        )
+        #expect(
+            baseline.dotReferenceHeight(forCenterIndex: 1)
+            == widerMargin.dotReferenceHeight(forCenterIndex: 1)
+        )
     }
 
     @Test func viewportResetFitsComposedWidthToNinetyPercentOfScreen() {

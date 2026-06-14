@@ -31,6 +31,8 @@ nonisolated enum PuzzleHalftoneBackgroundMetrics {
             return CGSize(width: max(1, width * ratio), height: height)
         case .top, .bottom:
             return CGSize(width: width, height: max(1, height * ratio))
+        case .center:
+            return CGSize(width: width, height: height)
         }
     }
 
@@ -64,6 +66,8 @@ nonisolated enum PuzzleHalftoneBackgroundMetrics {
             return CGRect(x: 0, y: 0, width: 1, height: fraction)
         case .top:
             return CGRect(x: 0, y: 1 - fraction, width: 1, height: fraction)
+        case .center:
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
         }
     }
 
@@ -98,6 +102,8 @@ nonisolated enum PuzzleHalftoneBackgroundMetrics {
             .top
         case .top:
             .bottom
+        case .center:
+            .center
         }
     }
 
