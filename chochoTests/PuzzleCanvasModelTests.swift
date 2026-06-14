@@ -211,6 +211,43 @@ struct PuzzleCanvasModelTests {
         )
     }
 
+    @Test func centerTracePhotoPointRendersBackInsidePhotoFrame() throws {
+        let availableSize = CGSize(width: 700, height: 300)
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: availableSize,
+            extensionRatio: 0.4,
+            extensionSide: .center
+        )
+        let localPoint = CGPoint(x: 210, y: 150)
+        let touchPoint = CGPoint(
+            x: layout.referenceComposedFrame.minX + localPoint.x,
+            y: layout.referenceComposedFrame.minY + localPoint.y
+        )
+        let tracePoint = try #require(
+            PuzzleCanvasCoordinate.canvasLocation(
+                for: touchPoint,
+                availableSize: availableSize,
+                layout: layout,
+                scale: 1,
+                offset: .zero
+            )
+        )
+        let displayPoint = try #require(
+            PuzzleCanvasCoordinate.composedCanvasPoint(
+                for: tracePoint,
+                in: layout
+            )
+        )
+
+        #expect(tracePoint.side == .photo)
+        #expect(isApproximatelyEqual(tracePoint.point.x, 0.25))
+        #expect(isApproximatelyEqual(tracePoint.point.y, 0.5))
+        #expect(isApproximatelyEqual(displayPoint.x, localPoint.x))
+        #expect(isApproximatelyEqual(displayPoint.y, localPoint.y))
+        #expect(layout.referenceLocalPhotoFrame.contains(displayPoint))
+    }
+
     @Test func viewportResetFitsComposedWidthToNinetyPercentOfScreen() {
         let availableSize = CGSize(width: 600, height: 240)
         let layout = PuzzleCanvasLayout.layout(

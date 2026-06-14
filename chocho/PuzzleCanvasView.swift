@@ -194,8 +194,7 @@ struct PuzzleCanvasView: View {
 
             PuzzleTraceCanvas(
                 tracePoints: tracePoints,
-                canvasSize: referenceFrame.size,
-                extensionSide: extensionSide
+                layout: layout
             )
             .frame(
                 width: referenceFrame.width,
@@ -1096,16 +1095,14 @@ private struct PuzzleDotCollageBackgroundFill: View {
 
 private struct PuzzleTraceCanvas: View {
     let tracePoints: [PuzzleCanvasTracePoint]
-    let canvasSize: CGSize
-    let extensionSide: PuzzleCanvasExtensionSide
+    let layout: PuzzleCanvasLayoutResult
 
     var body: some View {
         Canvas { context, _ in
             let displayPoints: [PuzzleTraceDisplayPoint] = tracePoints.compactMap { tracePoint in
                 guard let point = PuzzleCanvasCoordinate.composedCanvasPoint(
                     for: tracePoint,
-                    canvasSize: canvasSize,
-                    extensionSide: extensionSide
+                    in: layout
                 ) else {
                     return nil
                 }

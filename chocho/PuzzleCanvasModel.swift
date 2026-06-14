@@ -1148,6 +1148,64 @@ nonisolated enum PuzzleCanvasCoordinate {
         )
     }
 
+    static func composedCanvasPoint(
+        for tracePoint: PuzzleCanvasTracePoint,
+        in layout: PuzzleCanvasLayoutResult
+    ) -> CGPoint? {
+        switch tracePoint.side {
+        case .photo:
+            let frame = layout.referenceLocalPhotoFrame
+            guard frame.width > 0, frame.height > 0 else { return nil }
+
+            return CGPoint(
+                x: frame.minX + tracePoint.point.x * frame.width,
+                y: frame.minY + tracePoint.point.y * frame.height
+            )
+        case .background:
+            return composedBackgroundCanvasPoint(
+                tracePoint.point,
+                in: layout
+            )
+        }
+    }
+
+    private static func composedBackgroundCanvasPoint(
+        _ point: CGPoint,
+        in layout: PuzzleCanvasLayoutResult
+    ) -> CGPoint? {
+        let frame = layout.referenceLocalExtensionGridFrame
+        let photoFrame = layout.referenceLocalPhotoFrame
+        guard frame.width > 0,
+              frame.height > 0,
+              photoFrame.width > 0,
+              photoFrame.height > 0 else {
+            return nil
+        }
+
+        switch layout.extensionSide {
+        case .right, .bottom:
+            return CGPoint(
+                x: frame.minX + point.x * photoFrame.width,
+                y: frame.minY + point.y * photoFrame.height
+            )
+        case .left:
+            return CGPoint(
+                x: frame.maxX - point.x * photoFrame.width,
+                y: frame.minY + point.y * photoFrame.height
+            )
+        case .top:
+            return CGPoint(
+                x: frame.minX + point.x * photoFrame.width,
+                y: frame.maxY - point.y * photoFrame.height
+            )
+        case .center:
+            return CGPoint(
+                x: frame.minX + point.x * frame.width,
+                y: frame.minY + point.y * frame.height
+            )
+        }
+    }
+
     /// Maps a normalized dot position to a fixed center in `composedFrame`.
     /// Size changes scale about this center; overflow is clipped by the canvas.
     static func dotCenter(
