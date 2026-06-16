@@ -6,6 +6,8 @@ nonisolated enum HomeSplashScreen {
     static let iconSize: CGFloat = 112
     static let minimumDisplayDuration: TimeInterval = 0.35
     static let maximumWaitDuration: TimeInterval = 1.6
+    static let exitAnimationDuration: TimeInterval = 0.34
+    static let exitScale: CGFloat = 1.18
 
     static func advanceDelay(
         isStartupWorkReady: Bool,
@@ -25,6 +27,7 @@ struct HomeLandingView: View {
     let onEnter: () -> Void
     @State private var startTime = Date()
     @State private var hasAdvanced = false
+    @State private var isExiting = false
 
     var body: some View {
         ZStack {
@@ -37,6 +40,9 @@ struct HomeLandingView: View {
                 .frame(width: HomeSplashScreen.iconSize, height: HomeSplashScreen.iconSize)
                 .accessibilityLabel("chocho")
         }
+        .compositingGroup()
+        .scaleEffect(isExiting ? HomeSplashScreen.exitScale : 1)
+        .opacity(isExiting ? 0 : 1)
         .task(id: isStartupWorkReady) {
             let elapsedTime = Date().timeIntervalSince(startTime)
             let delay = HomeSplashScreen.advanceDelay(
@@ -45,14 +51,21 @@ struct HomeLandingView: View {
             )
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
-            advanceOnce()
+            await advanceOnce()
         }
     }
 
     @MainActor
-    private func advanceOnce() {
+    private func advanceOnce() async {
         guard !hasAdvanced else { return }
         hasAdvanced = true
+
+        withAnimation(.easeInOut(duration: HomeSplashScreen.exitAnimationDuration)) {
+            isExiting = true
+        }
+
+        try? await Task.sleep(for: .seconds(HomeSplashScreen.exitAnimationDuration))
+        guard !Task.isCancelled else { return }
         onEnter()
     }
 }
