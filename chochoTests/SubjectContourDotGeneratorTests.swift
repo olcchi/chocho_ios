@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Testing
 import UIKit
 @testable import chocho
@@ -112,6 +113,58 @@ struct SubjectContourDotGeneratorTests {
 
         #expect(firstPositions == secondPositions)
     }
+
+    @Test func generatorUsesMaskProviderAndCurrentDotShape() async throws {
+        let mask = SubjectMask.rectangle(width: 10, height: 10, x: 3, y: 3, width: 4, height: 4)
+        let provider = FakeSubjectMaskProvider(mask: mask)
+        let generator = SubjectContourDotGenerator(maskProvider: provider)
+        let image = UIImage()
+
+        let dots = try await generator.dots(
+            for: image,
+            count: 5,
+            shapeAssetName: "雪花"
+        )
+
+        #expect(dots.count == 5)
+        #expect(dots.allSatisfy { $0.shapeAssetName == "雪花" })
+    }
+
+    @Test func subjectMaskReadsOneComponent8PixelBuffer() throws {
+        let pixelBuffer = try CVPixelBuffer.makeOneComponent8(
+            width: 3,
+            height: 2,
+            values: [
+                0, 1, 255,
+                8, 0, 16
+            ]
+        )
+
+        let mask = SubjectMask(pixelBuffer: pixelBuffer)
+
+        #expect(mask == SubjectMask(
+            width: 3,
+            height: 2,
+            pixels: [
+                false, true, true,
+                true, false, true
+            ]
+        ))
+    }
+
+    @Test func subjectMaskRejectsUnsupportedPixelBufferFormat() throws {
+        let pixelBuffer = try CVPixelBuffer.makeBGRA(width: 2, height: 2)
+
+        #expect(SubjectMask(pixelBuffer: pixelBuffer) == nil)
+    }
+}
+
+private struct FakeSubjectMaskProvider: SubjectMaskProviding {
+    let mask: SubjectMask
+
+    func subjectMask(for image: UIImage) async throws -> SubjectMask {
+        mask
+    }
 }
 
 private extension SubjectMask {
@@ -123,5 +176,80 @@ private extension SubjectMask {
             }
         }
         return SubjectMask(width: width, height: height, pixels: pixels)
+    }
+}
+
+private enum PixelBufferTestError: Error {
+    case createFailed(CVReturn)
+    case missingBaseAddress
+}
+
+private extension CVPixelBuffer {
+    static func makeOneComponent8(width: Int, height: Int, values: [UInt8]) throws -> CVPixelBuffer {
+        var pixelBuffer: CVPixelBuffer?
+        let result = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_OneComponent8,
+            nil,
+            &pixelBuffer
+        )
+        guard result == kCVReturnSuccess, let pixelBuffer else {
+            throw PixelBufferTestError.createFailed(result)
+        }
+        try pixelBuffer.writeBytes(bytesPerPixel: 1) { bytes, bytesPerRow in
+            for row in 0..<height {
+                for column in 0..<width {
+                    bytes[row * bytesPerRow + column] = values[row * width + column]
+                }
+            }
+        }
+        return pixelBuffer
+    }
+
+    static func makeBGRA(width: Int, height: Int) throws -> CVPixelBuffer {
+        var pixelBuffer: CVPixelBuffer?
+        let result = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_32BGRA,
+            nil,
+            &pixelBuffer
+        )
+        guard result == kCVReturnSuccess, let pixelBuffer else {
+            throw PixelBufferTestError.createFailed(result)
+        }
+        try pixelBuffer.writeBytes(bytesPerPixel: 4) { bytes, bytesPerRow in
+            for row in 0..<height {
+                for column in 0..<width {
+                    let offset = row * bytesPerRow + column * 4
+                    bytes[offset] = 255
+                    bytes[offset + 1] = 128
+                    bytes[offset + 2] = 64
+                    bytes[offset + 3] = 255
+                }
+            }
+        }
+        return pixelBuffer
+    }
+
+    private func writeBytes(
+        bytesPerPixel: Int,
+        _ write: (UnsafeMutablePointer<UInt8>, Int) -> Void
+    ) throws {
+        CVPixelBufferLockBaseAddress(self, [])
+        defer { CVPixelBufferUnlockBaseAddress(self, []) }
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(self) else {
+            throw PixelBufferTestError.missingBaseAddress
+        }
+        let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(self)
+        guard bytesPerRow >= CVPixelBufferGetWidth(self) * bytesPerPixel else {
+            throw PixelBufferTestError.missingBaseAddress
+        }
+        write(bytes, bytesPerRow)
     }
 }

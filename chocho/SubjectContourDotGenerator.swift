@@ -1,6 +1,9 @@
 import CoreGraphics
+import ImageIO
+import UIKit
+import Vision
 
-nonisolated struct SubjectMask: Equatable {
+nonisolated struct SubjectMask: Equatable, Sendable {
     let width: Int
     let height: Int
     let pixels: [Bool]
@@ -24,6 +27,76 @@ nonisolated struct SeededRandomNumberGenerator: RandomNumberGenerator {
         value = (value ^ (value >> 30)) &* 0xbf58476d1ce4e5b9
         value = (value ^ (value >> 27)) &* 0x94d049bb133111eb
         return value ^ (value >> 31)
+    }
+}
+
+enum SubjectContourDotGenerationError: Error, Equatable {
+    case unsupported
+    case missingImage
+    case noSubject
+}
+
+protocol SubjectMaskProviding: Sendable {
+    func subjectMask(for image: UIImage) async throws -> SubjectMask
+}
+
+struct SubjectContourDotGenerator: Sendable {
+    let maskProvider: any SubjectMaskProviding
+
+    init(maskProvider: any SubjectMaskProviding = VisionSubjectMaskProvider()) {
+        self.maskProvider = maskProvider
+    }
+
+    func dots(
+        for image: UIImage,
+        count: Int,
+        shapeAssetName: String
+    ) async throws -> [PuzzleDot] {
+        let mask = try await maskProvider.subjectMask(for: image)
+        var random = SeededRandomNumberGenerator(seed: SubjectContourDotSeed.seed(for: image))
+        let positions = SubjectContourSampler.positions(in: mask, count: count, using: &random)
+        guard !positions.isEmpty else { throw SubjectContourDotGenerationError.noSubject }
+        return positions.enumerated().map { index, position in
+            PuzzleDotFactory.makeDot(position: position, index: index, shapeAssetName: shapeAssetName)
+        }
+    }
+}
+
+private enum SubjectContourDotSeed {
+    static func seed(for image: UIImage) -> UInt64 {
+        let width = UInt64(max(Int(image.size.width.rounded()), 1))
+        let height = UInt64(max(Int(image.size.height.rounded()), 1))
+        return width &* 1_000_003 &+ height
+    }
+}
+
+struct VisionSubjectMaskProvider: SubjectMaskProviding {
+    func subjectMask(for image: UIImage) async throws -> SubjectMask {
+        guard #available(iOS 17.0, *) else {
+            throw SubjectContourDotGenerationError.unsupported
+        }
+        guard let cgImage = image.cgImage else {
+            throw SubjectContourDotGenerationError.missingImage
+        }
+
+        let orientation = image.cgImagePropertyOrientation
+        return try await Task.detached(priority: .userInitiated) {
+            let request = VNGenerateForegroundInstanceMaskRequest()
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation)
+            try Task.checkCancellation()
+            try handler.perform([request])
+            try Task.checkCancellation()
+            guard let observation = request.results?.first else {
+                throw SubjectContourDotGenerationError.noSubject
+            }
+            try Task.checkCancellation()
+            let pixelBuffer = try observation.generateScaledMaskForImage(forInstances: observation.allInstances, from: handler)
+            try Task.checkCancellation()
+            guard let mask = SubjectMask(pixelBuffer: pixelBuffer) else {
+                throw SubjectContourDotGenerationError.noSubject
+            }
+            return mask
+        }.value
     }
 }
 
@@ -105,5 +178,54 @@ nonisolated enum SubjectContourSampler {
             x: min(max(point.x + dx / length * offset, 0), 1),
             y: min(max(point.y + dy / length * offset, 0), 1)
         )
+    }
+}
+
+extension SubjectMask {
+    nonisolated init?(pixelBuffer: CVPixelBuffer) {
+        guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_OneComponent8,
+              !CVPixelBufferIsPlanar(pixelBuffer) else {
+            return nil
+        }
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        guard width > 0, height > 0, bytesPerRow >= width else {
+            return nil
+        }
+
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+            return nil
+        }
+
+        let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+        var pixels: [Bool] = []
+        pixels.reserveCapacity(width * height)
+        for row in 0..<height {
+            for column in 0..<width {
+                pixels.append(bytes[row * bytesPerRow + column] > 0)
+            }
+        }
+
+        self.init(width: width, height: height, pixels: pixels)
+    }
+}
+
+private extension UIImage {
+    var cgImagePropertyOrientation: CGImagePropertyOrientation {
+        switch imageOrientation {
+        case .up: return .up
+        case .down: return .down
+        case .left: return .left
+        case .right: return .right
+        case .upMirrored: return .upMirrored
+        case .downMirrored: return .downMirrored
+        case .leftMirrored: return .leftMirrored
+        case .rightMirrored: return .rightMirrored
+        @unknown default: return .up
+        }
     }
 }
