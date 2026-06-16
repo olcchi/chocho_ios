@@ -7,6 +7,7 @@ struct PuzzleCanvasView: View {
     let image: UIImage
     let extensionRatio: CGFloat
     var extensionSide: PuzzleCanvasExtensionSide = .right
+    var photoCompression: MainPhotoCompression = .none
     var backgroundStyle: PuzzleBackgroundStyle = .grid
     var backgroundColors: PuzzleBackgroundColors = .default
     var backgroundPatternSpacing: Double = PuzzleBackgroundPatternSpacing.defaultControlValue
@@ -57,7 +58,8 @@ struct PuzzleCanvasView: View {
                 imageSize: image.size,
                 availableSize: proxy.size,
                 extensionRatio: extensionRatio,
-                extensionSide: extensionSide
+                extensionSide: extensionSide,
+                photoCompression: photoCompression
             )
             let referenceFrame = layout.referenceComposedFrame
             let referenceLocalPhotoFrame = layout.referenceLocalPhotoFrame
@@ -93,6 +95,7 @@ struct PuzzleCanvasView: View {
                     }
                     .animation(.none, value: extensionRatio)
                     .animation(.none, value: extensionSide)
+                    .animation(.none, value: photoCompression)
                     .animation(.none, value: backgroundStyle)
                     .animation(.none, value: backgroundColors)
                     .animation(.none, value: backgroundPatternSpacing)
@@ -132,6 +135,7 @@ struct PuzzleCanvasView: View {
                     key: CanvasViewportResetKey(
                         extensionRatio: extensionRatio,
                         extensionSide: extensionSide,
+                        photoCompression: photoCompression,
                         imageViewportResetID: imageViewportResetID
                     ),
                     layout: layout,

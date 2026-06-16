@@ -5,6 +5,7 @@ struct CanvasExportSnapshot {
     let image: UIImage
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
+    let photoCompression: MainPhotoCompression
     let backgroundStyle: PuzzleBackgroundStyle
     let backgroundColors: PuzzleBackgroundColors
     let backgroundPatternSpacing: Double

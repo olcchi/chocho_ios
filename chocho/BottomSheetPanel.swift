@@ -382,6 +382,7 @@ private struct PanelContentCard: View {
                     dotCount: dotControls.dotCount,
                     usesRandomDotColors: dotControls.usesRandomDotColors,
                     isTraceDrawingEnabled: dotControls.isTraceDrawingEnabled,
+                    photoCompression: dotControls.photoCompression,
                     canClearTrace: canClearTrace,
                     onDrawDots: onDrawDots,
                     onClearTrace: onClearTrace
@@ -911,6 +912,7 @@ private struct DrawPanelControls: View {
     @Binding var dotCount: Double
     @Binding var usesRandomDotColors: Bool
     @Binding var isTraceDrawingEnabled: Bool
+    @Binding var photoCompression: MainPhotoCompression
     let canClearTrace: Bool
     let onDrawDots: () -> Void
     let onClearTrace: () -> Void
@@ -941,6 +943,27 @@ private struct DrawPanelControls: View {
 
                     traceButtonGroup
                         .frame(maxWidth: .infinity)
+                }
+                .frame(height: 30)
+                .padding(.top, 4)
+
+                PanelRowSeparator()
+                    .padding(.top, 4)
+
+                HStack(spacing: 8) {
+                    Text("压缩")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(Color.mutedForeground)
+
+                    Spacer(minLength: 8)
+
+                    PanelValueMenu(
+                        accessibilityTitle: "压缩",
+                        selection: $photoCompression,
+                        options: MainPhotoCompression.allCases,
+                        title: { $0.title },
+                        font: .system(size: 12, weight: .regular)
+                    )
                 }
                 .frame(height: 30)
                 .padding(.top, 4)

@@ -142,6 +142,68 @@ struct PuzzleCanvasModelTests {
         #expect(extended.referenceComposedFrame == baseline.referenceComposedFrame)
     }
 
+    @Test func flattenedPhotoCompressionUsesCompressedHeightAsBackgroundBasis() {
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 240),
+            extensionRatio: 0.5,
+            extensionSide: .bottom,
+            photoCompression: .flattened
+        )
+
+        #expect(layout.photoFrame.width == 600)
+        #expect(layout.photoFrame.height == 187.5)
+        #expect(layout.extensionFrame.width == layout.photoFrame.width)
+        #expect(layout.extensionFrame.height == 93.75)
+        #expect(layout.backgroundPatternReferenceHeight == layout.photoFrame.height)
+    }
+
+    @Test func narrowedPhotoCompressionUsesCompressedWidthAsBackgroundBasis() {
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 240),
+            extensionRatio: 0.5,
+            extensionSide: .right,
+            photoCompression: .narrowed
+        )
+
+        #expect(layout.photoFrame.width == 300)
+        #expect(layout.photoFrame.height == 240)
+        #expect(layout.extensionFrame.width == 150)
+        #expect(layout.extensionFrame.height == layout.photoFrame.height)
+        #expect(layout.referenceLocalExtensionGridFrame.width == layout.photoFrame.width)
+    }
+
+    @Test func photoCompressionDoesNotChangeDotDisplaySizeBasis() {
+        let flattened = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 240),
+            extensionRatio: 0.5,
+            extensionSide: .right,
+            photoCompression: .flattened
+        )
+        let narrowed = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 1000, height: 500),
+            availableSize: CGSize(width: 600, height: 240),
+            extensionRatio: 0.5,
+            extensionSide: .right,
+            photoCompression: .narrowed
+        )
+
+        #expect(flattened.photoFrame.size != narrowed.photoFrame.size)
+        #expect(flattened.dotReferenceHeight(forCenterIndex: 0) == narrowed.dotReferenceHeight(forCenterIndex: 0))
+        #expect(
+            DotSizeControl.displaySize(
+                renderedScale: 16,
+                photoFrameHeight: flattened.dotReferenceHeight(forCenterIndex: 0)
+            )
+            == DotSizeControl.displaySize(
+                renderedScale: 16,
+                photoFrameHeight: narrowed.dotReferenceHeight(forCenterIndex: 0)
+            )
+        )
+    }
+
     @Test func centerLayoutOverlaysPhotoOnLargerBackground() {
         let layout = PuzzleCanvasLayout.layout(
             imageSize: CGSize(width: 1000, height: 500),

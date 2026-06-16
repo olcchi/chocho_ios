@@ -16,6 +16,7 @@ struct CanvasDraftCapture: Sendable {
     let selectedDotShapeName: String
     let dotCharacterText: String
     let isTraceDrawingEnabled: Bool
+    let photoCompression: MainPhotoCompression
     let puzzleDots: [PuzzleDot]
     let tracePoints: [PuzzleCanvasTracePoint]
     let viewportScale: CGFloat
@@ -39,6 +40,7 @@ struct CanvasDraftRestore: Sendable {
     let selectedDotShapeName: String
     let dotCharacterText: String
     let isTraceDrawingEnabled: Bool
+    let photoCompression: MainPhotoCompression
     let puzzleDots: [PuzzleDot]
     let tracePoints: [PuzzleCanvasTracePoint]
     let viewportScale: CGFloat
@@ -69,8 +71,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 5
-    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5]
+    static let currentVersion = 6
+    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6]
 
     var version: Int
     var savedAt: Date
@@ -88,6 +90,8 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     /// v5+：字符波点输入内容（旧草稿缺省为 nil → 恢复为默认“字”）
     var dotCharacterText: String?
     var isTraceDrawingEnabled: Bool
+    /// v6+：主图压缩类型（旧草稿缺省为 nil → 恢复为 .none）
+    var photoCompressionRawValue: String?
     var puzzleDots: [CanvasDraftStoredDot]
     var tracePoints: [CanvasDraftStoredTracePoint]
     var viewportScale: Double
@@ -238,6 +242,7 @@ nonisolated enum CanvasDraftStore {
             selectedDotShapeName: capture.selectedDotShapeName,
             dotCharacterText: capture.dotCharacterText,
             isTraceDrawingEnabled: capture.isTraceDrawingEnabled,
+            photoCompressionRawValue: capture.photoCompression.rawValue,
             puzzleDots: capture.puzzleDots.map(CanvasDraftStoredDot.init(dot:)),
             tracePoints: capture.tracePoints.map(CanvasDraftStoredTracePoint.init(point:)),
             viewportScale: Double(capture.viewportScale),
@@ -331,6 +336,8 @@ nonisolated enum CanvasDraftStore {
 
             let liveDotAnimation = manifest.liveDotAnimationRawValue
                 .flatMap { LiveDotAnimation(rawValue: $0) } ?? .none
+            let photoCompression = manifest.photoCompressionRawValue
+                .flatMap { MainPhotoCompression(rawValue: $0) } ?? .none
 
             return CanvasDraftRestore(
                 image: image,
@@ -347,6 +354,7 @@ nonisolated enum CanvasDraftStore {
                 selectedDotShapeName: manifest.selectedDotShapeName,
                 dotCharacterText: manifest.dotCharacterText ?? CharacterDotText.defaultText,
                 isTraceDrawingEnabled: manifest.isTraceDrawingEnabled,
+                photoCompression: photoCompression,
                 puzzleDots: puzzleDots,
                 tracePoints: tracePoints,
                 viewportScale: CGFloat(manifest.viewportScale),

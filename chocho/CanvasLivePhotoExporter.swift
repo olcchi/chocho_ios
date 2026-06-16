@@ -48,6 +48,7 @@ nonisolated enum CanvasLivePhotoExporter {
         let image: UIImage
         let extensionRatio: CGFloat
         let extensionSide: PuzzleCanvasExtensionSide
+        let photoCompression: MainPhotoCompression
         let backgroundStyle: PuzzleBackgroundStyle
         let backgroundColors: PuzzleBackgroundColors
         let backgroundPatternSpacing: Double
@@ -186,6 +187,7 @@ nonisolated enum CanvasLivePhotoExporter {
             exportSize: exportSize,
             extensionRatio: snapshot.extensionRatio,
             extensionSide: snapshot.extensionSide,
+            photoCompression: snapshot.photoCompression,
             backgroundStyle: snapshot.backgroundStyle,
             backgroundColors: snapshot.backgroundColors,
             backgroundPatternSpacing: snapshot.backgroundPatternSpacing,

@@ -38,6 +38,7 @@ struct ContentView: View {
     @State private var selectedDotShapeCategory: DotShapeCategory = .basic
     @State private var dotCharacterText = CharacterDotText.defaultText
     @State private var isTraceDrawingEnabled = false
+    @State private var photoCompression: MainPhotoCompression = .none
 
     // MARK: 实况动画（预览播放与导出格式由 liveDotAnimation 决定）
     @State private var liveDotAnimation: LiveDotAnimation = .none
@@ -170,6 +171,7 @@ struct ContentView: View {
             .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: dotCharacterText) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: photoCompression) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: liveDotAnimation) { _, _ in
                 stopLivePreviewPlayback()
                 scheduleCanvasDraftSave()
@@ -228,7 +230,8 @@ struct ContentView: View {
                 selectedDotShape: $selectedDotShape,
                 selectedDotShapeCategory: $selectedDotShapeCategory,
                 dotCharacterText: $dotCharacterText,
-                isTraceDrawingEnabled: $isTraceDrawingEnabled
+                isTraceDrawingEnabled: $isTraceDrawingEnabled,
+                photoCompression: $photoCompression
             ),
             liveControls: BottomSheetLiveControls(
                 liveDotAnimation: $liveDotAnimation,
@@ -287,6 +290,7 @@ struct ContentView: View {
                     image: canvasImage,
                     extensionRatio: extensionRatio,
                     extensionSide: extensionSide,
+                    photoCompression: photoCompression,
                     backgroundStyle: backgroundStyle,
                     backgroundColors: backgroundColors,
                     backgroundPatternSpacing: backgroundPatternSpacing,
@@ -632,6 +636,7 @@ struct ContentView: View {
         backgroundStyle = restored.backgroundStyle
         backgroundColors = restored.backgroundColors
         backgroundPatternSpacing = restored.backgroundPatternSpacing
+        photoCompression = restored.photoCompression
         dotCount = restored.dotCount
         dotScale = restored.dotScale
         selectedDotColor = restored.selectedDotColor
@@ -684,6 +689,7 @@ struct ContentView: View {
             selectedDotShapeName: selectedDotShape.name,
             dotCharacterText: dotCharacterText,
             isTraceDrawingEnabled: isTraceDrawingEnabled,
+            photoCompression: photoCompression,
             puzzleDots: puzzleDots,
             tracePoints: tracePoints,
             viewportScale: viewportScale,
@@ -732,6 +738,7 @@ struct ContentView: View {
             image: canvasImage,
             extensionRatio: extensionRatio,
             extensionSide: extensionSide,
+            photoCompression: photoCompression,
             backgroundStyle: backgroundStyle,
             backgroundColors: backgroundColors,
             backgroundPatternSpacing: backgroundPatternSpacing,
@@ -752,7 +759,10 @@ struct ContentView: View {
         Task {
             defer { isExporting = false }
 
-            let exportSize = exportCanvasSize(for: snapshot.image)
+            let exportSize = exportCanvasSize(
+                for: snapshot.image,
+                photoCompression: snapshot.photoCompression
+            )
             let exportFormat = snapshot.exportFormat
 
             let product: CanvasExportProduct? = await Task.detached(priority: .userInitiated) {
@@ -762,6 +772,7 @@ struct ContentView: View {
                         image: snapshot.image,
                         extensionRatio: snapshot.extensionRatio,
                         extensionSide: snapshot.extensionSide,
+                        photoCompression: snapshot.photoCompression,
                         backgroundStyle: snapshot.backgroundStyle,
                         backgroundColors: snapshot.backgroundColors,
                         backgroundPatternSpacing: snapshot.backgroundPatternSpacing,
@@ -790,6 +801,7 @@ struct ContentView: View {
                         exportSize: exportSize,
                         extensionRatio: snapshot.extensionRatio,
                         extensionSide: snapshot.extensionSide,
+                        photoCompression: snapshot.photoCompression,
                         backgroundStyle: snapshot.backgroundStyle,
                         backgroundColors: snapshot.backgroundColors,
                         backgroundPatternSpacing: snapshot.backgroundPatternSpacing,
@@ -861,24 +873,30 @@ struct ContentView: View {
     }
 
     /// 导出像素尺寸：原图边长 + 扩展条比例（与 `PuzzleCanvasLayout` 合成逻辑一致）。
-    private func exportCanvasSize(for image: UIImage) -> CGSize {
+    private func exportCanvasSize(
+        for image: UIImage,
+        photoCompression: MainPhotoCompression
+    ) -> CGSize {
         let sourceWidth = CGFloat(image.cgImage?.width ?? Int(image.size.width * image.scale))
         let sourceHeight = CGFloat(image.cgImage?.height ?? Int(image.size.height * image.scale))
+        let compressedSize = photoCompression.compressedSize(
+            for: CGSize(width: sourceWidth, height: sourceHeight)
+        )
         let clampedRatio = min(max(extensionRatio, 0), 1)
 
         switch extensionSide {
         case .left, .right:
             return CGSize(
-                width: sourceWidth * (1 + clampedRatio),
-                height: sourceHeight
+                width: compressedSize.width * (1 + clampedRatio),
+                height: compressedSize.height
             )
         case .top, .bottom:
             return CGSize(
-                width: sourceWidth,
-                height: sourceHeight * (1 + clampedRatio)
+                width: compressedSize.width,
+                height: compressedSize.height * (1 + clampedRatio)
             )
         case .center:
-            return CGSize(width: sourceWidth, height: sourceHeight)
+            return compressedSize
         }
     }
 

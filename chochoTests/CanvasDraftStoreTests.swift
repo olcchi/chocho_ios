@@ -101,6 +101,7 @@ struct CanvasDraftStoreTests {
             selectedDotShapeName: BuiltInDotShape.star.rawValue,
             dotCharacterText: "呱",
             isTraceDrawingEnabled: true,
+            photoCompression: .flattened,
             puzzleDots: dots,
             tracePoints: tracePoints,
             viewportScale: 1.5,
@@ -124,6 +125,7 @@ struct CanvasDraftStoreTests {
         #expect(loaded.selectedDotShapeName == capture.selectedDotShapeName)
         #expect(loaded.dotCharacterText == capture.dotCharacterText)
         #expect(loaded.isTraceDrawingEnabled == capture.isTraceDrawingEnabled)
+        #expect(loaded.photoCompression == capture.photoCompression)
         #expect(loaded.tracePoints == capture.tracePoints)
         #expect(loaded.viewportScale == capture.viewportScale)
         #expect(loaded.viewportOffset == capture.viewportOffset)
@@ -207,6 +209,7 @@ struct CanvasDraftStoreTests {
         #expect(restored.backgroundColors == PuzzleBackgroundColors.default)
         #expect(restored.backgroundPatternSpacing == PuzzleBackgroundPatternSpacing.defaultControlValue)
         #expect(restored.dotCharacterText == CharacterDotText.defaultText)
+        #expect(restored.photoCompression == .none)
     }
 
     @Test func restoresDefaultBackgroundPatternSpacingForVersionThreeDrafts() throws {
@@ -275,6 +278,7 @@ struct CanvasDraftStoreTests {
             selectedDotShapeName: DotShapeAsset.defaultSelection.name,
             dotCharacterText: CharacterDotText.defaultText,
             isTraceDrawingEnabled: false,
+            photoCompression: .none,
             puzzleDots: PuzzleDotFactory.makeDots(count: 2),
             tracePoints: [],
             viewportScale: 1,

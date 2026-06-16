@@ -74,6 +74,44 @@ nonisolated enum PuzzleBackgroundStyle: String, CaseIterable, Identifiable, Equa
     }
 }
 
+nonisolated enum MainPhotoCompression: String, CaseIterable, Identifiable, Equatable {
+    case none
+    case flattened
+    case narrowed
+
+    static let compressedAxisScale: CGFloat = 0.625
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .none:
+            "无"
+        case .flattened:
+            "压扁"
+        case .narrowed:
+            "压窄"
+        }
+    }
+
+    func compressedSize(for imageSize: CGSize) -> CGSize {
+        switch self {
+        case .none:
+            imageSize
+        case .flattened:
+            CGSize(
+                width: imageSize.width,
+                height: imageSize.height * Self.compressedAxisScale
+            )
+        case .narrowed:
+            CGSize(
+                width: imageSize.width * Self.compressedAxisScale,
+                height: imageSize.height
+            )
+        }
+    }
+}
+
 // MARK: - 实况波点动画
 /// 画布波点的预览动画；非「无」时导出为 Live Photo（仅波点动，主图与扩展背景保持静态）。
 nonisolated enum LiveDotAnimation: String, CaseIterable, Identifiable, Equatable {
@@ -264,6 +302,8 @@ nonisolated struct PuzzleCanvasLayoutResult: Equatable {
     let referenceLocalPhotoFrame: CGRect
     /// 参考系内的扩展背景网格区域。
     let referenceLocalExtensionGridFrame: CGRect
+    /// 波点尺寸使用未压缩照片高度做基准，避免压扁/压窄改变波点视觉大小。
+    let dotSizeReferenceHeight: CGFloat
 
     var backgroundPatternReferenceHeight: CGFloat {
         if extensionSide == .center {
@@ -275,10 +315,14 @@ nonisolated struct PuzzleCanvasLayoutResult: Equatable {
 
     func dotReferenceHeight(forCenterIndex centerIndex: Int) -> CGFloat {
         if extensionSide == .center, centerIndex == 0 {
-            return referenceLocalPhotoFrame.height
+            return dotSizeReferenceHeight
         }
 
-        return backgroundPatternReferenceHeight
+        if extensionSide == .center {
+            return backgroundPatternReferenceHeight
+        }
+
+        return dotSizeReferenceHeight
     }
 
     var visibleComposedFrame: CGRect {
@@ -418,12 +462,14 @@ nonisolated enum PuzzleCanvasLayout {
         imageSize: CGSize,
         availableSize: CGSize,
         extensionRatio: CGFloat,
-        extensionSide: PuzzleCanvasExtensionSide = .right
+        extensionSide: PuzzleCanvasExtensionSide = .right,
+        photoCompression: MainPhotoCompression = .none
     ) -> PuzzleCanvasLayoutResult {
         let clampedRatio = min(max(extensionRatio, 0), maxExtensionRatio)
+        let compressedImageSize = photoCompression.compressedSize(for: imageSize)
 
-        guard imageSize.width > 0,
-              imageSize.height > 0,
+        guard compressedImageSize.width > 0,
+              compressedImageSize.height > 0,
               availableSize.width > 0,
               availableSize.height > 0 else {
             return PuzzleCanvasLayoutResult(
@@ -434,13 +480,15 @@ nonisolated enum PuzzleCanvasLayout {
                 composedSize: .zero,
                 referenceComposedFrame: .zero,
                 referenceLocalPhotoFrame: .zero,
-                referenceLocalExtensionGridFrame: .zero
+                referenceLocalExtensionGridFrame: .zero,
+                dotSizeReferenceHeight: 0
             )
         }
 
         if extensionSide == .center {
             return centeredLayout(
                 imageSize: imageSize,
+                compressedImageSize: compressedImageSize,
                 availableSize: availableSize,
                 extensionRatio: clampedRatio
             )
@@ -448,12 +496,20 @@ nonisolated enum PuzzleCanvasLayout {
 
         // Photo scale is independent of extension width so existing dots stay fixed on the image.
         let fitScale = min(
+            availableSize.width / compressedImageSize.width,
+            availableSize.height / compressedImageSize.height
+        )
+        let photoSize = CGSize(
+            width: compressedImageSize.width * fitScale,
+            height: compressedImageSize.height * fitScale
+        )
+        let uncompressedFitScale = min(
             availableSize.width / imageSize.width,
             availableSize.height / imageSize.height
         )
-        let photoSize = CGSize(
-            width: imageSize.width * fitScale,
-            height: imageSize.height * fitScale
+        let uncompressedPhotoSize = CGSize(
+            width: imageSize.width * uncompressedFitScale,
+            height: imageSize.height * uncompressedFitScale
         )
         let photoOrigin = CGPoint(
             x: (availableSize.width - photoSize.width) / 2,
@@ -517,7 +573,8 @@ nonisolated enum PuzzleCanvasLayout {
             composedSize: composedSize,
             referenceComposedFrame: referenceComposedFrame,
             referenceLocalPhotoFrame: referenceLocalPhotoFrame,
-            referenceLocalExtensionGridFrame: referenceLocalExtensionGridFrame
+            referenceLocalExtensionGridFrame: referenceLocalExtensionGridFrame,
+            dotSizeReferenceHeight: uncompressedPhotoSize.height
         )
     }
 
@@ -563,17 +620,23 @@ nonisolated enum PuzzleCanvasLayout {
 
     private static func centeredLayout(
         imageSize: CGSize,
+        compressedImageSize: CGSize,
         availableSize: CGSize,
         extensionRatio: CGFloat
     ) -> PuzzleCanvasLayoutResult {
         let backgroundScale = min(
+            availableSize.width / compressedImageSize.width,
+            availableSize.height / compressedImageSize.height
+        )
+        let backgroundSize = CGSize(
+            width: compressedImageSize.width * backgroundScale,
+            height: compressedImageSize.height * backgroundScale
+        )
+        let uncompressedBackgroundScale = min(
             availableSize.width / imageSize.width,
             availableSize.height / imageSize.height
         )
-        let backgroundSize = CGSize(
-            width: imageSize.width * backgroundScale,
-            height: imageSize.height * backgroundScale
-        )
+        let uncompressedBackgroundHeight = imageSize.height * uncompressedBackgroundScale
         let backgroundOrigin = CGPoint(
             x: (availableSize.width - backgroundSize.width) / 2,
             y: (availableSize.height - backgroundSize.height) / 2
@@ -583,6 +646,7 @@ nonisolated enum PuzzleCanvasLayout {
             width: backgroundSize.width * photoScale,
             height: backgroundSize.height * photoScale
         )
+        let dotSizeReferenceHeight = uncompressedBackgroundHeight * photoScale
         let photoOrigin = CGPoint(
             x: backgroundOrigin.x + (backgroundSize.width - photoSize.width) / 2,
             y: backgroundOrigin.y + (backgroundSize.height - photoSize.height) / 2
@@ -605,7 +669,8 @@ nonisolated enum PuzzleCanvasLayout {
             composedSize: backgroundSize,
             referenceComposedFrame: backgroundFrame,
             referenceLocalPhotoFrame: localPhotoFrame,
-            referenceLocalExtensionGridFrame: localBackgroundFrame
+            referenceLocalExtensionGridFrame: localBackgroundFrame,
+            dotSizeReferenceHeight: dotSizeReferenceHeight
         )
     }
 }
@@ -613,6 +678,7 @@ nonisolated enum PuzzleCanvasLayout {
 struct CanvasViewportResetKey: Equatable {
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
+    let photoCompression: MainPhotoCompression
     let imageViewportResetID: UUID
 }
 

@@ -9,6 +9,7 @@ struct BottomSheetDotControls {
     var selectedDotShapeCategory: Binding<DotShapeCategory>
     var dotCharacterText: Binding<String>
     var isTraceDrawingEnabled: Binding<Bool>
+    var photoCompression: Binding<MainPhotoCompression>
 }
 
 struct BottomSheetLiveControls {

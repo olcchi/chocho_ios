@@ -10,6 +10,7 @@ nonisolated enum CanvasRasterExporter {
         exportSize: CGSize,
         extensionRatio: CGFloat,
         extensionSide: PuzzleCanvasExtensionSide,
+        photoCompression: MainPhotoCompression = .none,
         backgroundStyle: PuzzleBackgroundStyle,
         backgroundColors: PuzzleBackgroundColors = .default,
         backgroundPatternSpacing: Double = PuzzleBackgroundPatternSpacing.defaultControlValue,
@@ -29,7 +30,8 @@ nonisolated enum CanvasRasterExporter {
             imageSize: imageSize,
             availableSize: exportSize,
             extensionRatio: extensionRatio,
-            extensionSide: extensionSide
+            extensionSide: extensionSide,
+            photoCompression: photoCompression
         )
 
         let format = UIGraphicsImageRendererFormat()
