@@ -1449,7 +1449,8 @@ private struct DotShapeTile: View {
             DotShapeAssetImageView(
                 assetName: shape.assetImageName,
                 renderingMode: shape.usesTemplatePreview ? .template : .original,
-                tintColor: shape.usesTemplatePreview ? previewColor : nil
+                tintColor: shape.usesTemplatePreview ? previewColor : nil,
+                prefersCrispScaling: shape.prefersCrispScaling
             )
         }
     }

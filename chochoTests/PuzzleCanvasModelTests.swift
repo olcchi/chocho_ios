@@ -1364,7 +1364,7 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func dotShapeCatalogGroupsItemsByPanelCategory() {
-        #expect(DotShapeCategory.panelOrder.map(\.title) == ["最近", "基础", "小物", "彩纸", "贴纸", "纽扣", "水钻", "布", "针线"])
+        #expect(DotShapeCategory.panelOrder.map(\.title) == ["最近", "像素", "基础", "小物", "彩纸", "纽扣", "水钻", "针线"])
         #expect(DotShapeAsset.all.filter { $0.matches(category: .objects) }.map(\.name).contains("眼睛.小物"))
     }
 
@@ -1379,7 +1379,6 @@ struct PuzzleCanvasModelTests {
     @Test func dotShapeCategoryUsesOnlyKnownFinalSuffix() {
         let basicShapeWithDotInName = DotShapeAsset(name: "圆.brush")
         let basicShapeNames = DotShapeAsset.shapes(for: .basic, recentNames: []).map(\.name)
-        let stickerShapeNames = DotShapeAsset.shapes(for: .sticker, recentNames: []).map(\.name)
         let rhinestoneShapeNames = DotShapeAsset.shapes(for: .rhinestone, recentNames: []).map(\.name)
 
         #expect(basicShapeWithDotInName.title == "圆.brush")
@@ -1388,7 +1387,27 @@ struct PuzzleCanvasModelTests {
         #expect(basicShapeNames.contains("心"))
         #expect(!basicShapeNames.contains("心.水钻"))
         #expect(rhinestoneShapeNames.contains("心.水钻"))
-        #expect(stickerShapeNames.contains("鱼.贴纸"))
+    }
+
+    @Test func pixelDotAssetsUseCrispScalingAndNativeDisplaySize() {
+        let pixelShape = DotShapeAsset(name: "心1.像素")
+
+        #expect(pixelShape.title == "心1")
+        #expect(pixelShape.category == "像素")
+        #expect(pixelShape.matches(category: .pixel))
+        #expect(pixelShape.prefersCrispScaling)
+        #expect(pixelShape.previewTilePadding == 6)
+        #expect(pixelShape.usesTemplatePreview)
+
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: .zero,
+            color: .clear,
+            size: 1,
+            shapeAssetName: pixelShape.name
+        )
+        #expect(dot.displaySizeScale == 1)
+        #expect(dot.usesTemplateColor)
     }
 
     @Test func generatedDotShapeCatalogFeedsPanelShapeList() {

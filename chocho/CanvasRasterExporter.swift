@@ -579,9 +579,17 @@ nonisolated enum CanvasRasterExporter {
             )
             // Apply shape mask: only the pixels where the mask is opaque survive.
             offCtx.cgContext.setBlendMode(.destinationIn)
+            if DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName) {
+                offCtx.cgContext.interpolationQuality = .none
+            }
             maskImage.draw(in: localRect)
         }
 
+        let previousInterpolationQuality = context.interpolationQuality
+        if DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName) {
+            context.interpolationQuality = .none
+        }
+        defer { context.interpolationQuality = previousInterpolationQuality }
         maskedContent.draw(in: drawRect, blendMode: .normal, alpha: opacity)
     }
 
@@ -734,6 +742,11 @@ nonisolated enum CanvasRasterExporter {
     ) {
         guard let image = DotShapeAssetImage.uiImage(named: "public/\(assetName)") else { return }
         let drawRect = aspectFitRect(for: image.size, in: rect)
+        let previousInterpolationQuality = context.interpolationQuality
+        if DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName) {
+            context.interpolationQuality = .none
+        }
+        defer { context.interpolationQuality = previousInterpolationQuality }
         if usesTemplateColor {
             image.withTintColor(color, renderingMode: .alwaysTemplate).draw(
                 in: drawRect,

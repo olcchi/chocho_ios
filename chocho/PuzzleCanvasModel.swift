@@ -1541,12 +1541,13 @@ nonisolated struct PuzzleDot: Identifiable, Equatable {
     let shapeAssetName: String
 
     var usesTemplateColor: Bool {
-        DotShapeAssetCategoryParser.suffix(in: shapeAssetName) == nil
+        DotShapeAssetCategoryParser.usesTemplateTinting(for: shapeAssetName)
     }
 
-    /// Category-suffixed asset dots (e.g. `鱼1.纽扣`) render 25% larger than basic dots.
+    /// Category-suffixed asset dots render larger than basic dots; pixel art keeps native scale.
     var displaySizeScale: CGFloat {
-        DotShapeAssetCategoryParser.suffix(in: shapeAssetName) == nil ? 1 : 1.25
+        guard let suffix = DotShapeAssetCategoryParser.suffix(in: shapeAssetName) else { return 1 }
+        return suffix == "像素" ? 1 : 1.25
     }
 
     var builtInShape: BuiltInDotShape? {

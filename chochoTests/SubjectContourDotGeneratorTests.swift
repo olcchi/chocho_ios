@@ -114,6 +114,22 @@ struct SubjectContourDotGeneratorTests {
         #expect(firstPositions == secondPositions)
     }
 
+    @Test func samplerIgnoresInteriorHolesInSubjectMask() {
+        let mask = SubjectMask.ring(width: 9, height: 9, outerInset: 1, holeInset: 3)
+        var generator = SeededRandomNumberGenerator(seed: 11)
+
+        let positions = SubjectContourSampler.positions(
+            in: mask,
+            count: 24,
+            using: &generator
+        )
+
+        let center = CGPoint(x: 0.5, y: 0.5)
+        let minimumDistance = positions.map { hypot($0.x - center.x, $0.y - center.y) }.min() ?? 0
+        #expect(positions.count == 24)
+        #expect(minimumDistance > 0.35)
+    }
+
     @Test func generatorUsesMaskProviderAndCurrentDotShape() async throws {
         let mask = SubjectMask.rectangle(width: 10, height: 10, x: 3, y: 3, width: 4, height: 4)
         let provider = FakeSubjectMaskProvider(mask: mask)
@@ -152,6 +168,28 @@ struct SubjectContourDotGeneratorTests {
         ))
     }
 
+    @Test func subjectMaskReadsOneComponent32FloatPixelBuffer() throws {
+        let pixelBuffer = try CVPixelBuffer.makeOneComponent32Float(
+            width: 3,
+            height: 2,
+            values: [
+                0, 0.25, 1,
+                0.75, 0, 0.5
+            ]
+        )
+
+        let mask = SubjectMask(pixelBuffer: pixelBuffer)
+
+        #expect(mask == SubjectMask(
+            width: 3,
+            height: 2,
+            pixels: [
+                false, true, true,
+                true, false, true
+            ]
+        ))
+    }
+
     @Test func subjectMaskRejectsUnsupportedPixelBufferFormat() throws {
         let pixelBuffer = try CVPixelBuffer.makeBGRA(width: 2, height: 2)
 
@@ -173,6 +211,21 @@ private extension SubjectMask {
         for row in y..<(y + rectHeight) {
             for column in x..<(x + rectWidth) {
                 pixels[row * width + column] = true
+            }
+        }
+        return SubjectMask(width: width, height: height, pixels: pixels)
+    }
+
+    static func ring(width: Int, height: Int, outerInset: Int, holeInset: Int) -> SubjectMask {
+        var pixels = Array(repeating: false, count: width * height)
+        for row in outerInset..<(height - outerInset) {
+            for column in outerInset..<(width - outerInset) {
+                pixels[row * width + column] = true
+            }
+        }
+        for row in holeInset..<(height - holeInset) {
+            for column in holeInset..<(width - holeInset) {
+                pixels[row * width + column] = false
             }
         }
         return SubjectMask(width: width, height: height, pixels: pixels)
@@ -229,6 +282,32 @@ private extension CVPixelBuffer {
                     bytes[offset + 1] = 128
                     bytes[offset + 2] = 64
                     bytes[offset + 3] = 255
+                }
+            }
+        }
+        return pixelBuffer
+    }
+
+    static func makeOneComponent32Float(width: Int, height: Int, values: [Float32]) throws -> CVPixelBuffer {
+        var pixelBuffer: CVPixelBuffer?
+        let result = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_OneComponent32Float,
+            nil,
+            &pixelBuffer
+        )
+        guard result == kCVReturnSuccess, let pixelBuffer else {
+            throw PixelBufferTestError.createFailed(result)
+        }
+        try pixelBuffer.writeBytes(bytesPerPixel: MemoryLayout<Float32>.stride) { bytes, bytesPerRow in
+            for row in 0..<height {
+                for column in 0..<width {
+                    let offset = row * bytesPerRow + column * MemoryLayout<Float32>.stride
+                    bytes.advanced(by: offset).withMemoryRebound(to: Float32.self, capacity: 1) { pointer in
+                        pointer.pointee = values[row * width + column]
+                    }
                 }
             }
         }

@@ -846,7 +846,8 @@ private struct PuzzleDotsCanvas: View {
             DotShapeAssetImageView(
                 assetName: "public/\(dot.shapeAssetName)",
                 renderingMode: dot.usesTemplateColor ? .template : .original,
-                tintColor: dot.usesTemplateColor ? stickerColor : nil
+                tintColor: dot.usesTemplateColor ? stickerColor : nil,
+                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: dot.shapeAssetName)
             )
         }
     }
@@ -965,7 +966,8 @@ private struct PuzzleDotCollageAssetShapeView: View {
             DotShapeAssetImageView(
                 assetName: "public/\(dot.shapeAssetName)",
                 renderingMode: .template,
-                tintColor: .white
+                tintColor: .white,
+                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: dot.shapeAssetName)
             )
         }
     }

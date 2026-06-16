@@ -5,12 +5,21 @@ nonisolated enum DotShapeAssetCategoryParser {
     static let categorizedSuffixes: Set<String> = [
         "小物",
         "彩纸",
-        "贴纸",
         "纽扣",
         "水钻",
-        "布",
-        "针线"
+        "针线",
+        "像素"
     ]
+
+    static func prefersCrispScaling(for name: String) -> Bool {
+        suffix(in: name) == "像素"
+    }
+
+    /// Monochrome SVG shapes tint with the selected dot color; full-color sticker assets keep original pixels.
+    static func usesTemplateTinting(for name: String) -> Bool {
+        guard let suffix = suffix(in: name) else { return true }
+        return suffix == "像素"
+    }
 
     static func category(for name: String) -> String {
         suffix(in: name) ?? basicCategory
@@ -38,11 +47,10 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
     case basic
     case objects
     case paper
-    case sticker
     case button
     case rhinestone
-    case fabric
     case thread
+    case pixel
 
     var id: Self { self }
 
@@ -56,16 +64,14 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
             "小物"
         case .paper:
             "彩纸"
-        case .sticker:
-            "贴纸"
         case .button:
             "纽扣"
         case .rhinestone:
             "水钻"
-        case .fabric:
-            "布"
         case .thread:
             "针线"
+        case .pixel:
+            "像素"
         }
     }
 
@@ -79,16 +85,14 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
             "小物"
         case .paper:
             "彩纸"
-        case .sticker:
-            "贴纸"
         case .button:
             "纽扣"
         case .rhinestone:
             "水钻"
-        case .fabric:
-            "布"
         case .thread:
             "针线"
+        case .pixel:
+            "像素"
         }
     }
 
@@ -98,13 +102,12 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
 
     static let panelOrder: [DotShapeCategory] = [
         .recent,
+        .pixel,
         .basic,
         .objects,
         .paper,
-        .sticker,
         .button,
         .rhinestone,
-        .fabric,
         .thread
     ]
 }
@@ -127,11 +130,22 @@ struct DotShapeAsset: Identifiable, Equatable {
     }
 
     var previewTilePadding: CGFloat {
-        category == "基础" ? 16 : 9
+        switch category {
+        case "基础":
+            16
+        case "像素":
+            6
+        default:
+            9
+        }
+    }
+
+    var prefersCrispScaling: Bool {
+        DotShapeAssetCategoryParser.prefersCrispScaling(for: name)
     }
 
     var usesTemplatePreview: Bool {
-        category == "基础"
+        DotShapeAssetCategoryParser.usesTemplateTinting(for: name)
     }
 
     var builtInShape: BuiltInDotShape? {
@@ -148,7 +162,7 @@ struct DotShapeAsset: Identifiable, Equatable {
             false
         case .basic:
             self.category == "基础"
-        case .objects, .paper, .sticker, .button, .rhinestone, .fabric, .thread:
+        case .objects, .paper, .button, .rhinestone, .thread, .pixel:
             self.category == category.rawAssetCategory
         }
     }
@@ -158,7 +172,7 @@ struct DotShapeAsset: Identifiable, Equatable {
         switch category {
         case .recent:
             recentNames.compactMap(asset(named:))
-        case .basic, .objects, .paper, .sticker, .button, .rhinestone, .fabric, .thread:
+        case .basic, .objects, .paper, .button, .rhinestone, .thread, .pixel:
             all.filter { $0.matches(category: category) }
         }
     }

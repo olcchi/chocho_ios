@@ -440,6 +440,7 @@ struct ContentView: View {
 
         isPhotoLoading = true
         showToast("正在加载…")
+        invalidateSubjectDotGeneration()
         defer {
             isPhotoLoading = false
         }
@@ -450,7 +451,6 @@ struct ContentView: View {
             let source = importResult.source
             let image = source.keyPhoto
 
-            invalidateSubjectDotGeneration()
             applyPhotoUploadDefaults()
 
             let initialDots = PuzzleCanvasUploadDefaults.initialDots(dotCount: dotCount)

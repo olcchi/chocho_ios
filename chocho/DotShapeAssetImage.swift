@@ -29,6 +29,7 @@ struct DotShapeAssetImageView: View {
     let assetName: String
     var renderingMode: Image.TemplateRenderingMode = .original
     var tintColor: Color?
+    var prefersCrispScaling = false
 
     var body: some View {
         if let uiImage = DotShapeAssetImage.uiImage(named: assetName) {
@@ -36,12 +37,14 @@ struct DotShapeAssetImageView: View {
                 Image(uiImage: uiImage)
                     .renderingMode(.template)
                     .resizable()
+                    .interpolation(prefersCrispScaling ? .none : .medium)
                     .scaledToFit()
                     .foregroundStyle(tintColor)
             } else {
                 Image(uiImage: uiImage)
                     .renderingMode(renderingMode)
                     .resizable()
+                    .interpolation(prefersCrispScaling ? .none : .medium)
                     .scaledToFit()
             }
         }

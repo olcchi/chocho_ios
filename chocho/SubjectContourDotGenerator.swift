@@ -109,7 +109,7 @@ nonisolated enum SubjectContourSampler {
         let normalizedCount = max(count, 0)
         guard normalizedCount > 0 else { return [] }
 
-        let boundary = boundaryPoints(in: mask)
+        let boundary = exteriorBoundaryPoints(in: mask)
         guard !boundary.isEmpty else { return [] }
 
         let center = subjectCenter(in: mask) ?? CGPoint(x: 0.5, y: 0.5)
@@ -126,20 +126,78 @@ nonisolated enum SubjectContourSampler {
         }
     }
 
-    private static func boundaryPoints(in mask: SubjectMask) -> [CGPoint] {
+    private static func exteriorBoundaryPoints(in mask: SubjectMask) -> [CGPoint] {
         guard mask.width > 0, mask.height > 0, mask.pixels.count == mask.width * mask.height else { return [] }
+        let exteriorBackground = exteriorBackgroundPixels(in: mask)
         var points: [CGPoint] = []
         for row in 0..<mask.height {
             for column in 0..<mask.width where mask.contains(column: column, row: row) {
-                if !mask.contains(column: column - 1, row: row)
-                    || !mask.contains(column: column + 1, row: row)
-                    || !mask.contains(column: column, row: row - 1)
-                    || !mask.contains(column: column, row: row + 1) {
+                if touchesExteriorBackground(column: column, row: row, exteriorBackground: exteriorBackground, mask: mask) {
                     points.append(normalizedPoint(column: column, row: row, mask: mask))
                 }
             }
         }
         return points
+    }
+
+    private static func exteriorBackgroundPixels(in mask: SubjectMask) -> Set<Int> {
+        var visited: Set<Int> = []
+        var queue: [(column: Int, row: Int)] = []
+
+        func enqueueIfExteriorBackground(column: Int, row: Int) {
+            guard column >= 0, column < mask.width, row >= 0, row < mask.height else { return }
+            guard !mask.contains(column: column, row: row) else { return }
+            let index = row * mask.width + column
+            guard !visited.contains(index) else { return }
+            visited.insert(index)
+            queue.append((column, row))
+        }
+
+        for column in 0..<mask.width {
+            enqueueIfExteriorBackground(column: column, row: 0)
+            enqueueIfExteriorBackground(column: column, row: mask.height - 1)
+        }
+        for row in 0..<mask.height {
+            enqueueIfExteriorBackground(column: 0, row: row)
+            enqueueIfExteriorBackground(column: mask.width - 1, row: row)
+        }
+
+        var readIndex = 0
+        while readIndex < queue.count {
+            let point = queue[readIndex]
+            readIndex += 1
+            enqueueIfExteriorBackground(column: point.column - 1, row: point.row)
+            enqueueIfExteriorBackground(column: point.column + 1, row: point.row)
+            enqueueIfExteriorBackground(column: point.column, row: point.row - 1)
+            enqueueIfExteriorBackground(column: point.column, row: point.row + 1)
+        }
+
+        return visited
+    }
+
+    private static func touchesExteriorBackground(
+        column: Int,
+        row: Int,
+        exteriorBackground: Set<Int>,
+        mask: SubjectMask
+    ) -> Bool {
+        let neighbors = [
+            (column: column - 1, row: row),
+            (column: column + 1, row: row),
+            (column: column, row: row - 1),
+            (column: column, row: row + 1),
+        ]
+
+        return neighbors.contains { neighbor in
+            guard neighbor.column >= 0,
+                  neighbor.column < mask.width,
+                  neighbor.row >= 0,
+                  neighbor.row < mask.height else {
+                return true
+            }
+
+            return exteriorBackground.contains(neighbor.row * mask.width + neighbor.column)
+        }
     }
 
     private static func subjectCenter(in mask: SubjectMask) -> CGPoint? {
@@ -183,14 +241,24 @@ nonisolated enum SubjectContourSampler {
 
 extension SubjectMask {
     nonisolated init?(pixelBuffer: CVPixelBuffer) {
-        guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_OneComponent8,
-              !CVPixelBufferIsPlanar(pixelBuffer) else {
+        guard !CVPixelBufferIsPlanar(pixelBuffer) else {
             return nil
         }
+        let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        guard width > 0, height > 0, bytesPerRow >= width else {
+        let bytesPerPixel: Int
+        switch pixelFormat {
+        case kCVPixelFormatType_OneComponent8:
+            bytesPerPixel = MemoryLayout<UInt8>.stride
+        case kCVPixelFormatType_OneComponent32Float:
+            bytesPerPixel = MemoryLayout<Float32>.stride
+        default:
+            return nil
+        }
+
+        guard width > 0, height > 0, bytesPerRow >= width * bytesPerPixel else {
             return nil
         }
 
@@ -206,7 +274,18 @@ extension SubjectMask {
         pixels.reserveCapacity(width * height)
         for row in 0..<height {
             for column in 0..<width {
-                pixels.append(bytes[row * bytesPerRow + column] > 0)
+                let offset = row * bytesPerRow + column * bytesPerPixel
+                switch pixelFormat {
+                case kCVPixelFormatType_OneComponent8:
+                    pixels.append(bytes[offset] > 0)
+                case kCVPixelFormatType_OneComponent32Float:
+                    let value = bytes.advanced(by: offset).withMemoryRebound(to: Float32.self, capacity: 1) { pointer in
+                        pointer.pointee
+                    }
+                    pixels.append(value > 0)
+                default:
+                    return nil
+                }
             }
         }
 
