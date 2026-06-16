@@ -39,6 +39,8 @@ struct ContentView: View {
     @State private var dotCharacterText = CharacterDotText.defaultText
     @State private var isTraceDrawingEnabled = false
     @State private var photoCompression: MainPhotoCompression = .none
+    @State private var isDrawingSubjectDots = false
+    @State private var subjectDotGenerationID = UUID()
 
     // MARK: 实况动画（预览播放与导出格式由 liveDotAnimation 决定）
     @State private var liveDotAnimation: LiveDotAnimation = .none
@@ -231,7 +233,8 @@ struct ContentView: View {
                 selectedDotShapeCategory: $selectedDotShapeCategory,
                 dotCharacterText: $dotCharacterText,
                 isTraceDrawingEnabled: $isTraceDrawingEnabled,
-                photoCompression: $photoCompression
+                photoCompression: $photoCompression,
+                isDrawingSubjectDots: isDrawingSubjectDots
             ),
             liveControls: BottomSheetLiveControls(
                 liveDotAnimation: $liveDotAnimation,
@@ -253,6 +256,7 @@ struct ContentView: View {
             isPanelEnabled: canvasImage != nil,
             canClearTrace: !tracePoints.isEmpty,
             onDrawDots: drawPuzzleDots,
+            onDrawSubjectDots: drawSubjectPuzzleDots,
             onClearTrace: clearTracePoints
         )
         .overlay(alignment: .topTrailing) {
@@ -446,6 +450,7 @@ struct ContentView: View {
             let source = importResult.source
             let image = source.keyPhoto
 
+            invalidateSubjectDotGeneration()
             applyPhotoUploadDefaults()
 
             let initialDots = PuzzleCanvasUploadDefaults.initialDots(dotCount: dotCount)
@@ -487,6 +492,8 @@ struct ContentView: View {
             return
         }
 
+        invalidateSubjectDotGeneration()
+
         let newDots = PuzzleDotFactory.makeDots(
             count: Int(dotCount.rounded()),
             along: tracePoints,
@@ -516,8 +523,61 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func drawSubjectPuzzleDots() {
+        guard let canvasImage else {
+            showToast("请先上传图片")
+            return
+        }
+        guard !isDrawingSubjectDots else { return }
+
+        let generationID = UUID()
+        subjectDotGenerationID = generationID
+        isDrawingSubjectDots = true
+        showToast("正在识别主体…")
+
+        Task {
+            do {
+                let dots = try await SubjectContourDotGenerator().dots(
+                    for: canvasImage,
+                    count: Int(dotCount.rounded()),
+                    shapeAssetName: selectedDotShape.name
+                )
+                await MainActor.run {
+                    guard subjectDotGenerationID == generationID else { return }
+                    applyPuzzleDots(dots)
+                    isDrawingSubjectDots = false
+                    dismissToast()
+                }
+            } catch {
+                await MainActor.run {
+                    guard subjectDotGenerationID == generationID else { return }
+                    isDrawingSubjectDots = false
+                    showToast(subjectDotErrorMessage(for: error))
+                }
+            }
+        }
+    }
+
+    private func subjectDotErrorMessage(for error: Error) -> String {
+        guard let generationError = error as? SubjectContourDotGenerationError else {
+            return "主体识别失败"
+        }
+
+        switch generationError {
+        case .unsupported:
+            return "当前系统不支持主体识别"
+        case .missingImage:
+            return "主体识别失败"
+        case .noSubject:
+            return "没识别到主体"
+        }
+    }
+
+    @MainActor
     private func syncPuzzleDots(to count: Int) {
         guard canvasImage != nil else { return }
+
+        invalidateSubjectDotGeneration()
 
         let syncedDots: [PuzzleDot]
         if isTraceDrawingEnabled, !tracePoints.isEmpty {
@@ -539,6 +599,8 @@ struct ContentView: View {
 
     @MainActor
     private func addPuzzleDot(at location: PuzzleCanvasTracePoint) {
+        invalidateSubjectDotGeneration()
+
         let position = PuzzleCanvasCoordinate.dotPosition(
             for: location,
             extensionSide: extensionSide
@@ -555,6 +617,7 @@ struct ContentView: View {
 
     @MainActor
     private func updateTracePoints(_ points: [PuzzleCanvasTracePoint]) {
+        invalidateSubjectDotGeneration()
         tracePoints = points
         dismissToast()
         scheduleCanvasDraftSave()
@@ -564,6 +627,7 @@ struct ContentView: View {
     private func clearTracePoints() {
         guard !tracePoints.isEmpty else { return }
 
+        invalidateSubjectDotGeneration()
         tracePoints = []
         dismissToast()
         scheduleCanvasDraftSave()
@@ -580,6 +644,7 @@ struct ContentView: View {
     private func clearCanvasContent() {
         guard !puzzleDots.isEmpty else { return }
 
+        invalidateSubjectDotGeneration()
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -592,6 +657,7 @@ struct ContentView: View {
     private func undoCanvasChange() {
         guard let previousDots = canvasHistory.undo() else { return }
 
+        invalidateSubjectDotGeneration()
         puzzleDots = previousDots
         dismissToast()
     }
@@ -600,8 +666,17 @@ struct ContentView: View {
     private func redoCanvasChange() {
         guard let nextDots = canvasHistory.redo() else { return }
 
+        invalidateSubjectDotGeneration()
         puzzleDots = nextDots
         dismissToast()
+    }
+
+    @MainActor
+    private func invalidateSubjectDotGeneration() {
+        subjectDotGenerationID = UUID()
+        if isDrawingSubjectDots {
+            isDrawingSubjectDots = false
+        }
     }
 
     @MainActor

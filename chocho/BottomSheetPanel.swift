@@ -125,6 +125,7 @@ struct BottomSheetPanel: View {
     var isPanelEnabled: Bool = true
     var canClearTrace: Bool = false
     let onDrawDots: () -> Void
+    let onDrawSubjectDots: () -> Void
     var onClearTrace: () -> Void = {}
 
     /// Vertical offset for history controls anchored to the panel top edge.
@@ -181,6 +182,7 @@ struct BottomSheetPanel: View {
             backgroundControls: backgroundControls,
             canClearTrace: canClearTrace,
             onDrawDots: onDrawDots,
+            onDrawSubjectDots: onDrawSubjectDots,
             onClearTrace: onClearTrace
         )
         .id(selectedTab)
@@ -364,6 +366,7 @@ private struct PanelContentCard: View {
     let backgroundControls: BottomSheetBackgroundControls
     let canClearTrace: Bool
     let onDrawDots: () -> Void
+    let onDrawSubjectDots: () -> Void
     let onClearTrace: () -> Void
 
     var body: some View {
@@ -384,7 +387,9 @@ private struct PanelContentCard: View {
                     isTraceDrawingEnabled: dotControls.isTraceDrawingEnabled,
                     photoCompression: dotControls.photoCompression,
                     canClearTrace: canClearTrace,
+                    isDrawingSubjectDots: dotControls.isDrawingSubjectDots,
                     onDrawDots: onDrawDots,
+                    onDrawSubjectDots: onDrawSubjectDots,
                     onClearTrace: onClearTrace
                 )
             case .background:
@@ -914,7 +919,9 @@ private struct DrawPanelControls: View {
     @Binding var isTraceDrawingEnabled: Bool
     @Binding var photoCompression: MainPhotoCompression
     let canClearTrace: Bool
+    let isDrawingSubjectDots: Bool
     let onDrawDots: () -> Void
+    let onDrawSubjectDots: () -> Void
     let onClearTrace: () -> Void
 
     var body: some View {
@@ -973,7 +980,7 @@ private struct DrawPanelControls: View {
 
             PanelRowSeparator()
 
-            drawButton
+            drawActions
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .top)
@@ -1011,6 +1018,13 @@ private struct DrawPanelControls: View {
         .frame(height: 30)
     }
 
+    private var drawActions: some View {
+        HStack(spacing: 8) {
+            drawButton
+            subjectButton
+        }
+    }
+
     private var drawButton: some View {
         Button(action: onDrawDots) {
             HStack(spacing: 6) {
@@ -1030,6 +1044,30 @@ private struct DrawPanelControls: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
+    }
+
+    private var subjectButton: some View {
+        Button(action: onDrawSubjectDots) {
+            HStack(spacing: 6) {
+                Image(systemName: isDrawingSubjectDots ? "hourglass" : "person.crop.circle")
+                    .font(.system(size: 15, weight: .regular))
+
+                Text("主体功能")
+                    .font(.system(size: 14, weight: .regular))
+            }
+            .foregroundStyle(Color.foreground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .background(Color.input, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.border, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isDrawingSubjectDots)
+        .opacity(isDrawingSubjectDots ? 0.5 : 1)
+        .accessibilityLabel("主体功能")
     }
 
     private var clearTraceButton: some View {
