@@ -72,17 +72,19 @@ struct ContentView: View {
     @State private var pendingDraftSave: Task<Void, Never>?
 
     var body: some View {
-        if hasEnteredHome {
+        ZStack {
             applyLifecycleModifiers(to: rootLayout)
-                .transition(.opacity)
-        } else {
-            HomeLandingView {
-                withAnimation(.easeInOut(duration: 0.32)) {
+
+            if !hasEnteredHome {
+                HomeLandingView(isStartupWorkReady: isStartupWorkReady) {
                     hasEnteredHome = true
                 }
             }
-            .transition(.opacity)
         }
+    }
+
+    private var isStartupWorkReady: Bool {
+        hasAttemptedDraftRestore && !isPhotoLoading
     }
 
     private var rootLayout: some View {
@@ -273,8 +275,8 @@ struct ContentView: View {
     @MainActor
     private func restoreCanvasDraftOnLaunch() async {
         guard !hasAttemptedDraftRestore else { return }
-        hasAttemptedDraftRestore = true
         await restoreCanvasDraftIfNeeded()
+        hasAttemptedDraftRestore = true
     }
 
     @ViewBuilder
