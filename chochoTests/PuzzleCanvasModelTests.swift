@@ -13,6 +13,43 @@ struct PuzzleCanvasModelTests {
         #expect(PuzzleCanvasDragMode.current(isTraceDrawingEnabled: true) == .trace)
     }
 
+    @Test func dotEditingRequiresMovementBeforeDraggingSelectedDot() {
+        #expect(DotEditingGestureMetrics.minimumDragDistance > 0)
+    }
+
+    @Test func viewportPanningStaysEnabledWhileDotEditingWhenDotDragIsInactive() {
+        #expect(PuzzleCanvasViewportPanPolicy.isEnabled(
+            isTraceDrawingEnabled: false,
+            isDotEditingEnabled: true,
+            isSelectedDotDragActive: false
+        ))
+    }
+
+    @Test func viewportPanningPausesOnlyDuringSelectedDotDrag() {
+        #expect(!PuzzleCanvasViewportPanPolicy.isEnabled(
+            isTraceDrawingEnabled: false,
+            isDotEditingEnabled: true,
+            isSelectedDotDragActive: true
+        ))
+    }
+
+    @Test func selectedDotDragStartsOnlyFromCurrentSelection() {
+        let selectedDotID = UUID()
+
+        #expect(DotEditingGestureMetrics.shouldBeginSelectedDotDrag(
+            startedDotID: selectedDotID,
+            selectedDotID: selectedDotID
+        ))
+        #expect(!DotEditingGestureMetrics.shouldBeginSelectedDotDrag(
+            startedDotID: UUID(),
+            selectedDotID: selectedDotID
+        ))
+        #expect(!DotEditingGestureMetrics.shouldBeginSelectedDotDrag(
+            startedDotID: nil,
+            selectedDotID: selectedDotID
+        ))
+    }
+
     @Test func polkaDotBackgroundUsesCircleTitle() {
         #expect(PuzzleBackgroundStyle.polkaDots.title == "圆点")
     }
@@ -85,6 +122,14 @@ struct PuzzleCanvasModelTests {
         #expect(tallOcclusion > 0)
         #expect(shortOcclusion > 0)
         #expect(shortOcclusion < tallOcclusion)
+    }
+
+    @Test func collapsedPanelUsesCompactIconOnlyTabBarHeight() {
+        let expandedTabBarHeight = BottomSheetPanel.tabBarItemHeight(isExpanded: true)
+        let collapsedTabBarHeight = BottomSheetPanel.tabBarItemHeight(isExpanded: false)
+
+        #expect(collapsedTabBarHeight < expandedTabBarHeight)
+        #expect(expandedTabBarHeight - collapsedTabBarHeight >= 12)
     }
 
     @Test func drawPanelTraceButtonsUseTwoToOneWidthRatio() {
@@ -462,22 +507,22 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func generatedDotsMatchRequestedCount() {
-        let dots = PuzzleDotFactory.makeDots(count: 10, shapeAssetName: "眼睛.小物")
+        let dots = PuzzleDotFactory.makeDots(count: 10, shapeAssetName: "shapes/小物/眼睛")
 
         #expect(dots.count == 10)
         #expect(dots.allSatisfy { 0...1 ~= $0.position.x && 0...1 ~= $0.position.y })
         #expect(dots.allSatisfy { $0.size > 0 })
-        #expect(dots.allSatisfy { $0.shapeAssetName == "眼睛.小物" })
+        #expect(dots.allSatisfy { $0.shapeAssetName == "shapes/小物/眼睛" })
     }
 
     @Test func tappedDotUsesSelectedShapeAssetName() {
         let dot = PuzzleDotFactory.makeDot(
             position: CGPoint(x: 0.25, y: 0.75),
             index: 0,
-            shapeAssetName: "花束.小物"
+            shapeAssetName: "shapes/小物/花束"
         )
 
-        #expect(dot.shapeAssetName == "花束.小物")
+        #expect(dot.shapeAssetName == "shapes/小物/花束")
         #expect(dot.position == CGPoint(x: 0.25, y: 0.75))
     }
 
@@ -574,14 +619,14 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func adjustedDotsGrowAndShrinkToRequestedCount() {
-        let originalDots = PuzzleDotFactory.makeDots(count: 2, shapeAssetName: "眼睛.小物")
+        let originalDots = PuzzleDotFactory.makeDots(count: 2, shapeAssetName: "shapes/小物/眼睛")
 
-        let grownDots = PuzzleDotFactory.adjusting(originalDots, toCount: 4, shapeAssetName: "花束.小物")
-        let shrunkDots = PuzzleDotFactory.adjusting(grownDots, toCount: 1, shapeAssetName: "花束.小物")
+        let grownDots = PuzzleDotFactory.adjusting(originalDots, toCount: 4, shapeAssetName: "shapes/小物/花束")
+        let shrunkDots = PuzzleDotFactory.adjusting(grownDots, toCount: 1, shapeAssetName: "shapes/小物/花束")
 
         #expect(grownDots.count == 4)
         #expect(grownDots.prefix(2).map(\.id) == originalDots.map(\.id))
-        #expect(grownDots.suffix(2).allSatisfy { $0.shapeAssetName == "花束.小物" })
+        #expect(grownDots.suffix(2).allSatisfy { $0.shapeAssetName == "shapes/小物/花束" })
         #expect(shrunkDots.count == 1)
         #expect(shrunkDots.first?.id == originalDots.first?.id)
     }
@@ -888,14 +933,14 @@ struct PuzzleCanvasModelTests {
         let categorizedDot = PuzzleDotFactory.makeDot(
             position: .zero,
             index: 0,
-            shapeAssetName: "鱼1.纽扣"
+            shapeAssetName: "shapes/纽扣/鱼1"
         )
 
         #expect(basicDot.displaySizeScale == 1)
         #expect(categorizedDot.displaySizeScale == 1.25)
     }
 
-    @Test func assetDotsWithoutKnownCategorySuffixRenderAsBasicDots() {
+    @Test func assetDotsWithoutKnownCategoryRenderAsBasicDots() {
         let basicDot = PuzzleDotFactory.makeDot(
             position: .zero,
             index: 0,
@@ -1364,35 +1409,35 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func dotShapeCatalogGroupsItemsByPanelCategory() {
-        #expect(DotShapeCategory.panelOrder.map(\.title) == ["最近", "像素", "基础", "小物", "彩纸", "纽扣", "水钻", "针线"])
-        #expect(DotShapeAsset.all.filter { $0.matches(category: .objects) }.map(\.name).contains("眼睛.小物"))
+        #expect(DotShapeCategory.panelOrder.map(\.title) == ["最近", "像素", "基础", "小物", "彩纸", "纽扣"])
+        #expect(DotShapeAsset.all.filter { $0.matches(category: .objects) }.map(\.name).contains("shapes/小物/眼睛"))
     }
 
-    @Test func assetDotNamesUseFinalComponentAsCategory() {
-        let rhinestoneShape = DotShapeAsset(name: "圆.brush.水钻")
+    @Test func assetDotNamesUseFolderCategoryMetadata() {
+        let buttonShape = DotShapeAsset(name: "shapes/纽扣/星1")
 
-        #expect(rhinestoneShape.title == "圆.brush")
-        #expect(rhinestoneShape.category == "水钻")
-        #expect(rhinestoneShape.matches(category: .rhinestone))
+        #expect(buttonShape.title == "星1")
+        #expect(buttonShape.category == "纽扣")
+        #expect(buttonShape.matches(category: .button))
     }
 
-    @Test func dotShapeCategoryUsesOnlyKnownFinalSuffix() {
+    @Test func dotShapeCategoryUsesCatalogInsteadOfFilenameSuffix() {
         let basicShapeWithDotInName = DotShapeAsset(name: "圆.brush")
         let basicShapeNames = DotShapeAsset.shapes(for: .basic, recentNames: []).map(\.name)
-        let rhinestoneShapeNames = DotShapeAsset.shapes(for: .rhinestone, recentNames: []).map(\.name)
+        let buttonShapeNames = DotShapeAsset.shapes(for: .button, recentNames: []).map(\.name)
 
         #expect(basicShapeWithDotInName.title == "圆.brush")
         #expect(basicShapeWithDotInName.category == "基础")
         #expect(basicShapeWithDotInName.matches(category: .basic))
         #expect(basicShapeNames.contains("心"))
-        #expect(!basicShapeNames.contains("心.水钻"))
-        #expect(rhinestoneShapeNames.contains("心.水钻"))
+        #expect(!basicShapeNames.contains("shapes/纽扣/星1"))
+        #expect(buttonShapeNames.contains("shapes/纽扣/星1"))
     }
 
     @Test func pixelDotAssetsUseCrispScalingAndNativeDisplaySize() {
-        let pixelShape = DotShapeAsset(name: "心1.像素")
+        let pixelShape = DotShapeAsset(name: "shapes/像素/像素1")
 
-        #expect(pixelShape.title == "心1")
+        #expect(pixelShape.title == "像素1")
         #expect(pixelShape.category == "像素")
         #expect(pixelShape.matches(category: .pixel))
         #expect(pixelShape.prefersCrispScaling)
@@ -1410,21 +1455,70 @@ struct PuzzleCanvasModelTests {
         #expect(dot.usesTemplateColor)
     }
 
+    @Test func selectedDotOverridesGlobalScaleAndShape() {
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: .zero,
+            color: .clear,
+            size: 1,
+            shapeAssetName: BuiltInDotShape.circle.rawValue,
+            scaleOverride: 2.5,
+            shapeAssetNameOverride: BuiltInDotShape.star.rawValue
+        )
+
+        #expect(dot.resolvedRenderedScale(globalDotScale: 12) == 2.5)
+        #expect(dot.resolvedShapeAssetName == BuiltInDotShape.star.rawValue)
+    }
+
+    @Test func dotWithoutOverridesUsesGlobalScaleAndBaseShape() {
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: .zero,
+            color: .clear,
+            size: 1,
+            shapeAssetName: BuiltInDotShape.circle.rawValue
+        )
+
+        #expect(dot.resolvedRenderedScale(globalDotScale: 12) == 12)
+        #expect(dot.resolvedShapeAssetName == BuiltInDotShape.circle.rawValue)
+    }
+
+    @Test func editableDotTransformClampsPositionAndAccumulatesRotation() {
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.5, y: 0.5),
+            color: .clear,
+            size: 1,
+            shapeAssetName: BuiltInDotShape.circle.rawValue,
+            rotationDegrees: 15
+        )
+
+        let edited = dot.editing(
+            position: CGPoint(x: 1.2, y: -0.2),
+            scaleOverride: 18,
+            rotationDegrees: 45
+        )
+
+        #expect(edited.position == CGPoint(x: 1, y: 0))
+        #expect(edited.scaleOverride == 18)
+        #expect(edited.rotationDegrees == 45)
+    }
+
     @Test func generatedDotShapeCatalogFeedsPanelShapeList() {
         let paperShapeNames = DotShapeAsset.shapes(for: .paper, recentNames: []).map(\.name)
 
-        #expect(paperShapeNames.contains("彩纸5.彩纸"))
+        #expect(paperShapeNames.contains("shapes/彩纸/彩纸5"))
     }
 
     @Test func assetDotImageNamesUseCompiledCatalogName() {
-        let shape = DotShapeAsset(name: "彩纸5.彩纸")
+        let shape = DotShapeAsset(name: "shapes/彩纸/彩纸5")
 
-        #expect(shape.assetImageName == "public/彩纸5.彩纸")
+        #expect(shape.assetImageName == "public/shapes/彩纸/彩纸5")
     }
 
     @Test func basicAssetDotPreviewsUseTemplateTinting() {
         let basicShape = DotShapeAsset(name: "星1")
-        let categorizedShape = DotShapeAsset(name: "彩纸5.彩纸")
+        let categorizedShape = DotShapeAsset(name: "shapes/彩纸/彩纸5")
 
         #expect(basicShape.usesTemplatePreview)
         #expect(!categorizedShape.usesTemplatePreview)
@@ -1456,13 +1550,13 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func datasetDotAssetsLoadAsImagesForPanelPreview() {
-        let image = DotShapeAssetImage.uiImage(named: DotShapeAsset(name: "彩纸5.彩纸").assetImageName)
+        let image = DotShapeAssetImage.uiImage(named: DotShapeAsset(name: "shapes/彩纸/彩纸5").assetImageName)
 
         #expect(image != nil)
     }
 
     @Test func categorizedDotAssetImagesUseExactDataAssetInsteadOfBaseImageFallback() throws {
-        for assetName in ["public/心.水钻", "public/星1.纽扣"] {
+        for assetName in ["public/shapes/纽扣/星1", "public/shapes/小物/眼睛"] {
             let loadedImage = try #require(DotShapeAssetImage.uiImage(named: assetName))
             let dataAsset = try #require(NSDataAsset(name: assetName))
             let exactImage = try #require(UIImage(data: dataAsset.data))
@@ -1473,23 +1567,23 @@ struct PuzzleCanvasModelTests {
 
     @Test func basicSvgDotShapesUseUnifiedPreviewPadding() {
         let basicShape = DotShapeAsset(name: "星1")
-        let objectShape = DotShapeAsset(name: "眼睛.小物")
+        let objectShape = DotShapeAsset(name: "shapes/小物/眼睛")
 
         #expect(basicShape.previewTilePadding == 16)
         #expect(objectShape.previewTilePadding == 9)
     }
 
     @Test func recentDotShapeListMovesSelectedShapeToFrontWithoutDuplicates() {
-        let first = DotShapeAsset(name: "眼睛.小物")
-        let second = DotShapeAsset(name: "花束.小物")
+        let first = DotShapeAsset(name: "shapes/小物/眼睛")
+        let second = DotShapeAsset(name: "shapes/小物/花束")
         let recentNames = DotShapeRecentList.adding(first.name, to: [second.name, first.name], limit: 3)
 
         #expect(recentNames == [first.name, second.name])
     }
 
     @Test func selectingRecentDotShapeKeepsCurrentRecentOrder() {
-        let first = DotShapeAsset(name: "眼睛.小物")
-        let second = DotShapeAsset(name: "花束.小物")
+        let first = DotShapeAsset(name: "shapes/小物/眼睛")
+        let second = DotShapeAsset(name: "shapes/小物/花束")
 
         let recentNames = DotShapeRecentList.selecting(
             first.name,
@@ -1499,6 +1593,14 @@ struct PuzzleCanvasModelTests {
         )
 
         #expect(recentNames == [second.name, first.name])
+    }
+
+    @Test func legacyDotShapeNamesMigrateToFolderBasedCatalogIDs() {
+        #expect(DotShapeAssetNameMigration.migrate("眼睛.小物") == "shapes/小物/眼睛")
+        #expect(DotShapeAssetNameMigration.migrate("像素3.像素") == "shapes/像素/像素3")
+        #expect(DotShapeAssetNameMigration.migrate("像素/像素3") == "shapes/像素/像素3")
+        #expect(DotShapeAssetNameMigration.migrate("心") == "心")
+        #expect(DotShapeAsset.asset(named: "彩纸5.彩纸")?.name == "shapes/彩纸/彩纸5")
     }
 }
 

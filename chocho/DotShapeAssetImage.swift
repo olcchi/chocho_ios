@@ -3,7 +3,8 @@ import UIKit
 
 enum DotShapeAssetImage {
     nonisolated static func uiImage(named assetName: String) -> UIImage? {
-        if shouldPreferExactDataAsset(named: assetName),
+        let catalogName = catalogAssetName(from: assetName)
+        if shouldPreferExactDataAsset(named: catalogName),
            let image = uiImageFromDataAsset(named: assetName) {
             return image
         }
@@ -15,8 +16,15 @@ enum DotShapeAssetImage {
         return uiImageFromDataAsset(named: assetName)
     }
 
-    private nonisolated static func shouldPreferExactDataAsset(named assetName: String) -> Bool {
-        DotShapeAssetCategoryParser.suffix(in: assetName) != nil
+    private nonisolated static func catalogAssetName(from assetName: String) -> String {
+        if assetName.hasPrefix("public/") {
+            return String(assetName.dropFirst("public/".count))
+        }
+        return assetName
+    }
+
+    private nonisolated static func shouldPreferExactDataAsset(named catalogName: String) -> Bool {
+        DotShapeAssetCategoryParser.prefersDataAsset(for: catalogName)
     }
 
     private nonisolated static func uiImageFromDataAsset(named assetName: String) -> UIImage? {

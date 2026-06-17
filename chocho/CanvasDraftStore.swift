@@ -71,8 +71,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 6
-    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6]
+    static let currentVersion = 7
+    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7]
 
     var version: Int
     var savedAt: Date
@@ -141,6 +141,9 @@ nonisolated struct CanvasDraftStoredDot: Codable, Equatable, Sendable {
     var color: CanvasDraftColorComponents
     var size: Double
     var shapeAssetName: String
+    var scaleOverride: Double?
+    var shapeAssetNameOverride: String?
+    var rotationDegrees: Double?
 
     init(dot: PuzzleDot) {
         id = dot.id
@@ -149,6 +152,9 @@ nonisolated struct CanvasDraftStoredDot: Codable, Equatable, Sendable {
         color = CanvasDraftColorComponents(dot.color)
         size = Double(dot.size)
         shapeAssetName = dot.shapeAssetName
+        scaleOverride = dot.scaleOverride.map(Double.init)
+        shapeAssetNameOverride = dot.shapeAssetNameOverride
+        rotationDegrees = Double(dot.rotationDegrees)
     }
 
     func puzzleDot() -> PuzzleDot {
@@ -157,7 +163,10 @@ nonisolated struct CanvasDraftStoredDot: Codable, Equatable, Sendable {
             position: CGPoint(x: positionX, y: positionY),
             color: color.color,
             size: CGFloat(size),
-            shapeAssetName: shapeAssetName
+            shapeAssetName: shapeAssetName,
+            scaleOverride: scaleOverride.map { CGFloat($0) },
+            shapeAssetNameOverride: shapeAssetNameOverride,
+            rotationDegrees: CGFloat(rotationDegrees ?? 0)
         )
     }
 }
@@ -331,7 +340,12 @@ nonisolated enum CanvasDraftStore {
                 return nil
             }
 
-            let puzzleDots = manifest.puzzleDots.map { $0.puzzleDot() }
+            let puzzleDots = manifest.puzzleDots.map { storedDot -> PuzzleDot in
+                var migratedDot = storedDot
+                migratedDot.shapeAssetName = DotShapeAssetNameMigration.migrate(storedDot.shapeAssetName)
+                migratedDot.shapeAssetNameOverride = storedDot.shapeAssetNameOverride.map(DotShapeAssetNameMigration.migrate)
+                return migratedDot.puzzleDot()
+            }
             let tracePoints = manifest.tracePoints.compactMap { $0.tracePoint() }
 
             let liveDotAnimation = manifest.liveDotAnimationRawValue
@@ -351,7 +365,7 @@ nonisolated enum CanvasDraftStore {
                 dotScale: manifest.dotScale,
                 selectedDotColor: manifest.selectedDotColor.color,
                 usesRandomDotColors: manifest.usesRandomDotColors,
-                selectedDotShapeName: manifest.selectedDotShapeName,
+                selectedDotShapeName: DotShapeAssetNameMigration.migrate(manifest.selectedDotShapeName),
                 dotCharacterText: manifest.dotCharacterText ?? CharacterDotText.defaultText,
                 isTraceDrawingEnabled: manifest.isTraceDrawingEnabled,
                 photoCompression: photoCompression,

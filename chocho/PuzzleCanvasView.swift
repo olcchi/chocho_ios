@@ -21,22 +21,35 @@ struct PuzzleCanvasView: View {
     var dotCharacterText = CharacterDotText.defaultText
     var viewportScale: CGFloat = 1
     var viewportOffset: CGSize = .zero
-    var gestureOffset: CGSize = .zero
     var tracePoints: [PuzzleCanvasTracePoint] = []
     var isTraceDrawingEnabled = false
     var liveDotAnimation: LiveDotAnimation = .none
     var livePreviewPlaybackStart: Date?
     var isSourceLiveMotionEnabled = false
     var sourceLiveVideo: CanvasSourceLiveVideo?
+    var isDotEditingEnabled = false
+    var selectedDotID: UUID?
     var onTapCanvas: ((PuzzleCanvasTracePoint) -> Void)?
+    var onPanViewport: ((CGSize) -> Void)?
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onTraceChanged: (([PuzzleCanvasTracePoint]) -> Void)?
+    var onSelectDot: ((UUID?) -> Void)?
+    var onMoveSelectedDot: ((CGPoint) -> Void)?
+    var onScaleSelectedDot: ((CGFloat) -> Void)?
+    var onRotateSelectedDot: ((CGFloat) -> Void)?
+    var onCommitSelectedDotEdit: (() -> Void)?
+    var onDeleteSelectedDot: (() -> Void)?
     /// 屏幕预览用较轻插值；导出走 `CanvasRasterExporter` 全质量。
     var photoInterpolation: Image.Interpolation = .medium
 
     @State private var isTracingCurrentStroke = false
     @State private var activeTracePoints: [PuzzleCanvasTracePoint] = []
+    @State private var activeCanvasDragMode: PuzzleCanvasActiveDragMode?
+    @State private var viewportDragTranslation: CGSize = .zero
+    @State private var lastEditMagnification: CGFloat = 1
+    @State private var lastEditRotation: Angle = .zero
+    @State private var appliedViewportResetKey: CanvasViewportResetKey?
 
     private var shouldRunLivePreviewTimeline: Bool {
         guard livePreviewPlaybackStart != nil else { return false }
@@ -114,6 +127,19 @@ struct PuzzleCanvasView: View {
                 )
             )
             .simultaneousGesture(
+                canvasDragGesture(
+                    availableSize: proxy.size,
+                    layout: layout
+                )
+            )
+            .modifier(
+                DotEditingGestureModifier(
+                    isEnabled: isDotEditingEnabled && selectedDotID != nil,
+                    magnifyGesture: selectedDotMagnifyGesture,
+                    rotateGesture: selectedDotRotationGesture
+                )
+            )
+            .simultaneousGesture(
                 backgroundDoubleTapGesture(
                     availableSize: proxy.size,
                     layout: layout
@@ -138,6 +164,7 @@ struct PuzzleCanvasView: View {
                         photoCompression: photoCompression,
                         imageViewportResetID: imageViewportResetID
                     ),
+                    appliedKey: $appliedViewportResetKey,
                     layout: layout,
                     availableSize: proxy.size,
                     onReset: onViewportReset
@@ -231,6 +258,19 @@ struct PuzzleCanvasView: View {
                 width: referenceFrame.width,
                 height: referenceFrame.height
             )
+
+            DotEditingSelectionOverlay(
+                dots: dots,
+                selectedDotID: selectedDotID,
+                isDotEditingEnabled: isDotEditingEnabled,
+                dotScale: dotScale,
+                layout: layout,
+                onDelete: onDeleteSelectedDot
+            )
+            .frame(
+                width: referenceFrame.width,
+                height: referenceFrame.height
+            )
         }
         .frame(
             width: referenceFrame.width,
@@ -286,8 +326,8 @@ struct PuzzleCanvasView: View {
             bottomPanelInset: bottomPanelInset
         )
         return CGSize(
-            width: viewportOffset.width + panelTracking.width + gestureOffset.width,
-            height: viewportOffset.height + panelTracking.height + gestureOffset.height
+            width: viewportOffset.width + panelTracking.width + viewportDragTranslation.width,
+            height: viewportOffset.height + panelTracking.height + viewportDragTranslation.height
         )
     }
 
@@ -369,6 +409,22 @@ struct PuzzleCanvasView: View {
             .onEnded { value in
                 guard !isTraceDrawingEnabled else { return }
 
+                if isDotEditingEnabled {
+                    let tappedDotID = dotID(
+                        at: value.location,
+                        availableSize: availableSize,
+                        layout: layout
+                    )
+                    onSelectDot?(tappedDotID)
+                    if tappedDotID == nil {
+                        resetViewport(
+                            layout: layout,
+                            availableSize: availableSize
+                        )
+                    }
+                    return
+                }
+
                 guard let canvasLocation = PuzzleCanvasCoordinate.canvasLocation(
                     for: value.location,
                     availableSize: availableSize,
@@ -405,13 +461,181 @@ struct PuzzleCanvasView: View {
                     return
                 }
 
-                let reset = PuzzleCanvasViewport.resetTransform(
+                if isDotEditingEnabled {
+                    onSelectDot?(nil)
+                }
+
+                resetViewport(
                     layout: layout,
-                    availableSize: availableSize,
-                    bottomPanelInset: 0
+                    availableSize: availableSize
                 )
-                onDoubleTapBackground?(reset.scale, reset.offset)
             }
+    }
+
+    private func resetViewport(
+        layout: PuzzleCanvasLayoutResult,
+        availableSize: CGSize
+    ) {
+        let reset = PuzzleCanvasViewport.resetTransform(
+            layout: layout,
+            availableSize: availableSize,
+            bottomPanelInset: 0
+        )
+        onDoubleTapBackground?(reset.scale, reset.offset)
+    }
+
+    private func canvasDragGesture(
+        availableSize: CGSize,
+        layout: PuzzleCanvasLayoutResult
+    ) -> some Gesture {
+        DragGesture(minimumDistance: DotEditingGestureMetrics.minimumDragDistance, coordinateSpace: .local)
+            .onChanged { value in
+                guard PuzzleCanvasViewportPanPolicy.isEnabled(
+                    isTraceDrawingEnabled: isTraceDrawingEnabled,
+                    isDotEditingEnabled: isDotEditingEnabled,
+                    isSelectedDotDragActive: activeCanvasDragMode == .selectedDot
+                ) || activeCanvasDragMode == .selectedDot else { return }
+
+                switch resolvedCanvasDragMode(
+                    for: value,
+                    availableSize: availableSize,
+                    layout: layout
+                ) {
+                case .viewport:
+                    viewportDragTranslation = value.translation
+
+                case .selectedDot:
+                    moveSelectedDot(
+                        with: value,
+                        availableSize: availableSize,
+                        layout: layout
+                    )
+                }
+            }
+            .onEnded { value in
+                let endedMode = activeCanvasDragMode
+                defer {
+                    activeCanvasDragMode = nil
+                    viewportDragTranslation = .zero
+                }
+
+                switch endedMode {
+                case .viewport:
+                    onPanViewport?(value.translation)
+                case .selectedDot:
+                    onCommitSelectedDotEdit?()
+                case nil:
+                    break
+                }
+            }
+    }
+
+    private func resolvedCanvasDragMode(
+        for value: DragGesture.Value,
+        availableSize: CGSize,
+        layout: PuzzleCanvasLayoutResult
+    ) -> PuzzleCanvasActiveDragMode {
+        if let activeCanvasDragMode {
+            return activeCanvasDragMode
+        }
+
+        let startedDotID = dotID(
+            at: value.startLocation,
+            availableSize: availableSize,
+            layout: layout
+        )
+        let nextMode: PuzzleCanvasActiveDragMode = DotEditingGestureMetrics.shouldBeginSelectedDotDrag(
+            startedDotID: startedDotID,
+            selectedDotID: selectedDotID
+        ) ? .selectedDot : .viewport
+        activeCanvasDragMode = nextMode
+        return nextMode
+    }
+
+    private func moveSelectedDot(
+        with value: DragGesture.Value,
+        availableSize: CGSize,
+        layout: PuzzleCanvasLayoutResult
+    ) {
+        guard let canvasLocation = PuzzleCanvasCoordinate.canvasLocation(
+            for: value.location,
+            availableSize: availableSize,
+            layout: layout,
+            scale: viewportScale,
+            offset: displayViewportOffset(
+                layout: layout,
+                availableSize: availableSize
+            )
+        ) else {
+            return
+        }
+        onMoveSelectedDot?(
+            PuzzleCanvasCoordinate.dotPosition(
+                for: canvasLocation,
+                extensionSide: extensionSide
+            )
+        )
+    }
+
+    private var selectedDotMagnifyGesture: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let delta = value.magnification / lastEditMagnification
+                guard delta.isFinite, delta > 0 else { return }
+                lastEditMagnification = value.magnification
+                onScaleSelectedDot?(delta)
+            }
+            .onEnded { _ in
+                lastEditMagnification = 1
+                onCommitSelectedDotEdit?()
+            }
+    }
+
+    private var selectedDotRotationGesture: some Gesture {
+        RotationGesture()
+            .onChanged { value in
+                let delta = value - lastEditRotation
+                lastEditRotation = value
+                onRotateSelectedDot?(delta.degrees)
+            }
+            .onEnded { _ in
+                lastEditRotation = .zero
+                onCommitSelectedDotEdit?()
+            }
+    }
+
+    private func dotID(
+        at location: CGPoint,
+        availableSize: CGSize,
+        layout: PuzzleCanvasLayoutResult
+    ) -> UUID? {
+        guard let unscaledLocation = PuzzleCanvasCoordinate.unscaledLocation(
+            for: location,
+            availableSize: availableSize,
+            scale: viewportScale,
+            offset: displayViewportOffset(
+                layout: layout,
+                availableSize: availableSize
+            )
+        ) else {
+            return nil
+        }
+
+        let referenceLocation = CGPoint(
+            x: unscaledLocation.x - layout.referenceComposedFrame.minX,
+            y: unscaledLocation.y - layout.referenceComposedFrame.minY
+        )
+
+        return dots.reversed().first { dot in
+            let centers = PuzzleCanvasCoordinate.dotCenters(for: dot.position, in: layout)
+            return centers.contains { center in
+                let displaySize = DotSizeControl.displaySize(
+                    renderedScale: dot.resolvedRenderedScale(globalDotScale: dotScale) * dot.displaySizeScale,
+                    photoFrameHeight: layout.dotReferenceHeight(forCenterIndex: 0)
+                )
+                return hypot(referenceLocation.x - center.x, referenceLocation.y - center.y) <= max(displaySize / 2, 22)
+            }
+        }?.id
     }
 
     private func traceGesture(
@@ -475,6 +699,7 @@ struct PuzzleCanvasView: View {
 
 private struct ViewportResetObserver: View {
     let key: CanvasViewportResetKey
+    @Binding var appliedKey: CanvasViewportResetKey?
     let layout: PuzzleCanvasLayoutResult
     let availableSize: CGSize
     let onReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
@@ -484,14 +709,24 @@ private struct ViewportResetObserver: View {
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .onChange(of: key, initial: true) { _, _ in
-                awaitingLayoutReset = true
-                attemptReset()
+            .onAppear {
+                scheduleResetIfNeeded(for: key)
+            }
+            .onChange(of: key) { _, newKey in
+                scheduleResetIfNeeded(for: newKey)
             }
             .onChange(of: availableSize) { _, _ in
                 guard awaitingLayoutReset else { return }
                 attemptReset()
             }
+    }
+
+    private func scheduleResetIfNeeded(for key: CanvasViewportResetKey) {
+        guard key != appliedKey else { return }
+
+        appliedKey = key
+        awaitingLayoutReset = true
+        attemptReset()
     }
 
     private func attemptReset() {
@@ -529,6 +764,79 @@ private struct TraceGestureModifier<Trace: Gesture>: ViewModifier {
         case .trace:
             content.simultaneousGesture(gesture)
         }
+    }
+}
+
+private enum PuzzleCanvasActiveDragMode {
+    case viewport
+    case selectedDot
+}
+
+private struct DotEditingGestureModifier<Magnify: Gesture, Rotate: Gesture>: ViewModifier {
+    let isEnabled: Bool
+    let magnifyGesture: Magnify
+    let rotateGesture: Rotate
+
+    func body(content: Content) -> some View {
+        content
+            .highPriorityGesture(isEnabled ? magnifyGesture : nil)
+            .highPriorityGesture(isEnabled ? rotateGesture : nil)
+    }
+}
+
+private struct DotEditingSelectionOverlay: View {
+    let dots: [PuzzleDot]
+    let selectedDotID: UUID?
+    let isDotEditingEnabled: Bool
+    let dotScale: CGFloat
+    let layout: PuzzleCanvasLayoutResult
+    let onDelete: (() -> Void)?
+    @GestureState private var isDeletePressing = false
+
+    var body: some View {
+        if isDotEditingEnabled,
+           let selectedDot,
+           let center = PuzzleCanvasCoordinate.dotCenters(for: selectedDot.position, in: layout).first {
+            let size = DotSizeControl.displaySize(
+                renderedScale: selectedDot.resolvedRenderedScale(globalDotScale: dotScale) * selectedDot.displaySizeScale,
+                photoFrameHeight: layout.dotReferenceHeight(forCenterIndex: 0)
+            )
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: max(size * 0.12, 8), style: .continuous)
+                    .stroke(Color.primary, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
+                    .frame(width: size + 12, height: size + 12)
+                    .rotationEffect(.degrees(selectedDot.rotationDegrees))
+                    .allowsHitTesting(false)
+
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.primaryForeground)
+                    .frame(width: 24, height: 24)
+                    .background(Color.primary, in: Circle())
+                    .scaleEffect(isDeletePressing ? 0.88 : 1)
+                    .contentShape(Circle())
+                    .gesture(deleteGesture)
+                    .offset(x: 24, y: -24)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("长按删除选中波点")
+            }
+            .position(center)
+        }
+    }
+
+    private var deleteGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.45, maximumDistance: 12)
+            .updating($isDeletePressing) { currentValue, state, _ in
+                state = currentValue
+            }
+            .onEnded { _ in
+                onDelete?()
+            }
+    }
+
+    private var selectedDot: PuzzleDot? {
+        guard let selectedDotID else { return nil }
+        return dots.first { $0.id == selectedDotID }
     }
 }
 
@@ -739,9 +1047,11 @@ private struct PuzzleDotsCanvas: View {
                 ForEach(Array(centers.enumerated()), id: \.offset) { centerIndex, center in
                     if centerIndexFilter.includes(centerIndex) {
                         let size = DotSizeControl.displaySize(
-                            renderedScale: dot.size * dotScale * dot.displaySizeScale,
+                            renderedScale: dot.resolvedRenderedScale(globalDotScale: dotScale) * dot.displaySizeScale,
                             photoFrameHeight: layout.dotReferenceHeight(forCenterIndex: centerIndex)
                         )
+                        let rotation = Angle.degrees(dot.rotationDegrees)
+                            + Angle.radians(motion.rotationRadians)
                         Color.clear
                             .frame(width: size, height: size)
                             .overlay {
@@ -750,7 +1060,7 @@ private struct PuzzleDotsCanvas: View {
                                     .clipped()
                             }
                             .scaleEffect(CGFloat(motion.scale))
-                            .rotationEffect(.radians(motion.rotationRadians))
+                            .rotationEffect(rotation)
                             .opacity(motion.opacity)
                             .position(center)
                     }
@@ -844,10 +1154,10 @@ private struct PuzzleDotsCanvas: View {
             )
 
             DotShapeAssetImageView(
-                assetName: "public/\(dot.shapeAssetName)",
+                assetName: "public/\(dot.resolvedShapeAssetName)",
                 renderingMode: dot.usesTemplateColor ? .template : .original,
                 tintColor: dot.usesTemplateColor ? stickerColor : nil,
-                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: dot.shapeAssetName)
+                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: dot.resolvedShapeAssetName)
             )
         }
     }
@@ -964,10 +1274,10 @@ private struct PuzzleDotCollageAssetShapeView: View {
         )
         .mask {
             DotShapeAssetImageView(
-                assetName: "public/\(dot.shapeAssetName)",
+                assetName: "public/\(dot.resolvedShapeAssetName)",
                 renderingMode: .template,
                 tintColor: .white,
-                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: dot.shapeAssetName)
+                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: dot.resolvedShapeAssetName)
             )
         }
     }

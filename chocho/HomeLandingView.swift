@@ -24,6 +24,7 @@ nonisolated enum HomeSplashScreen {
 
 struct HomeLandingView: View {
     let isStartupWorkReady: Bool
+    var shouldAutoAdvance = true
     let onEnter: () -> Void
     @State private var startTime = Date()
     @State private var hasAdvanced = false
@@ -43,7 +44,13 @@ struct HomeLandingView: View {
         .compositingGroup()
         .scaleEffect(isExiting ? HomeSplashScreen.exitScale : 1)
         .opacity(isExiting ? 0 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !shouldAutoAdvance, !hasAdvanced else { return }
+            Task { await advanceOnce() }
+        }
         .task(id: isStartupWorkReady) {
+            guard shouldAutoAdvance else { return }
             let elapsedTime = Date().timeIntervalSince(startTime)
             let delay = HomeSplashScreen.advanceDelay(
                 isStartupWorkReady: isStartupWorkReady,

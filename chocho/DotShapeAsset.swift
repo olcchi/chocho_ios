@@ -2,43 +2,36 @@ import SwiftUI
 
 nonisolated enum DotShapeAssetCategoryParser {
     static let basicCategory = "基础"
-    static let categorizedSuffixes: Set<String> = [
-        "小物",
-        "彩纸",
-        "纽扣",
-        "水钻",
-        "针线",
-        "像素"
-    ]
+
+    static func category(for name: String) -> String {
+        if BuiltInDotShape(rawValue: name) != nil {
+            return basicCategory
+        }
+        return DotShapeCatalog.category(for: name) ?? basicCategory
+    }
+
+    static func title(for name: String) -> String {
+        if let leaf = name.split(separator: "/").last {
+            return String(leaf)
+        }
+        return name
+    }
 
     static func prefersCrispScaling(for name: String) -> Bool {
-        suffix(in: name) == "像素"
+        category(for: name) == "像素"
     }
 
     /// Monochrome SVG shapes tint with the selected dot color; full-color sticker assets keep original pixels.
     static func usesTemplateTinting(for name: String) -> Bool {
-        guard let suffix = suffix(in: name) else { return true }
-        return suffix == "像素"
-    }
-
-    static func category(for name: String) -> String {
-        suffix(in: name) ?? basicCategory
-    }
-
-    static func title(for name: String) -> String {
-        guard suffix(in: name) != nil, let suffixSeparatorIndex = name.lastIndex(of: ".") else {
-            return name
+        let resolvedCategory = category(for: name)
+        if resolvedCategory == basicCategory {
+            return true
         }
-
-        return String(name[..<suffixSeparatorIndex])
+        return resolvedCategory == "像素"
     }
 
-    static func suffix(in name: String) -> String? {
-        guard let suffixSeparatorIndex = name.lastIndex(of: ".") else { return nil }
-
-        let suffixStartIndex = name.index(after: suffixSeparatorIndex)
-        let suffix = String(name[suffixStartIndex...])
-        return categorizedSuffixes.contains(suffix) ? suffix : nil
+    static func prefersDataAsset(for name: String) -> Bool {
+        DotShapeCatalog.prefersDataAsset(for: name)
     }
 }
 
@@ -48,8 +41,6 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
     case objects
     case paper
     case button
-    case rhinestone
-    case thread
     case pixel
 
     var id: Self { self }
@@ -66,10 +57,6 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
             "彩纸"
         case .button:
             "纽扣"
-        case .rhinestone:
-            "水钻"
-        case .thread:
-            "针线"
         case .pixel:
             "像素"
         }
@@ -87,18 +74,10 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
             "彩纸"
         case .button:
             "纽扣"
-        case .rhinestone:
-            "水钻"
-        case .thread:
-            "针线"
         case .pixel:
             "像素"
         }
     }
-
-    static let assetCategorySuffixes = Set(
-        DotShapeAssetCategoryParser.categorizedSuffixes
-    )
 
     static let panelOrder: [DotShapeCategory] = [
         .recent,
@@ -106,10 +85,32 @@ enum DotShapeCategory: String, CaseIterable, Identifiable {
         .basic,
         .objects,
         .paper,
-        .button,
-        .rhinestone,
-        .thread
+        .button
     ]
+}
+
+extension DotShapeCatalog {
+    private static let categoryByName: [String: String] = {
+        Dictionary(uniqueKeysWithValues: entries.map { ($0.name, $0.category) })
+    }()
+
+    static func category(for name: String) -> String? {
+        categoryByName[name]
+    }
+
+    static func contains(_ name: String) -> Bool {
+        categoryByName[name] != nil
+    }
+
+    static func prefersDataAsset(for name: String) -> Bool {
+        guard let category = category(for: name) else { return false }
+        switch category {
+        case "基础", "像素":
+            return false
+        default:
+            return true
+        }
+    }
 }
 
 struct DotShapeAsset: Identifiable, Equatable {
@@ -162,7 +163,7 @@ struct DotShapeAsset: Identifiable, Equatable {
             false
         case .basic:
             self.category == "基础"
-        case .objects, .paper, .button, .rhinestone, .thread, .pixel:
+        case .objects, .paper, .button, .pixel:
             self.category == category.rawAssetCategory
         }
     }
@@ -172,14 +173,20 @@ struct DotShapeAsset: Identifiable, Equatable {
         switch category {
         case .recent:
             recentNames.compactMap(asset(named:))
-        case .basic, .objects, .paper, .button, .rhinestone, .thread, .pixel:
+        case .basic, .objects, .paper, .button, .pixel:
             all.filter { $0.matches(category: category) }
         }
     }
 
     @MainActor
     static func asset(named name: String) -> DotShapeAsset? {
-        all.first { $0.name == name }
+        let migratedName = DotShapeAssetNameMigration.migrate(name)
+        if BuiltInDotShape(rawValue: migratedName) != nil
+            || migratedName == CharacterDotText.shapeName
+            || DotShapeCatalog.contains(migratedName) {
+            return DotShapeAsset(name: migratedName)
+        }
+        return nil
     }
 
     static let defaultSelection = DotShapeAsset(name: BuiltInDotShape.circle.rawValue)
@@ -213,14 +220,17 @@ enum DotShapeRecentList {
     }
 
     static func adding(_ selectedName: String, to recentNames: [String], limit: Int) -> [String] {
-        let deduped = recentNames.filter { $0 != selectedName }
-        return Array(([selectedName] + deduped).prefix(max(limit, 0)))
+        let migratedSelectedName = DotShapeAssetNameMigration.migrate(selectedName)
+        let deduped = recentNames
+            .map(DotShapeAssetNameMigration.migrate)
+            .filter { $0 != migratedSelectedName }
+        return Array(([migratedSelectedName] + deduped).prefix(max(limit, 0)))
     }
 
     static func names(from storageString: String) -> [String] {
         storageString
             .split(separator: Character(separator), omittingEmptySubsequences: true)
-            .map(String.init)
+            .map { DotShapeAssetNameMigration.migrate(String($0)) }
     }
 
     static func storageString(for names: [String]) -> String {

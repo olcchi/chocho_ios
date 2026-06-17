@@ -17,6 +17,7 @@ struct ContentView: View {
 
     // MARK: 底部面板与波点编辑状态
     @State private var hasEnteredHome = false
+    @State private var shouldAutoAdvanceHome = true
     @State private var selectedTab: PanelTab = .dots
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var canvasImage: UIImage?
@@ -59,6 +60,8 @@ struct ContentView: View {
     @State private var puzzleDots: [PuzzleDot] = []
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
     @State private var showsClearCanvasConfirmation = false
+    @State private var isDotEditingEnabled = false
+    @State private var selectedDotID: UUID?
 
     // MARK: 导出与分享
     @State private var toastMessage: CanvasToastMessage?
@@ -67,7 +70,6 @@ struct ContentView: View {
     @State private var shareItem: CanvasShareItem?
     @State private var exportSession: CanvasExportSession?
     @State private var shareSheetDetent: PresentationDetent = .medium
-    @GestureState private var gestureOffset: CGSize = .zero
     @State private var lastMagnification: CGFloat = 1
 
     // MARK: 画布草稿（自动保存 / 冷启动恢复）
@@ -79,8 +81,12 @@ struct ContentView: View {
             applyLifecycleModifiers(to: rootLayout)
 
             if !hasEnteredHome {
-                HomeLandingView(isStartupWorkReady: isStartupWorkReady) {
+                HomeLandingView(
+                    isStartupWorkReady: isStartupWorkReady,
+                    shouldAutoAdvance: shouldAutoAdvanceHome
+                ) {
                     hasEnteredHome = true
+                    shouldAutoAdvanceHome = true
                 }
             }
         }
@@ -109,6 +115,7 @@ struct ContentView: View {
                         hasCanvasImage: canvasImage != nil,
                         canDownload: canvasImage != nil,
                         isBusy: isPhotoLoading || isExporting,
+                        onBack: returnToHome,
                         onDownload: shareCanvas
                     )
                     .padding(.top, 4)
@@ -206,30 +213,18 @@ struct ContentView: View {
         )
     }
 
-    private var historyControlsOverlay: some View {
-        CanvasHistoryControls(
-            canUndo: canvasHistory.canUndo,
-            canRedo: canvasHistory.canRedo,
-            canClear: !puzzleDots.isEmpty,
-            onClear: presentClearCanvasConfirmation,
-            onUndo: undoCanvasChange,
-            onRedo: redoCanvasChange
-        )
-        .padding(.trailing, BottomSheetPanel.contentHorizontalInset)
-        .offset(y: -BottomSheetPanel.historyControlsClearance)
-    }
-
     private func bottomPanel(proxy: GeometryProxy) -> some View {
         BottomSheetPanel(
             panelVisibleHeight: $panelVisibleHeight,
             selectedTab: $selectedTab,
             isExpanded: $isPanelExpanded,
+            isDotEditingEnabled: dotEditingModeBinding,
             dotControls: BottomSheetDotControls(
                 dotCount: $dotCount,
-                dotScale: $dotScale,
+                dotScale: dotScaleBinding,
                 selectedDotColor: $selectedDotColor,
                 usesRandomDotColors: $usesRandomDotColors,
-                selectedDotShape: $selectedDotShape,
+                selectedDotShape: selectedDotShapeBinding,
                 selectedDotShapeCategory: $selectedDotShapeCategory,
                 dotCharacterText: $dotCharacterText,
                 isTraceDrawingEnabled: $isTraceDrawingEnabled,
@@ -255,13 +250,16 @@ struct ContentView: View {
             bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
             isPanelEnabled: canvasImage != nil,
             canClearTrace: !tracePoints.isEmpty,
+            canUndo: canvasHistory.canUndo,
+            canRedo: canvasHistory.canRedo,
+            canClearCanvas: !puzzleDots.isEmpty,
             onDrawDots: drawPuzzleDots,
             onDrawSubjectDots: drawSubjectPuzzleDots,
-            onClearTrace: clearTracePoints
+            onClearTrace: clearTracePoints,
+            onClearCanvas: presentClearCanvasConfirmation,
+            onUndo: undoCanvasChange,
+            onRedo: redoCanvasChange
         )
-        .overlay(alignment: .topTrailing) {
-            historyControlsOverlay
-        }
         // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
         .padding(.bottom, -proxy.safeAreaInsets.bottom)
     }
@@ -307,24 +305,34 @@ struct ContentView: View {
                     dotCharacterText: dotCharacterText,
                     viewportScale: viewportScale,
                     viewportOffset: viewportOffset,
-                    gestureOffset: gestureOffset,
                     tracePoints: tracePoints,
                     isTraceDrawingEnabled: isTraceDrawingEnabled,
                     liveDotAnimation: liveDotAnimation,
                     livePreviewPlaybackStart: livePreviewPlaybackStart,
                     isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
                     sourceLiveVideo: sourceLiveVideo,
+                    isDotEditingEnabled: isDotEditingEnabled,
+                    selectedDotID: selectedDotID,
                     onTapCanvas: addPuzzleDot(at:),
+                    onPanViewport: panCanvasViewport(by:),
                     onDoubleTapBackground: applyCanvasViewportReset,
                     onViewportReset: applyCanvasViewportResetWithoutAnimation,
-                    onTraceChanged: updateTracePoints
+                    onTraceChanged: updateTracePoints,
+                    onSelectDot: selectDot,
+                    onMoveSelectedDot: previewMoveSelectedDot(to:),
+                    onScaleSelectedDot: previewScaleSelectedDot(by:),
+                    onRotateSelectedDot: previewRotateSelectedDot(by:),
+                    onCommitSelectedDotEdit: commitSelectedDotEdit,
+                    onDeleteSelectedDot: deleteSelectedDot
                 )
 
-                if isTraceDrawingEnabled {
-                    canvas
-                } else {
-                    canvas.gesture(canvasGesture(availableSize: canvasProxy.size))
-                }
+                canvas
+                    .simultaneousGesture(
+                        canvasMagnifyGesture(
+                            availableSize: canvasProxy.size,
+                            isEnabled: !isTraceDrawingEnabled && selectedDotID == nil
+                        )
+                    )
             }
         } else {
             PhotosPicker(
@@ -367,6 +375,67 @@ struct ContentView: View {
         )
     }
 
+    private var selectedDotIndex: Int? {
+        guard let selectedDotID else { return nil }
+        return puzzleDots.firstIndex { $0.id == selectedDotID }
+    }
+
+    private var selectedDot: PuzzleDot? {
+        guard let selectedDotIndex else { return nil }
+        return puzzleDots[selectedDotIndex]
+    }
+
+    private var dotEditingModeBinding: Binding<Bool> {
+        Binding(
+            get: { isDotEditingEnabled },
+            set: { setDotEditingMode($0) }
+        )
+    }
+
+    private var dotScaleBinding: Binding<Double> {
+        Binding(
+            get: {
+                if let selectedDot {
+                    return Double(selectedDot.resolvedRenderedScale(globalDotScale: CGFloat(dotScale)))
+                }
+                return dotScale
+            },
+            set: { newValue in
+                if selectedDotID != nil {
+                    applySelectedDotEdit { dot in
+                        dot.editing(scaleOverride: CGFloat(newValue))
+                    }
+                } else {
+                    dotScale = newValue
+                }
+            }
+        )
+    }
+
+    private var selectedDotShapeBinding: Binding<DotShapeAsset> {
+        Binding(
+            get: {
+                if let selectedDot {
+                    return DotShapeAsset.asset(named: selectedDot.resolvedShapeAssetName)
+                        ?? DotShapeAsset(name: selectedDot.resolvedShapeAssetName)
+                }
+                return selectedDotShape
+            },
+            set: { newShape in
+                if selectedDotID != nil {
+                    applySelectedDotEdit { dot in
+                        dot.editing(shapeAssetNameOverride: newShape.name)
+                    }
+                    selectedDotShapeCategory = DotShapeCategory.panelOrder.first {
+                        newShape.matches(category: $0)
+                    } ?? .basic
+                } else {
+                    selectedDotShape = newShape
+                }
+            }
+        )
+    }
+
     @MainActor
     private func showToast(_ title: String) {
         toastMessage = CanvasToastMessage(title)
@@ -375,6 +444,11 @@ struct ContentView: View {
     @MainActor
     private func dismissToast() {
         toastMessage = nil
+    }
+
+    private func returnToHome() {
+        shouldAutoAdvanceHome = false
+        hasEnteredHome = false
     }
 
     private var livePreviewDuration: TimeInterval {
@@ -470,6 +544,8 @@ struct ContentView: View {
             viewportScale = 1
             viewportOffset = .zero
             lastMagnification = 1
+            isDotEditingEnabled = false
+            selectedDotID = nil
             tracePoints = []
             canvasHistory.reset(to: [])
             puzzleDots = []
@@ -599,6 +675,7 @@ struct ContentView: View {
 
     @MainActor
     private func addPuzzleDot(at location: PuzzleCanvasTracePoint) {
+        guard !isDotEditingEnabled else { return }
         invalidateSubjectDotGeneration()
 
         let position = PuzzleCanvasCoordinate.dotPosition(
@@ -620,6 +697,113 @@ struct ContentView: View {
         invalidateSubjectDotGeneration()
         tracePoints = points
         dismissToast()
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func setDotEditingMode(_ isEnabled: Bool) {
+        if isEnabled {
+            guard canvasImage != nil else { return }
+            guard !isDotEditingEnabled else { return }
+
+            withoutAnimation {
+                isTraceDrawingEnabled = false
+                isDotEditingEnabled = true
+                selectedDotID = nil
+            }
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            dismissToast()
+        } else {
+            guard isDotEditingEnabled || selectedDotID != nil else { return }
+
+            withoutAnimation {
+                isDotEditingEnabled = false
+                selectedDotID = nil
+            }
+        }
+    }
+
+    @MainActor
+    private func selectDot(_ dotID: UUID?) {
+        guard isDotEditingEnabled else { return }
+
+        selectedDotID = dotID
+        if dotID == nil {
+            return
+        }
+        if let selectedDot {
+            let asset = DotShapeAsset.asset(named: selectedDot.resolvedShapeAssetName)
+                ?? DotShapeAsset(name: selectedDot.resolvedShapeAssetName)
+            selectedDotShapeCategory = DotShapeCategory.panelOrder.first {
+                asset.matches(category: $0)
+            } ?? .basic
+        }
+    }
+
+    @MainActor
+    private func previewMoveSelectedDot(to position: CGPoint) {
+        previewSelectedDotEdit { dot in
+            dot.editing(position: position)
+        }
+    }
+
+    @MainActor
+    private func previewScaleSelectedDot(by multiplier: CGFloat) {
+        guard multiplier.isFinite, multiplier > 0 else { return }
+
+        previewSelectedDotEdit { dot in
+            let currentScale = dot.resolvedRenderedScale(globalDotScale: CGFloat(dotScale))
+            let nextScale = min(
+                max(currentScale * multiplier, CGFloat(DotSizeControl.minRenderedScale)),
+                CGFloat(DotSizeControl.maxRenderedScale)
+            )
+            return dot.editing(scaleOverride: nextScale)
+        }
+    }
+
+    @MainActor
+    private func previewRotateSelectedDot(by degrees: CGFloat) {
+        guard degrees.isFinite else { return }
+
+        previewSelectedDotEdit { dot in
+            dot.editing(rotationDegrees: dot.rotationDegrees + degrees)
+        }
+    }
+
+    @MainActor
+    private func commitSelectedDotEdit() {
+        canvasHistory.record(puzzleDots)
+        puzzleDots = canvasHistory.currentValue
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func deleteSelectedDot() {
+        guard let selectedDotID else { return }
+
+        let editedDots = puzzleDots.filter { $0.id != selectedDotID }
+        self.selectedDotID = nil
+        applyPuzzleDots(editedDots)
+    }
+
+    @MainActor
+    private func previewSelectedDotEdit(_ transform: (PuzzleDot) -> PuzzleDot) {
+        guard let selectedDotIndex else { return }
+
+        var editedDots = puzzleDots
+        editedDots[selectedDotIndex] = transform(editedDots[selectedDotIndex])
+        puzzleDots = editedDots
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func applySelectedDotEdit(_ transform: (PuzzleDot) -> PuzzleDot) {
+        guard let selectedDotIndex else { return }
+
+        var editedDots = puzzleDots
+        editedDots[selectedDotIndex] = transform(editedDots[selectedDotIndex])
+        canvasHistory.record(editedDots)
+        puzzleDots = canvasHistory.currentValue
         scheduleCanvasDraftSave()
     }
 
@@ -650,6 +834,7 @@ struct ContentView: View {
         withTransaction(transaction) {
             puzzleDots = canvasHistory.clearValue()
         }
+        selectedDotID = nil
         dismissToast()
     }
 
@@ -659,6 +844,9 @@ struct ContentView: View {
 
         invalidateSubjectDotGeneration()
         puzzleDots = previousDots
+        if let selectedDotID, !puzzleDots.contains(where: { $0.id == selectedDotID }) {
+            self.selectedDotID = nil
+        }
         dismissToast()
     }
 
@@ -668,6 +856,9 @@ struct ContentView: View {
 
         invalidateSubjectDotGeneration()
         puzzleDots = nextDots
+        if let selectedDotID, !puzzleDots.contains(where: { $0.id == selectedDotID }) {
+            self.selectedDotID = nil
+        }
         dismissToast()
     }
 
@@ -683,6 +874,9 @@ struct ContentView: View {
     private func applyPuzzleDots(_ dots: [PuzzleDot]) {
         canvasHistory.record(dots)
         puzzleDots = canvasHistory.currentValue
+        if let selectedDotID, !puzzleDots.contains(where: { $0.id == selectedDotID }) {
+            self.selectedDotID = nil
+        }
         dismissToast()
         scheduleCanvasDraftSave()
     }
@@ -727,6 +921,8 @@ struct ContentView: View {
         imageViewportResetID = UUID()
         canvasHistory.reset(to: restored.puzzleDots)
         puzzleDots = restored.puzzleDots
+        isDotEditingEnabled = false
+        selectedDotID = nil
         dismissToast()
     }
 
@@ -975,40 +1171,41 @@ struct ContentView: View {
         }
     }
 
-    private func canvasGesture(availableSize: CGSize) -> some Gesture {
-        SimultaneousGesture(
-            DragGesture()
-                .updating($gestureOffset) { value, state, _ in
-                    state = value.translation
-                }
-                .onEnded { value in
-                    viewportOffset = viewportOffset + value.translation
-                },
-            MagnifyGesture()
-                .onChanged { value in
-                    let magnificationDelta = value.magnification / lastMagnification
-                    guard magnificationDelta.isFinite, magnificationDelta > 0 else { return }
+    @MainActor
+    private func panCanvasViewport(by translation: CGSize) {
+        viewportOffset = viewportOffset + translation
+    }
 
-                    let anchor = value.startLocation
-                    let nextScale = PuzzleCanvasViewport.clampedScale(
-                        viewportScale * magnificationDelta
-                    )
-                    let appliedMultiplier = nextScale / viewportScale
-                    guard appliedMultiplier.isFinite, appliedMultiplier > 0 else { return }
+    private func canvasMagnifyGesture(
+        availableSize: CGSize,
+        isEnabled: Bool
+    ) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                guard isEnabled else { return }
 
-                    viewportOffset = PuzzleCanvasViewport.adjustedOffset(
-                        anchor: anchor,
-                        availableSize: availableSize,
-                        scaleMultiplier: appliedMultiplier,
-                        baseOffset: viewportOffset
-                    )
-                    viewportScale = nextScale
-                    lastMagnification = value.magnification
-                }
-                .onEnded { _ in
-                    lastMagnification = 1
-                }
-        )
+                let magnificationDelta = value.magnification / lastMagnification
+                guard magnificationDelta.isFinite, magnificationDelta > 0 else { return }
+
+                let anchor = value.startLocation
+                let nextScale = PuzzleCanvasViewport.clampedScale(
+                    viewportScale * magnificationDelta
+                )
+                let appliedMultiplier = nextScale / viewportScale
+                guard appliedMultiplier.isFinite, appliedMultiplier > 0 else { return }
+
+                viewportOffset = PuzzleCanvasViewport.adjustedOffset(
+                    anchor: anchor,
+                    availableSize: availableSize,
+                    scaleMultiplier: appliedMultiplier,
+                    baseOffset: viewportOffset
+                )
+                viewportScale = nextScale
+                lastMagnification = value.magnification
+            }
+            .onEnded { _ in
+                lastMagnification = 1
+            }
     }
 
     @MainActor
@@ -1017,6 +1214,15 @@ struct ContentView: View {
 
         exportSession.cleanupNow()
         self.exportSession = nil
+    }
+
+    @MainActor
+    private func withoutAnimation(_ updates: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            updates()
+        }
     }
 }
 

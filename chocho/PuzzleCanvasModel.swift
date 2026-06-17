@@ -411,6 +411,28 @@ enum PuzzleCanvasDragMode: Equatable {
     }
 }
 
+enum PuzzleCanvasViewportPanPolicy {
+    static func isEnabled(
+        isTraceDrawingEnabled: Bool,
+        isDotEditingEnabled: Bool,
+        isSelectedDotDragActive: Bool
+    ) -> Bool {
+        !isTraceDrawingEnabled && !isSelectedDotDragActive
+    }
+}
+
+nonisolated enum DotEditingGestureMetrics {
+    static let minimumDragDistance: CGFloat = 8
+
+    static func shouldBeginSelectedDotDrag(
+        startedDotID: UUID?,
+        selectedDotID: UUID?
+    ) -> Bool {
+        guard let startedDotID, let selectedDotID else { return false }
+        return startedDotID == selectedDotID
+    }
+}
+
 struct PuzzleCanvasTraceSegment: Equatable {
     let start: CGPoint
     let end: CGPoint
@@ -1284,7 +1306,7 @@ nonisolated enum PuzzleCanvasCoordinate {
         )
     }
 
-    private static func unscaledLocation(
+    static func unscaledLocation(
         for location: CGPoint,
         availableSize: CGSize,
         scale: CGFloat,
@@ -1539,34 +1561,73 @@ nonisolated struct PuzzleDot: Identifiable, Equatable {
     let color: Color
     let size: CGFloat
     let shapeAssetName: String
+    var scaleOverride: CGFloat? = nil
+    var shapeAssetNameOverride: String? = nil
+    var rotationDegrees: CGFloat = 0
+
+    var resolvedShapeAssetName: String {
+        shapeAssetNameOverride ?? shapeAssetName
+    }
+
+    func resolvedRenderedScale(globalDotScale: CGFloat) -> CGFloat {
+        scaleOverride ?? (size * globalDotScale)
+    }
 
     var usesTemplateColor: Bool {
-        DotShapeAssetCategoryParser.usesTemplateTinting(for: shapeAssetName)
+        DotShapeAssetCategoryParser.usesTemplateTinting(for: resolvedShapeAssetName)
     }
 
     /// Category-suffixed asset dots render larger than basic dots; pixel art keeps native scale.
     var displaySizeScale: CGFloat {
-        guard let suffix = DotShapeAssetCategoryParser.suffix(in: shapeAssetName) else { return 1 }
-        return suffix == "像素" ? 1 : 1.25
+        let category = DotShapeAssetCategoryParser.category(for: resolvedShapeAssetName)
+        if category == DotShapeAssetCategoryParser.basicCategory || category == "像素" {
+            return 1
+        }
+        return 1.25
     }
 
     var builtInShape: BuiltInDotShape? {
-        BuiltInDotShape(rawValue: shapeAssetName)
+        BuiltInDotShape(rawValue: resolvedShapeAssetName)
     }
 
     var isCharacterDot: Bool {
-        shapeAssetName == CharacterDotText.shapeName
+        resolvedShapeAssetName == CharacterDotText.shapeName
     }
 
     /// Built-in geometry and basic catalog SVG shapes use mirror collage tinting.
     var supportsCollageTinting: Bool {
         if isCharacterDot { return true }
         if builtInShape != nil { return true }
-        return usesTemplateColor && DotShapeCatalog.assetNames.contains(shapeAssetName)
+        return usesTemplateColor && DotShapeCatalog.contains(DotShapeAssetNameMigration.migrate(resolvedShapeAssetName))
     }
 
     func displayColor(usesRandomColor: Bool, selectedColor: Color) -> Color {
         usesRandomColor ? color : selectedColor
+    }
+
+    func editing(
+        position: CGPoint? = nil,
+        scaleOverride: CGFloat? = nil,
+        shapeAssetNameOverride: String? = nil,
+        rotationDegrees: CGFloat? = nil
+    ) -> PuzzleDot {
+        PuzzleDot(
+            id: id,
+            position: Self.clampedPosition(position ?? self.position),
+            color: color,
+            size: size,
+            shapeAssetName: shapeAssetName,
+            scaleOverride: scaleOverride ?? self.scaleOverride,
+            shapeAssetNameOverride: shapeAssetNameOverride ?? self.shapeAssetNameOverride,
+            rotationDegrees: rotationDegrees ?? self.rotationDegrees
+        )
+    }
+
+    private static func clampedPosition(_ position: CGPoint) -> CGPoint {
+        CGPoint(
+            x: min(max(position.x, 0), 1),
+            y: min(max(position.y, 0), 1)
+        )
     }
 }
 

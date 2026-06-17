@@ -312,7 +312,7 @@ nonisolated enum CanvasRasterExporter {
 
                 let photoFrameHeight = layout.dotReferenceHeight(forCenterIndex: centerIndex)
                 let baseDotSize = DotSizeControl.displaySize(
-                    renderedScale: dot.size * dotScale * dot.displaySizeScale,
+                    renderedScale: dot.resolvedRenderedScale(globalDotScale: dotScale) * dot.displaySizeScale,
                     photoFrameHeight: photoFrameHeight
                 )
                 let dotSize = baseDotSize * CGFloat(motion.scale)
@@ -323,7 +323,8 @@ nonisolated enum CanvasRasterExporter {
                 let rect = CGRect(origin: origin, size: CGSize(width: dotSize, height: dotSize))
 
                 context.saveGState()
-                applyDotRotation(CGFloat(motion.rotationRadians), in: context, around: rect)
+                let rotationRadians = CGFloat(motion.rotationRadians) + dot.rotationDegrees * .pi / 180
+                applyDotRotation(rotationRadians, in: context, around: rect)
 
                 if dot.isCharacterDot {
                     if PuzzleDotCollageColor.shouldRenderCollageContent(
@@ -404,7 +405,7 @@ nonisolated enum CanvasRasterExporter {
                     selectedDotColor: dotColor
                 ) {
                     drawAssetDotCollage(
-                        assetName: dot.shapeAssetName,
+                        assetName: dot.resolvedShapeAssetName,
                         centerIndex: centerIndex,
                         dot: dot,
                         opacity: CGFloat(motion.opacity),
@@ -426,7 +427,7 @@ nonisolated enum CanvasRasterExporter {
                         )
                     )
                     drawAssetDot(
-                        assetName: dot.shapeAssetName,
+                        assetName: dot.resolvedShapeAssetName,
                         in: context,
                         rect: rect,
                         color: uiColor,

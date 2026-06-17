@@ -60,17 +60,22 @@ enum PanelTab: String, CaseIterable, Identifiable {
 struct BottomSheetPanel: View {
     static let topCornerRadius: CGFloat = 24
     static let panelMotion: Animation = .smooth(duration: 0.24)
-    /// Horizontal inset for panel content; also used for header and history controls aligned to the panel edge.
+    /// Horizontal inset for panel content and header alignment.
     static let contentHorizontalInset: CGFloat = 16
     private static let contentBottomInset: CGFloat = 4
     private static let tabBarTopSpacing: CGFloat = 8
-    private static let tabBarItemHeight: CGFloat = 42
-    private static let handleTouchHeight: CGFloat = 28
+    private static let expandedTabBarItemHeight: CGFloat = 42
+    private static let collapsedTabBarItemHeight: CGFloat = 28
+    private static let handleTouchHeight: CGFloat = 36
     private static let panelContentTopPadding: CGFloat = 8
     private static let collapseDragThreshold: CGFloat = 28
 
-    private static var tabBarSectionHeight: CGFloat {
-        tabBarTopSpacing + tabBarItemHeight
+    static func tabBarItemHeight(isExpanded: Bool) -> CGFloat {
+        isExpanded ? expandedTabBarItemHeight : collapsedTabBarItemHeight
+    }
+
+    private static func tabBarSectionHeight(isExpanded: Bool) -> CGFloat {
+        tabBarTopSpacing + tabBarItemHeight(isExpanded: isExpanded)
     }
 
     static var collapsedHeight: CGFloat {
@@ -90,7 +95,7 @@ struct BottomSheetPanel: View {
 
     static func visibleHeight(isExpanded: Bool, contentHeight: CGFloat) -> CGFloat {
         collapsiblePanelHeight(isExpanded: isExpanded, contentHeight: contentHeight)
-            + tabBarSectionHeight
+            + tabBarSectionHeight(isExpanded: isExpanded)
             + contentBottomInset
     }
 
@@ -118,18 +123,22 @@ struct BottomSheetPanel: View {
     @Binding var panelVisibleHeight: CGFloat
     @Binding var selectedTab: PanelTab
     @Binding var isExpanded: Bool
+    @Binding var isDotEditingEnabled: Bool
     let dotControls: BottomSheetDotControls
     let liveControls: BottomSheetLiveControls
     let backgroundControls: BottomSheetBackgroundControls
     var bottomSafeAreaInset: CGFloat = 0
     var isPanelEnabled: Bool = true
     var canClearTrace: Bool = false
+    var canUndo: Bool = false
+    var canRedo: Bool = false
+    var canClearCanvas: Bool = false
     let onDrawDots: () -> Void
     let onDrawSubjectDots: () -> Void
     var onClearTrace: () -> Void = {}
-
-    /// Vertical offset for history controls anchored to the panel top edge.
-    static let historyControlsClearance: CGFloat = 40
+    var onClearCanvas: () -> Void = {}
+    var onUndo: () -> Void = {}
+    var onRedo: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -169,7 +178,7 @@ struct BottomSheetPanel: View {
 
     private var fixedTabBarSection: some View {
         panelTabBar
-            .frame(height: Self.tabBarItemHeight, alignment: .top)
+            .frame(height: Self.tabBarItemHeight(isExpanded: isExpanded), alignment: .top)
             .disabled(!isPanelEnabled)
             .opacity(isPanelEnabled ? 1 : 0.42)
     }
@@ -193,16 +202,7 @@ struct BottomSheetPanel: View {
     }
 
     private var panelBackground: some View {
-        UnevenRoundedRectangle(
-            cornerRadii: RectangleCornerRadii(
-                topLeading: Self.topCornerRadius,
-                bottomLeading: 0,
-                bottomTrailing: 0,
-                topTrailing: Self.topCornerRadius
-            ),
-            style: .continuous
-        )
-        .fill(Color.popover)
+        PanelGlassBackground(cornerRadius: Self.topCornerRadius)
     }
 
     private var panelHandle: some View {
@@ -215,6 +215,22 @@ struct BottomSheetPanel: View {
         panelHandle
             .frame(maxWidth: .infinity)
             .frame(height: Self.handleTouchHeight)
+            .overlay(alignment: .leading) {
+                PanelEditModeToggle(
+                    isOn: $isDotEditingEnabled,
+                    isEnabled: isPanelEnabled
+                )
+            }
+            .overlay(alignment: .trailing) {
+                CanvasHistoryControls(
+                    canUndo: canUndo,
+                    canRedo: canRedo,
+                    canClear: canClearCanvas,
+                    onClear: onClearCanvas,
+                    onUndo: onUndo,
+                    onRedo: onRedo
+                )
+            }
             .contentShape(Rectangle())
             .gesture(handleDragGesture)
             .accessibilityLabel(isExpanded ? "折叠面板" : "展开面板")
@@ -241,24 +257,29 @@ struct BottomSheetPanel: View {
                 setExpanded(true)
             }
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: isExpanded ? 3 : 0) {
                 tab.tabIcon
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 18, height: 18)
 
-                Text(tab.title)
-                    .font(.system(size: 13, weight: .regular))
+                if isExpanded {
+                    Text(tab.title)
+                        .font(.system(size: 13, weight: .regular))
+                        .transition(.opacity)
+                }
             }
             .foregroundStyle(isSelected ? activeTabColor : Color.mutedForeground)
             .frame(maxWidth: .infinity)
-            .frame(height: Self.tabBarItemHeight)
+            .frame(height: Self.tabBarItemHeight(isExpanded: isExpanded))
             .scaleEffect(isSelected ? 1.1 : 1)
             .contentShape(Rectangle())
             .animation(.smooth(duration: 0.18), value: isSelected)
+            .animation(Self.panelMotion, value: isExpanded)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(tab.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -284,6 +305,43 @@ struct BottomSheetPanel: View {
     }
 }
 
+private struct PanelGlassBackground: View {
+    var cornerRadius: CGFloat
+
+    var body: some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                panelShape
+                    .fill(Color.popover.opacity(0.28))
+                    .glassEffect(
+                        .regular.tint(Color.popover.opacity(0.42)),
+                        in: panelShape
+                    )
+            } else {
+                panelShape
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        panelShape
+                            .fill(Color.popover.opacity(0.68))
+                    }
+            }
+        }
+        .environment(\.colorScheme, .light)
+    }
+
+    private var panelShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            cornerRadii: RectangleCornerRadii(
+                topLeading: cornerRadius,
+                bottomLeading: 0,
+                bottomTrailing: 0,
+                topTrailing: cornerRadius
+            ),
+            style: .continuous
+        )
+    }
+}
+
 struct CanvasHistoryControls: View {
     let canUndo: Bool
     let canRedo: Bool
@@ -298,8 +356,8 @@ struct CanvasHistoryControls: View {
                 Text("打扫")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(Color.foreground)
-                    .frame(height: 26)
-                    .padding(.horizontal, 9)
+                    .frame(height: 28)
+                    .padding(.horizontal, 8)
             }
             .buttonStyle(.plain)
             .disabled(!canClear)
@@ -324,17 +382,6 @@ struct CanvasHistoryControls: View {
                 action: onRedo
             )
         }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
-        .background(
-            RoundedRectangle(cornerRadius: BottomSheetPanel.topCornerRadius, style: .continuous)
-                .fill(Color.popover)
-                .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 4)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: BottomSheetPanel.topCornerRadius, style: .continuous)
-                .stroke(Color.border.opacity(0.7), lineWidth: 1)
-        }
     }
 
     private func historyButton(
@@ -350,12 +397,54 @@ struct CanvasHistoryControls: View {
                 .scaledToFit()
                 .frame(width: 16, height: 16)
                 .foregroundStyle(Color.foreground)
-                .frame(width: 30, height: 26)
+                .frame(width: 32, height: 28)
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.38)
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct PanelEditModeToggle: View {
+    @Binding var isOn: Bool
+    let isEnabled: Bool
+
+    var body: some View {
+        Button {
+            guard isEnabled else { return }
+
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 12, weight: .semibold))
+
+                Text("编辑")
+                    .font(.system(size: 13, weight: .regular))
+            }
+            .foregroundStyle(isOn ? Color.primaryForeground : Color.foreground)
+            .frame(height: 30)
+            .padding(.horizontal, 8)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(isOn ? Color.primary : Color.clear)
+                }
+                .overlay {
+                    Capsule(style: .continuous)
+                        .stroke(
+                            isOn ? Color.primary.opacity(0.75) : Color.border,
+                            lineWidth: 1
+                        )
+                }
+                .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.42)
+        .accessibilityLabel("编辑")
+        .accessibilityValue(isOn ? "已开启" : "已关闭")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 
@@ -930,7 +1019,7 @@ private struct DrawPanelControls: View {
                 StyledSlider(
                     title: "波点数量",
                     value: $dotCount,
-                    range: 0...30,
+                    range: 0...60,
                     step: 1
                 )
                 .padding(.bottom, 4)
@@ -958,14 +1047,14 @@ private struct DrawPanelControls: View {
                     .padding(.top, 4)
 
                 HStack(spacing: 8) {
-                    Text("压缩")
+                    Text("挤压")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(Color.mutedForeground)
 
                     Spacer(minLength: 8)
 
                     PanelValueMenu(
-                        accessibilityTitle: "压缩",
+                        accessibilityTitle: "挤压",
                         selection: $photoCompression,
                         options: MainPhotoCompression.allCases,
                         title: { $0.title },
@@ -1019,8 +1108,9 @@ private struct DrawPanelControls: View {
     }
 
     private var drawActions: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             drawButton
+            PanelSeparator(orientation: .vertical)
             subjectButton
         }
     }
@@ -1035,11 +1125,11 @@ private struct DrawPanelControls: View {
                     .frame(width: 15, height: 15)
 
                 Text("抽一张")
-                    .font(.system(size: 14, weight: .regular))
+                    .font(.system(size: 13, weight: .regular))
             }
             .foregroundStyle(Color.primaryForeground)
             .frame(maxWidth: .infinity)
-            .frame(height: 36)
+            .frame(height: 30)
             .background(activeColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -1049,15 +1139,15 @@ private struct DrawPanelControls: View {
     private var subjectButton: some View {
         Button(action: onDrawSubjectDots) {
             HStack(spacing: 6) {
-                Image(systemName: isDrawingSubjectDots ? "hourglass" : "person.crop.circle")
-                    .font(.system(size: 15, weight: .regular))
+                // Image(systemName: isDrawingSubjectDots ? "hourglass" : "person.crop.circle")
+                //     .font(.system(size: 15, weight: .regular))
 
-                Text("主体功能")
-                    .font(.system(size: 14, weight: .regular))
+                Text("描边一下")
+                    .font(.system(size: 13, weight: .regular))
             }
             .foregroundStyle(Color.foreground)
             .frame(maxWidth: .infinity)
-            .frame(height: 36)
+            .frame(height: 30)
             .background(Color.input, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1067,7 +1157,7 @@ private struct DrawPanelControls: View {
         .buttonStyle(.plain)
         .disabled(isDrawingSubjectDots)
         .opacity(isDrawingSubjectDots ? 0.5 : 1)
-        .accessibilityLabel("主体功能")
+        .accessibilityLabel("描边一下")
     }
 
     private var clearTraceButton: some View {
