@@ -137,11 +137,6 @@ struct PuzzleCanvasModelTests {
         #expect(DrawPanelTraceButtonLayout.clearTraceButtonWeight == 1)
     }
 
-    @Test func canvasHeaderUploadTitleChangesWhenCanvasHasImage() {
-        #expect(CanvasHeader.uploadActionTitle(hasCanvasImage: false) == "上传")
-        #expect(CanvasHeader.uploadActionTitle(hasCanvasImage: true) == "换图")
-    }
-
     @Test func panelTrackingOffsetFollowsBottomInsetChanges() {
         let availableSize = CGSize(width: 600, height: 800)
         let layout = PuzzleCanvasLayout.layout(

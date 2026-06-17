@@ -6,7 +6,6 @@
 //
 
 import Photos
-import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -19,7 +18,8 @@ struct ContentView: View {
     @State private var hasEnteredHome = false
     @State private var shouldAutoAdvanceHome = true
     @State private var selectedTab: PanelTab = .dots
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isRecentPhotoPickerPresented = false
+    @State private var didAutoPresentPhotoPicker = false
     @State private var canvasImage: UIImage?
     @State private var extensionRatio: CGFloat = PuzzleCanvasDefaults.defaultExtensionRatio
     @State private var extensionSide: PuzzleCanvasExtensionSide = .right
@@ -104,23 +104,13 @@ struct ContentView: View {
                         .padding(.top, topCanvasInset(for: proxy))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-                    panelBackgroundColor
-                        .ignoresSafeArea(edges: .top)
-                        .frame(height: topActionBarHeight)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .allowsHitTesting(false)
-
                     CanvasHeader(
-                        selectedPhotoItem: $selectedPhotoItem,
-                        hasCanvasImage: canvasImage != nil,
                         canDownload: canvasImage != nil,
                         isBusy: isPhotoLoading || isExporting,
-                        onBack: returnToHome,
+                        onBack: presentRecentPhotoPicker,
                         onDownload: shareCanvas
                     )
-                    .padding(.top, 4)
-                    .padding(.horizontal, BottomSheetPanel.contentHorizontalInset)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
@@ -148,11 +138,16 @@ struct ContentView: View {
     @ViewBuilder
     private func applyAsyncTasks<Content: View>(to content: Content) -> some View {
         content
-            .task(id: selectedPhotoItem) {
-                await loadSelectedPhoto()
-            }
             .task {
                 await restoreCanvasDraftOnLaunch()
+            }
+            .onChange(of: hasEnteredHome) { _, entered in
+                guard entered else { return }
+                presentInitialPhotoPickerIfNeeded()
+            }
+            .onChange(of: hasAttemptedDraftRestore) { _, attempted in
+                guard attempted else { return }
+                presentInitialPhotoPickerIfNeeded()
             }
             .task {
                 while !Task.isCancelled {
@@ -199,6 +194,13 @@ struct ContentView: View {
         content
             .sheet(item: $shareItem, onDismiss: handleShareSheetDismiss) { item in
                 shareSheet(for: item)
+            }
+            .fullScreenCover(isPresented: $isRecentPhotoPickerPresented) {
+                RecentPhotoPickerView(
+                    isImporting: isPhotoLoading,
+                    onCancel: dismissRecentPhotoPicker,
+                    onSelectAsset: selectRecentPhotoAsset
+                )
             }
             .modifier(ClearCanvasConfirmationAlertModifier(
                 isPresented: $showsClearCanvasConfirmation,
@@ -335,18 +337,9 @@ struct ContentView: View {
                     )
             }
         } else {
-            PhotosPicker(
-                selection: $selectedPhotoItem,
-                matching: CanvasPhotoImport.pickerMatching,
-                preferredItemEncoding: .current,
-                photoLibrary: CanvasPhotoImport.pickerPhotoLibrary
-            ) {
-                CanvasUploadPlaceholder()
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .padding(.bottom, bottomPanelInset)
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.bottom, bottomPanelInset)
         }
     }
 
@@ -356,10 +349,6 @@ struct ContentView: View {
 
     private var topActionBarHeight: CGFloat {
         50
-    }
-
-    private var panelBackgroundColor: Color {
-        Color.popover
     }
 
     private var isLivePreviewPlaying: Bool {
@@ -446,9 +435,24 @@ struct ContentView: View {
         toastMessage = nil
     }
 
-    private func returnToHome() {
-        shouldAutoAdvanceHome = false
-        hasEnteredHome = false
+    private func presentInitialPhotoPickerIfNeeded() {
+        guard hasEnteredHome else { return }
+        guard hasAttemptedDraftRestore else { return }
+        guard canvasImage == nil else { return }
+        guard !didAutoPresentPhotoPicker else { return }
+        guard !isRecentPhotoPickerPresented else { return }
+        didAutoPresentPhotoPicker = true
+        isRecentPhotoPickerPresented = true
+    }
+
+    private func presentRecentPhotoPicker() {
+        guard !isPhotoLoading && !isExporting else { return }
+        isRecentPhotoPickerPresented = true
+    }
+
+    private func dismissRecentPhotoPicker() {
+        guard !isPhotoLoading else { return }
+        isRecentPhotoPickerPresented = false
     }
 
     private var livePreviewDuration: TimeInterval {
@@ -509,9 +513,16 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func loadSelectedPhoto() async {
-        guard let selectedPhotoItem else { return }
+    private func selectRecentPhotoAsset(_ asset: PHAsset) {
+        guard !isPhotoLoading && !isExporting else { return }
 
+        Task {
+            await loadRecentPhotoAsset(asset)
+        }
+    }
+
+    @MainActor
+    private func loadRecentPhotoAsset(_ asset: PHAsset) async {
         isPhotoLoading = true
         showToast("正在加载…")
         invalidateSubjectDotGeneration()
@@ -520,44 +531,47 @@ struct ContentView: View {
         }
 
         do {
-            await CanvasPhotoImport.requestPhotoLibraryReadAccessIfNeeded()
-            let importResult = try await CanvasPhotoImport.importPhoto(from: selectedPhotoItem)
-            let source = importResult.source
-            let image = source.keyPhoto
-
-            applyPhotoUploadDefaults()
-
-            let initialDots = PuzzleCanvasUploadDefaults.initialDots(dotCount: dotCount)
-
-            isSourceLivePhoto = source.isLivePhoto
-            isSourceLiveMotionEnabled = false
-            sourcePhotoAssetLocalIdentifier = source.assetLocalIdentifier
-            sourceLiveVideo?.removeTemporaryFiles()
-            sourceLiveVideo = nil
-            if source.isLivePhoto {
-                sourceLiveVideo = await CanvasSourceLiveVideo.load(
-                    assetLocalIdentifier: source.assetLocalIdentifier
-                )
-            }
-            canvasImage = image
-            imageViewportResetID = UUID()
-            viewportScale = 1
-            viewportOffset = .zero
-            lastMagnification = 1
-            isDotEditingEnabled = false
-            selectedDotID = nil
-            tracePoints = []
-            canvasHistory.reset(to: [])
-            puzzleDots = []
-
-            await Task.yield()
-
-            applyPuzzleDots(initialDots)
+            let importResult = try await CanvasPhotoImport.importPhoto(from: asset)
+            await applyImportedPhotoSource(importResult.source)
+            isRecentPhotoPickerPresented = false
             dismissToast()
             persistCanvasDraft()
         } catch {
+            isRecentPhotoPickerPresented = false
             showToast("上传失败")
         }
+    }
+
+    @MainActor
+    private func applyImportedPhotoSource(_ source: CanvasPhotoSource) async {
+        applyPhotoUploadDefaults()
+
+        let initialDots = PuzzleCanvasUploadDefaults.initialDots(dotCount: dotCount)
+
+        isSourceLivePhoto = source.isLivePhoto
+        isSourceLiveMotionEnabled = false
+        sourcePhotoAssetLocalIdentifier = source.assetLocalIdentifier
+        sourceLiveVideo?.removeTemporaryFiles()
+        sourceLiveVideo = nil
+        if source.isLivePhoto {
+            sourceLiveVideo = await CanvasSourceLiveVideo.load(
+                assetLocalIdentifier: source.assetLocalIdentifier
+            )
+        }
+        canvasImage = source.keyPhoto
+        imageViewportResetID = UUID()
+        viewportScale = 1
+        viewportOffset = .zero
+        lastMagnification = 1
+        isDotEditingEnabled = false
+        selectedDotID = nil
+        tracePoints = []
+        canvasHistory.reset(to: [])
+        puzzleDots = []
+
+        await Task.yield()
+
+        applyPuzzleDots(initialDots)
     }
 
     /// 「抽卡」：沿轨迹或随机布局生成波点，并记入撤销栈。

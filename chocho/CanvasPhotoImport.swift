@@ -4,10 +4,11 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// 从 `PhotosPicker` 导入照片到画布。
+/// 从相册选择入口导入照片到画布。
 ///
-/// 当前编辑的是单张关键帧（`UIImage`）；若用户选的是相册 Live Photo，会保留 `pickerItem` 与类型，
-/// 便于日后从原资源导出系统 Live Photo，画布上的「实况」动画仍由 `LiveDotAnimation` 控制。
+/// 当前编辑的是单张关键帧（`UIImage`）；若用户选的是相册 Live Photo，会保留资源类型与
+/// `assetLocalIdentifier`，便于日后从原资源导出系统 Live Photo，画布上的「实况」动画仍由
+/// `LiveDotAnimation` 控制。
 enum CanvasPhotoImport {
     nonisolated enum Kind: Equatable {
         case stillImage
@@ -93,6 +94,14 @@ enum CanvasPhotoImport {
         )
     }
 
+    static func resolvedKind(for asset: PHAsset) -> Kind {
+        resolvedKind(
+            contentTypesIncludeLivePhoto: false,
+            assetHasPhotoLiveSubtype: asset.mediaSubtypes.contains(.photoLive),
+            assetHasPairedVideo: assetHasPairedVideoResource(asset)
+        )
+    }
+
     nonisolated static func assetHasPhotoLiveSubtype(itemIdentifier: String?) -> Bool {
         guard let asset = asset(for: itemIdentifier) else { return false }
         return asset.mediaSubtypes.contains(.photoLive)
@@ -128,6 +137,22 @@ enum CanvasPhotoImport {
         }
 
         return Result(source: CanvasPhotoSource(keyPhoto: keyPhoto, kind: kind, pickerItem: item))
+    }
+
+    static func importPhoto(from asset: PHAsset) async throws -> Result {
+        guard let image = await requestKeyPhoto(from: asset) else {
+            throw ImportError.missingData
+        }
+
+        guard let keyPhoto = await CanvasImageLoader.makeDisplayReadyUIImage(from: image) else {
+            throw ImportError.decodeFailed
+        }
+
+        return Result(source: CanvasPhotoSource(
+            keyPhoto: keyPhoto,
+            kind: resolvedKind(for: asset),
+            assetLocalIdentifier: asset.localIdentifier
+        ))
     }
 
     /// 优先从 `PHAsset` 拉关键帧，并用资源 subtype 判定 Live Photo。
@@ -194,19 +219,19 @@ enum CanvasPhotoImport {
 nonisolated struct CanvasPhotoSource {
     let keyPhoto: UIImage
     let kind: CanvasPhotoImport.Kind
-    let pickerItem: PhotosPickerItem
+    let pickerItem: PhotosPickerItem?
     let assetLocalIdentifier: String?
 
     init(
         keyPhoto: UIImage,
         kind: CanvasPhotoImport.Kind,
-        pickerItem: PhotosPickerItem,
+        pickerItem: PhotosPickerItem? = nil,
         assetLocalIdentifier: String? = nil
     ) {
         self.keyPhoto = keyPhoto
         self.kind = kind
         self.pickerItem = pickerItem
-        self.assetLocalIdentifier = assetLocalIdentifier ?? pickerItem.itemIdentifier
+        self.assetLocalIdentifier = assetLocalIdentifier ?? pickerItem?.itemIdentifier
     }
 
     var isLivePhoto: Bool {
