@@ -155,8 +155,6 @@ struct BottomSheetPanel: View {
         }
         .background(panelBackground)
         .clipped()
-        .compositingGroup()
-        .shadow(color: Color.black.opacity(0.10), radius: 28, x: 0, y: -5)
         .animation(Self.panelMotion, value: isExpanded)
         .animation(Self.panelMotion, value: selectedTab)
     }
@@ -215,12 +213,6 @@ struct BottomSheetPanel: View {
         panelHandle
             .frame(maxWidth: .infinity)
             .frame(height: Self.handleTouchHeight)
-            .overlay(alignment: .leading) {
-                PanelEditModeToggle(
-                    isOn: $isDotEditingEnabled,
-                    isEnabled: isPanelEnabled
-                )
-            }
             .overlay(alignment: .trailing) {
                 CanvasHistoryControls(
                     canUndo: canUndo,

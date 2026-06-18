@@ -8,5 +8,9 @@
       "filename": "像素7.svg",
       "idiom": "universal"
     }
-  ]
+  ],
+  "properties": {
+    "preserves-vector-representation": true,
+    "template-rendering-intent": "template"
+  }
 }

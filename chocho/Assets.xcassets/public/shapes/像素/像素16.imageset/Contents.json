@@ -8,5 +8,9 @@
       "filename": "像素16.svg",
       "idiom": "universal"
     }
-  ]
+  ],
+  "properties": {
+    "preserves-vector-representation": true,
+    "template-rendering-intent": "template"
+  }
 }

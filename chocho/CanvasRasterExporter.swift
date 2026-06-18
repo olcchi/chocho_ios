@@ -580,10 +580,12 @@ nonisolated enum CanvasRasterExporter {
             )
             // Apply shape mask: only the pixels where the mask is opaque survive.
             offCtx.cgContext.setBlendMode(.destinationIn)
-            if DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName) {
-                offCtx.cgContext.interpolationQuality = .none
-            }
-            maskImage.draw(in: localRect)
+            DotShapeAssetImage.drawAlphaMask(
+                named: "public/\(assetName)",
+                in: offCtx.cgContext,
+                rect: localRect,
+                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName)
+            )
         }
 
         let previousInterpolationQuality = context.interpolationQuality

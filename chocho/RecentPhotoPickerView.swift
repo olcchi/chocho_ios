@@ -20,20 +20,24 @@ struct RecentPhotoPickerView: View {
     @State private var authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var assets: [PHAsset] = []
     @State private var isLoading = true
+    @State private var isAboutPresented = false
 
     var body: some View {
+        NavigationStack {
+            pickerContent
+                .navigationDestination(isPresented: $isAboutPresented) {
+                    AboutView()
+                }
+        }
+    }
+
+    private var pickerContent: some View {
         GeometryReader { proxy in
-            let headerHeight = headerHeight(safeAreaTop: proxy.safeAreaInsets.top)
-
-            ZStack(alignment: .top) {
-                Color.background
-                    .ignoresSafeArea()
-
-                content(width: proxy.size.width, headerHeight: headerHeight)
-
-                topBar(safeAreaTop: proxy.safeAreaInsets.top)
-            }
-            .ignoresSafeArea(edges: .top)
+            content(width: proxy.size.width)
+        }
+        .background(Color.background)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            topBar
         }
         .task {
             await refreshLibrary()
@@ -45,17 +49,13 @@ struct RecentPhotoPickerView: View {
         }
     }
 
-    private func headerHeight(safeAreaTop: CGFloat) -> CGFloat {
-        safeAreaTop + 54
-    }
-
-    @ViewBuilder
-    private func topBar(safeAreaTop: CGFloat) -> some View {
+    private var topBar: some View {
         topBarContent
-            .padding(.top, safeAreaTop)
             .frame(maxWidth: .infinity)
-            .frame(height: safeAreaTop + 54, alignment: .bottom)
-            .background(RecentPhotoPickerHeaderGlassBackground())
+            .background {
+                RecentPhotoPickerHeaderGlassBackground()
+                    .ignoresSafeArea(edges: .top)
+            }
             .environment(\.colorScheme, .light)
     }
 
@@ -68,8 +68,8 @@ struct RecentPhotoPickerView: View {
             HStack {
                 Button(action: onCancel) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 36, height: 36)
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 30, height: 30)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.foreground)
@@ -77,37 +77,37 @@ struct RecentPhotoPickerView: View {
 
                 Spacer()
 
-                Button {} label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 36, height: 36)
+                Button {
+                    isAboutPresented = true
+                } label: {
+                    Text("关于")
+                        .font(.system(size: 13, weight: .regular))
+                        .frame(height: 30)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.foreground)
-                .accessibilityLabel("设置")
+                .accessibilityLabel("关于")
             }
         }
         .padding(.horizontal, RecentPhotoPickerLayout.horizontalInset)
-        .frame(height: 54)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
     }
 
     @ViewBuilder
-    private func content(width: CGFloat, headerHeight: CGFloat) -> some View {
+    private func content(width: CGFloat) -> some View {
         if isLoading {
             RecentPhotoPickerStatusView(title: "正在读取…", systemImage: "photo.on.rectangle")
-                .padding(.top, headerHeight)
         } else if !canReadPhotos {
             RecentPhotoPickerStatusView(title: "需要相册权限", systemImage: "lock")
-                .padding(.top, headerHeight)
         } else if assets.isEmpty {
             RecentPhotoPickerStatusView(title: "没有最近图片", systemImage: "photo")
-                .padding(.top, headerHeight)
         } else {
-            photoGrid(width: width, headerHeight: headerHeight)
+            photoGrid(width: width)
         }
     }
 
-    private func photoGrid(width: CGFloat, headerHeight: CGFloat) -> some View {
+    private func photoGrid(width: CGFloat) -> some View {
         let columnCount = RecentPhotoPickerLayout.columnCount(forWidth: width)
         let columns = Array(
             repeating: GridItem(.flexible(minimum: 0), spacing: RecentPhotoPickerLayout.gridSpacing),
@@ -127,11 +127,12 @@ struct RecentPhotoPickerView: View {
                 }
             }
             .padding(.horizontal, RecentPhotoPickerLayout.horizontalInset)
-            .padding(.top, headerHeight + 14)
+            .padding(.top, 14)
             .padding(.bottom, 28)
         }
-        .ignoresSafeArea(edges: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollIndicators(.visible, axes: .vertical)
+        .scrollIndicatorsFlash(onAppear: true)
         .background(Color.background)
     }
 
@@ -187,7 +188,7 @@ struct RecentPhotoPickerView: View {
     }
 }
 
-private struct RecentPhotoPickerHeaderGlassBackground: View {
+struct RecentPhotoPickerHeaderGlassBackground: View {
     var body: some View {
         Group {
             if #available(iOS 26.0, *) {

@@ -14,6 +14,7 @@ struct CanvasHeader: View {
     let onDownload: () -> Void
 
     private static let actionButtonContentWidth: CGFloat = 46
+    private static let logoHeight: CGFloat = 14
 
     private enum ButtonAppearance {
         case white
@@ -39,24 +40,34 @@ struct CanvasHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            canvasHeaderButton(
-                title: "图库",
-                systemImage: "chevron.backward",
-                action: onBack,
-                appearance: .white,
-                accessibilityLabel: "图库"
-            )
+        ZStack {
+            HStack(spacing: 10) {
+                canvasHeaderButton(
+                    title: "图库",
+                    systemImage: "chevron.backward",
+                    action: onBack,
+                    appearance: .white,
+                    accessibilityLabel: "图库"
+                )
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            canvasHeaderButton(
-                title: "保存",
-                action: onDownload,
-                appearance: .brandPrimary,
-                isEnabled: canDownload && !isBusy,
-                accessibilityLabel: "保存"
-            )
+                canvasHeaderButton(
+                    title: "保存",
+                    action: onDownload,
+                    appearance: .brandPrimary,
+                    isEnabled: canDownload && !isBusy,
+                    accessibilityLabel: "保存"
+                )
+            }
+
+            Image("chocho")
+                .resizable()
+                .interpolation(.none)
+                .scaledToFit()
+                .frame(height: Self.logoHeight)
+                .accessibilityLabel("chocho")
+                .allowsHitTesting(false)
         }
         .padding(.horizontal, BottomSheetPanel.contentHorizontalInset)
         .padding(.top, 4)

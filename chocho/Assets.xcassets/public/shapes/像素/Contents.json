@@ -4,6 +4,8 @@
     "version": 1
   },
   "properties": {
-    "provides-namespace": true
+    "provides-namespace": true,
+    "preserves-vector-representation": true,
+    "template-rendering-intent": "template"
   }
 }
