@@ -341,6 +341,64 @@ struct CanvasRasterExporterTests {
         )
     }
 
+    @Test func clearColorAssetDotMasksCollageToShapeOnly() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exportSize = CGSize(width: 480, height: 300)
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.5, y: 0.5),
+            color: .clear,
+            size: 12,
+            shapeAssetName: "shapes/像素/像素7"
+        )
+
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: .clear,
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(sampleColor(in: exported, at: CGPoint(x: 200, y: 150)) != .sourceBlue)
+        #expect(sampleColor(in: exported, at: CGPoint(x: 160, y: 110)).isClose(to: .sourceBlue))
+    }
+
+    @Test func clearColorSVGAssetDotMasksCollageToShapeOnly() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exportSize = CGSize(width: 480, height: 300)
+        let dot = PuzzleDot(
+            id: UUID(),
+            position: CGPoint(x: 0.5, y: 0.5),
+            color: .clear,
+            size: 12,
+            shapeAssetName: "shapes/基础/星1"
+        )
+
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: exportSize,
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [dot],
+                dotScale: 8,
+                dotColor: .clear,
+                usesRandomDotColors: false
+            )
+        )
+
+        #expect(sampleColor(in: exported, at: CGPoint(x: 200, y: 150)) != .sourceBlue)
+        #expect(sampleColor(in: exported, at: CGPoint(x: 160, y: 110)).isClose(to: .sourceBlue))
+    }
+
     @Test func zeroExtensionHalftoneCollageDotStillRendersOnPhoto() throws {
         let source = try #require(makeSolidImage(width: 400, height: 300))
         let dot = PuzzleDot(

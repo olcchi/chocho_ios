@@ -32,21 +32,6 @@ enum DotShapeAssetImage {
         return UIImage(data: dataAsset.data)
     }
 
-    /// 将形状资源绘入上下文，供 `.destinationIn` 蒙版裁剪使用（仅其 alpha 通道参与裁剪）。
-    nonisolated static func drawAlphaMask(
-        named assetName: String,
-        in context: CGContext,
-        rect: CGRect,
-        prefersCrispScaling: Bool
-    ) {
-        guard let image = uiImage(named: assetName) else { return }
-        let previousInterpolationQuality = context.interpolationQuality
-        if prefersCrispScaling {
-            context.interpolationQuality = .none
-        }
-        defer { context.interpolationQuality = previousInterpolationQuality }
-        image.draw(in: rect)
-    }
 }
 
 struct DotShapeAssetImageView: View {

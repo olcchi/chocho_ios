@@ -94,7 +94,7 @@ struct AboutView: View {
                 .foregroundStyle(Color.foreground)
 
             Text(AboutContent.developerIntroduction)
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: 15, weight: .regular))
                 .foregroundStyle(Color.foreground)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
@@ -102,26 +102,26 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text("开发者")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.mutedForeground)
                     Button {
                         openURL(AboutContent.developerWebsiteURL)
                     } label: {
                         Text(AboutContent.developerName)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.secondaryForeground)
                     }
                     .buttonStyle(.plain)
                 }
                 HStack(spacing: 6) {
                     Text("小红书")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.mutedForeground)
                     Button {
                         openURL(AboutContent.xiaohongshuURL)
                     } label: {
                         Text(AboutContent.xiaohongshuHandle)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.secondaryForeground)
                     }
                     .buttonStyle(.plain)
@@ -154,13 +154,13 @@ struct AboutView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Text("邮箱")
-                            .font(.system(size: 16, weight: .regular))
+                            .font(.system(size: 15, weight: .regular))
                             .foregroundStyle(Color.foreground)
 
                         Spacer(minLength: 0)
 
                         Text(AboutContent.contactEmail)
-                            .font(.system(size: 16, weight: .regular))
+                            .font(.system(size: 15, weight: .regular))
                             .foregroundStyle(Color.mutedForeground)
 
                         Image(systemName: "chevron.right")
@@ -215,7 +215,7 @@ private struct AboutLegalLinkRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(title)
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: 15, weight: .regular))
                 .foregroundStyle(Color.foreground)
 
             Spacer(minLength: 0)

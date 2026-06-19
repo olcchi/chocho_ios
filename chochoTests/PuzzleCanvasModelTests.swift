@@ -1430,9 +1430,9 @@ struct PuzzleCanvasModelTests {
     }
 
     @Test func pixelDotAssetsUseCrispScalingAndNativeDisplaySize() {
-        let pixelShape = DotShapeAsset(name: "shapes/像素/像素1")
+        let pixelShape = DotShapeAsset(name: "shapes/像素/像素7")
 
-        #expect(pixelShape.title == "像素1")
+        #expect(pixelShape.title == "像素7")
         #expect(pixelShape.category == "像素")
         #expect(pixelShape.matches(category: .pixel))
         #expect(pixelShape.prefersCrispScaling)
@@ -1592,8 +1592,8 @@ struct PuzzleCanvasModelTests {
 
     @Test func legacyDotShapeNamesMigrateToFolderBasedCatalogIDs() {
         #expect(DotShapeAssetNameMigration.migrate("眼睛.小物") == "shapes/小物/眼睛")
-        #expect(DotShapeAssetNameMigration.migrate("像素3.像素") == "shapes/像素/像素3")
-        #expect(DotShapeAssetNameMigration.migrate("像素/像素3") == "shapes/像素/像素3")
+        #expect(DotShapeAssetNameMigration.migrate("像素7.像素") == "shapes/像素/像素7")
+        #expect(DotShapeAssetNameMigration.migrate("像素/像素7") == "shapes/像素/像素7")
         #expect(DotShapeAssetNameMigration.migrate("心") == "心")
         #expect(DotShapeAsset.asset(named: "彩纸5.彩纸")?.name == "shapes/彩纸/彩纸5")
     }

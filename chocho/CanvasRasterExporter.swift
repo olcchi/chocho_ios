@@ -553,47 +553,59 @@ nonisolated enum CanvasRasterExporter {
         let drawRect = aspectFitRect(for: maskImage.size, in: rect)
         guard drawRect.width > 0, drawRect.height > 0 else { return }
 
-        // Render collage content into a transparent offscreen context sized to `drawRect`.
-        // CGContextClipToMask is avoided here because it maps the mask image in device
-        // coordinates, which in UIGraphicsImageRenderer's flipped context causes the
-        // mask to appear vertically inverted. Using .destinationIn with UIImage.draw
-        // sidesteps the flip entirely since UIImage.draw respects the current CTM.
+        let prefersCrispScaling = DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName)
+        guard let clippingMask = alphaClippingMask(
+            from: maskImage,
+            size: drawRect.size,
+            prefersCrispScaling: prefersCrispScaling
+        ) else { return }
+
+        context.saveGState()
+        context.clip(to: drawRect, mask: clippingMask)
+        drawMirrorCollageContent(
+            centerIndex: centerIndex,
+            dot: dot,
+            opacity: opacity,
+            in: context,
+            rect: drawRect,
+            image: image,
+            liveFrameImage: liveFrameImage,
+            layout: layout,
+            backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
+            backgroundPatternSpacing: backgroundPatternSpacing,
+            photoFrameHeight: photoFrameHeight
+        )
+        context.restoreGState()
+    }
+
+    private nonisolated static func alphaClippingMask(
+        from image: UIImage,
+        size: CGSize,
+        prefersCrispScaling: Bool
+    ) -> CGImage? {
+        guard size.width > 0, size.height > 0 else { return nil }
+
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
-        let localSize = drawRect.size
-        let maskedContent = UIGraphicsImageRenderer(size: localSize, format: format).image { offCtx in
-            let localRect = CGRect(origin: .zero, size: localSize)
-            drawMirrorCollageContent(
-                centerIndex: centerIndex,
-                dot: dot,
-                opacity: 1,
-                in: offCtx.cgContext,
-                rect: localRect,
-                image: image,
-                liveFrameImage: liveFrameImage,
-                layout: layout,
-                backgroundStyle: backgroundStyle,
-                backgroundColors: backgroundColors,
-                backgroundPatternSpacing: backgroundPatternSpacing,
-                photoFrameHeight: photoFrameHeight
-            )
-            // Apply shape mask: only the pixels where the mask is opaque survive.
-            offCtx.cgContext.setBlendMode(.destinationIn)
-            DotShapeAssetImage.drawAlphaMask(
-                named: "public/\(assetName)",
-                in: offCtx.cgContext,
-                rect: localRect,
-                prefersCrispScaling: DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName)
-            )
-        }
 
-        let previousInterpolationQuality = context.interpolationQuality
-        if DotShapeAssetCategoryParser.prefersCrispScaling(for: assetName) {
-            context.interpolationQuality = .none
-        }
-        defer { context.interpolationQuality = previousInterpolationQuality }
-        maskedContent.draw(in: drawRect, blendMode: .normal, alpha: opacity)
+        return UIGraphicsImageRenderer(size: size, format: format)
+            .image { rendererContext in
+                let context = rendererContext.cgContext
+                let rect = CGRect(origin: .zero, size: size)
+                let previousInterpolationQuality = context.interpolationQuality
+                if prefersCrispScaling {
+                    context.interpolationQuality = .none
+                }
+                defer { context.interpolationQuality = previousInterpolationQuality }
+
+                image.draw(in: rect)
+                context.setBlendMode(.sourceIn)
+                context.setFillColor(UIColor.white.cgColor)
+                context.fill(rect)
+            }
+            .cgImage
     }
 
     /// 渲染拼贴波点内容。
