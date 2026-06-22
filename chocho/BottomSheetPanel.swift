@@ -58,7 +58,6 @@ enum PanelTab: String, CaseIterable, Identifiable {
 
 /// 可折叠底部面板：Tab 栏、各 Tab 控件、拖拽把手；不负责安全区，由 `ContentView` 贴底并延伸。
 struct BottomSheetPanel: View {
-    static let topCornerRadius: CGFloat = 24
     static let panelMotion: Animation = .smooth(duration: 0.24)
     /// Horizontal inset for panel content and header alignment.
     static let contentHorizontalInset: CGFloat = 16
@@ -66,9 +65,7 @@ struct BottomSheetPanel: View {
     private static let tabBarTopSpacing: CGFloat = 8
     private static let expandedTabBarItemHeight: CGFloat = 42
     private static let collapsedTabBarItemHeight: CGFloat = 28
-    private static let handleTouchHeight: CGFloat = 36
-    private static let panelContentTopPadding: CGFloat = 8
-    private static let collapseDragThreshold: CGFloat = 28
+    private static let panelInnerTopInset: CGFloat = 16
 
     static func tabBarItemHeight(isExpanded: Bool) -> CGFloat {
         isExpanded ? expandedTabBarItemHeight : collapsedTabBarItemHeight
@@ -83,18 +80,14 @@ struct BottomSheetPanel: View {
     }
 
     static func collapsiblePanelHeight(isExpanded: Bool, contentHeight: CGFloat) -> CGFloat {
-        if isExpanded {
-            handleTouchHeight
-                + panelContentTopPadding
-                + contentHeight
-                + tabBarTopSpacing
-        } else {
-            handleTouchHeight
-        }
+        guard isExpanded else { return 0 }
+
+        return contentHeight + tabBarTopSpacing
     }
 
     static func visibleHeight(isExpanded: Bool, contentHeight: CGFloat) -> CGFloat {
-        collapsiblePanelHeight(isExpanded: isExpanded, contentHeight: contentHeight)
+        panelInnerTopInset
+            + collapsiblePanelHeight(isExpanded: isExpanded, contentHeight: contentHeight)
             + tabBarSectionHeight(isExpanded: isExpanded)
             + contentBottomInset
     }
@@ -130,15 +123,9 @@ struct BottomSheetPanel: View {
     var bottomSafeAreaInset: CGFloat = 0
     var isPanelEnabled: Bool = true
     var canClearTrace: Bool = false
-    var canUndo: Bool = false
-    var canRedo: Bool = false
-    var canClearCanvas: Bool = false
     let onDrawDots: () -> Void
     let onDrawSubjectDots: () -> Void
     var onClearTrace: () -> Void = {}
-    var onClearCanvas: () -> Void = {}
-    var onUndo: () -> Void = {}
-    var onRedo: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -147,6 +134,7 @@ struct BottomSheetPanel: View {
             fixedTabBarSection
         }
         .padding(.horizontal, Self.contentHorizontalInset)
+        .padding(.top, Self.panelInnerTopInset)
         .padding(.bottom, Self.contentBottomInset + bottomSafeAreaInset)
         .frame(maxWidth: .infinity, alignment: .bottom)
         .onGeometryChange(for: CGFloat.self, of: \.size.height) { newHeight in
@@ -160,12 +148,9 @@ struct BottomSheetPanel: View {
     }
 
     private var collapsiblePanelSection: some View {
-        VStack(spacing: 0) {
-            panelHandleArea
-
+        Group {
             if isExpanded {
                 panelContent
-                    .padding(.top, Self.panelContentTopPadding)
                     .padding(.bottom, Self.tabBarTopSpacing)
                     .transition(.opacity)
                     .animation(Self.panelMotion, value: selectedTab)
@@ -201,32 +186,7 @@ struct BottomSheetPanel: View {
     }
 
     private var panelBackground: some View {
-        PanelGlassBackground(cornerRadius: Self.topCornerRadius)
-    }
-
-    private var panelHandle: some View {
-        Capsule(style: .continuous)
-            .fill(Color.border)
-            .frame(width: 48, height: 6)
-    }
-
-    private var panelHandleArea: some View {
-        panelHandle
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.handleTouchHeight)
-            .overlay(alignment: .trailing) {
-                CanvasHistoryControls(
-                    canUndo: canUndo,
-                    canRedo: canRedo,
-                    canClear: canClearCanvas,
-                    onClear: onClearCanvas,
-                    onUndo: onUndo,
-                    onRedo: onRedo
-                )
-            }
-            .contentShape(Rectangle())
-            .gesture(handleDragGesture)
-            .accessibilityLabel(isExpanded ? "折叠面板" : "展开面板")
+        PanelGlassBackground()
     }
 
     private var panelTabBar: some View {
@@ -241,13 +201,17 @@ struct BottomSheetPanel: View {
         let isSelected = tab == selectedTab
 
         return Button {
-            if tab != selectedTab {
-                withAnimation(Self.panelMotion) {
-                    selectedTab = tab
+            if tab == selectedTab, isExpanded {
+                setExpanded(false)
+            } else {
+                if tab != selectedTab {
+                    withAnimation(Self.panelMotion) {
+                        selectedTab = tab
+                    }
                 }
-            }
-            if !isExpanded {
-                setExpanded(true)
+                if !isExpanded {
+                    setExpanded(true)
+                }
             }
         } label: {
             VStack(spacing: isExpanded ? 3 : 0) {
@@ -259,7 +223,7 @@ struct BottomSheetPanel: View {
 
                 if isExpanded {
                     Text(tab.title)
-                        .font(.system(size: 13, weight: .regular))
+                        .font(.caption2)
                         .transition(.opacity)
                 }
             }
@@ -280,17 +244,6 @@ struct BottomSheetPanel: View {
         Color.primary
     }
 
-    private var handleDragGesture: some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onEnded { value in
-                let verticalTranslation = value.translation.height
-
-                guard abs(verticalTranslation) > Self.collapseDragThreshold else { return }
-
-                setExpanded(verticalTranslation < 0)
-            }
-    }
-
     private func setExpanded(_ newValue: Bool) {
         withAnimation(Self.panelMotion) {
             isExpanded = newValue
@@ -299,39 +252,25 @@ struct BottomSheetPanel: View {
 }
 
 private struct PanelGlassBackground: View {
-    var cornerRadius: CGFloat
-
     var body: some View {
         Group {
             if #available(iOS 26.0, *) {
-                panelShape
+                Rectangle()
                     .fill(Color.popover.opacity(0.28))
                     .glassEffect(
                         .regular.tint(Color.popover.opacity(0.42)),
-                        in: panelShape
+                        in: Rectangle()
                     )
             } else {
-                panelShape
+                Rectangle()
                     .fill(.ultraThinMaterial)
                     .overlay {
-                        panelShape
+                        Rectangle()
                             .fill(Color.popover.opacity(0.68))
                     }
             }
         }
         .environment(\.colorScheme, .light)
-    }
-
-    private var panelShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            cornerRadii: RectangleCornerRadii(
-                topLeading: cornerRadius,
-                bottomLeading: 0,
-                bottomTrailing: 0,
-                topTrailing: cornerRadius
-            ),
-            style: .continuous
-        )
     }
 }
 
@@ -345,17 +284,12 @@ struct CanvasHistoryControls: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: onClear) {
-                Text("打扫")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Color.foreground)
-                    .frame(height: 28)
-                    .padding(.horizontal, 8)
-            }
-            .buttonStyle(.plain)
-            .disabled(!canClear)
-            .opacity(canClear ? 1 : 0.42)
-            .accessibilityLabel("清空画布内容")
+            historyButton(
+                assetName: "public/trash",
+                isEnabled: canClear,
+                accessibilityLabel: "清空画布内容",
+                action: onClear
+            )
 
             PanelSeparator(orientation: .vertical)
 
@@ -460,12 +394,13 @@ private struct PanelContentCard: View {
                     selectedCategory: dotControls.selectedDotShapeCategory,
                     selectedShape: dotControls.selectedDotShape,
                     dotScale: dotControls.dotScale,
+                    dotCount: dotControls.dotCount,
                     selectedDotColor: dotControls.selectedDotColor,
-                    dotCharacterText: dotControls.dotCharacterText
+                    dotCharacterText: dotControls.dotCharacterText,
+                    onDrawDots: onDrawDots
                 )
             case .draw:
                 DrawPanelControls(
-                    dotCount: dotControls.dotCount,
                     usesRandomDotColors: dotControls.usesRandomDotColors,
                     isTraceDrawingEnabled: dotControls.isTraceDrawingEnabled,
                     isDotEditingEnabled: isDotEditingEnabled,
@@ -473,7 +408,6 @@ private struct PanelContentCard: View {
                     y2kCCDFilterSettings: dotControls.y2kCCDFilterSettings,
                     canClearTrace: canClearTrace,
                     isDrawingSubjectDots: dotControls.isDrawingSubjectDots,
-                    onDrawDots: onDrawDots,
                     onDrawSubjectDots: onDrawSubjectDots,
                     onClearTrace: onClearTrace
                 )
@@ -1011,7 +945,6 @@ enum DrawPanelTraceButtonLayout {
 }
 
 private struct DrawPanelControls: View {
-    @Binding var dotCount: Double
     @Binding var usesRandomDotColors: Bool
     @Binding var isTraceDrawingEnabled: Bool
     let isDotEditingEnabled: Bool
@@ -1019,23 +952,12 @@ private struct DrawPanelControls: View {
     @Binding var y2kCCDFilterSettings: Y2KCCDFilterSettings
     let canClearTrace: Bool
     let isDrawingSubjectDots: Bool
-    let onDrawDots: () -> Void
     let onDrawSubjectDots: () -> Void
     let onClearTrace: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                StyledSlider(
-                    title: "波点数量",
-                    value: $dotCount,
-                    range: 0...60,
-                    step: 1
-                )
-                .padding(.bottom, 4)
-
-                PanelRowSeparator()
-
                 HStack(spacing: 10) {
                     PanelCompactToggleButton(
                         title: "随机色彩",
@@ -1052,9 +974,6 @@ private struct DrawPanelControls: View {
                 }
                 .frame(height: 30)
                 .padding(.top, 4)
-
-                PanelRowSeparator()
-                    .padding(.top, 4)
 
                 HStack(spacing: 10) {
                     HStack(spacing: 8) {
@@ -1091,16 +1010,10 @@ private struct DrawPanelControls: View {
             .padding(.horizontal, 2)
             .padding(.bottom, 4)
 
-            PanelRowSeparator()
-
             drawActions
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .top)
-    }
-
-    private var activeColor: Color {
-        Color.primary
     }
 
     private var traceButtonGroup: some View {
@@ -1133,32 +1046,7 @@ private struct DrawPanelControls: View {
     }
 
     private var drawActions: some View {
-        HStack(spacing: 10) {
-            drawButton
-            PanelSeparator(orientation: .vertical)
-            subjectButton
-        }
-    }
-
-    private var drawButton: some View {
-        Button(action: onDrawDots) {
-            HStack(spacing: 6) {
-                Image("public/sparkles")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 15, height: 15)
-
-                Text("抽一张")
-                    .font(.system(size: 13, weight: .regular))
-            }
-            .foregroundStyle(Color.primaryForeground)
-            .frame(maxWidth: .infinity)
-            .frame(height: 30)
-            .background(activeColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
+        subjectButton
     }
 
     private var subjectButton: some View {
@@ -1248,8 +1136,10 @@ private struct DotShapePickerPanel: View {
     @Binding var selectedCategory: DotShapeCategory
     @Binding var selectedShape: DotShapeAsset
     @Binding var dotScale: Double
+    @Binding var dotCount: Double
     @Binding var selectedDotColor: Color
     @Binding var dotCharacterText: String
+    let onDrawDots: () -> Void
     @AppStorage("chocho.dotShape.recentNames") private var recentShapeNamesStore = DotShapeAsset.defaultSelection.name
 
     var body: some View {
@@ -1276,17 +1166,26 @@ private struct DotShapePickerPanel: View {
                 DotCharacterTextField(text: $dotCharacterText)
                     .padding(.horizontal, 2)
                     .padding(.vertical, 3)
-
-                PanelRowSeparator()
             }
+
+            DotCountSlider(dotCount: $dotCount)
+                .padding(.vertical, 3)
 
             DotSizeSlider(dotScale: $dotScale)
                 .padding(.vertical, 3)
 
-            PanelRowSeparator()
+            HStack(spacing: 10) {
+                DotColorPicker(selectedDotColor: $selectedDotColor)
+                    .frame(maxWidth: .infinity)
 
-            DotColorPicker(selectedDotColor: $selectedDotColor)
-                .padding(.top, 3)
+                PanelSeparator(orientation: .vertical)
+
+                drawDotsButton
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(height: 30)
+            .padding(.horizontal, 2)
+            .padding(.top, 3)
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .animation(.smooth(duration: 0.22), value: selectedCategory)
@@ -1298,6 +1197,41 @@ private struct DotShapePickerPanel: View {
 
     private var recentShapeNames: [String] {
         DotShapeRecentList.names(from: recentShapeNamesStore)
+    }
+
+    private var drawDotsButton: some View {
+        Button(action: onDrawDots) {
+            HStack(spacing: 6) {
+                Image("public/sparkles")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 15, height: 15)
+
+                Text("随机一下")
+                    .font(.system(size: 13, weight: .regular))
+            }
+            .foregroundStyle(Color.primaryForeground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 30)
+            .background(Color.primary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("随机一下")
+    }
+}
+
+private struct DotCountSlider: View {
+    @Binding var dotCount: Double
+
+    var body: some View {
+        StyledSlider(
+            title: "波点数量",
+            value: $dotCount,
+            range: 0...60,
+            step: 1
+        )
+        .padding(.horizontal, 2)
     }
 }
 
@@ -1390,7 +1324,6 @@ private struct DotColorPicker: View {
             .accessibilityHint("恢复主图与背景的互相拼贴")
             .accessibilityAddTraits(usesCollageTint ? .isSelected : [])
         }
-        .padding(.horizontal, 2)
         .onAppear(perform: rememberSelectedColorIfNeeded)
         .onChange(of: selectedDotColor) { _, _ in
             rememberSelectedColorIfNeeded()

@@ -1481,5 +1481,5 @@ private struct PuzzleTraceDisplayPoint {
         dots: PuzzleDotFactory.makeDots(count: 10)
     )
     .padding()
-    .background(Color.background)
+    .background(Color.canvasBackground)
 }

@@ -6,8 +6,13 @@ nonisolated struct DotShapeCatalogEntry: Equatable, Sendable {
 
 nonisolated enum DotShapeCatalog {
     static let entries: [DotShapeCatalogEntry] = [
+        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素4"),
+        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素5"),
+        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素6"),
+        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素7"),
+        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素8"),
+        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素9"),
         DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素1"),
-        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素10"),
         DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素11"),
         DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素12"),
         DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素13"),
@@ -16,12 +21,6 @@ nonisolated enum DotShapeCatalog {
         DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素16"),
         DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素2"),
         DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素3"),
-        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素4"),
-        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素5"),
-        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素6"),
-        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素7"),
-        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素8"),
-        DotShapeCatalogEntry(category: "像素", name: "shapes/像素/像素9"),
         DotShapeCatalogEntry(category: "小物", name: "shapes/小物/大葱"),
         DotShapeCatalogEntry(category: "小物", name: "shapes/小物/奶牛"),
         DotShapeCatalogEntry(category: "小物", name: "shapes/小物/工牌"),

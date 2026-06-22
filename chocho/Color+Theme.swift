@@ -9,6 +9,7 @@ extension Color {
     // MARK: - Core
 
     static let background = Color(hex: "#F5FEE9")
+    static let canvasBackground = Color(hex: "#E8F0DC")
     static let foreground = Color.black
 
     static let card = Color.white

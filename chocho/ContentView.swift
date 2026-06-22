@@ -112,8 +112,14 @@ struct ContentView: View {
                     CanvasHeader(
                         canDownload: canvasImage != nil,
                         isBusy: isPhotoLoading || isExporting,
+                        canUndo: canvasHistory.canUndo,
+                        canRedo: canvasHistory.canRedo,
+                        canClearCanvas: !puzzleDots.isEmpty,
                         onBack: presentRecentPhotoPicker,
-                        onDownload: shareCanvas
+                        onDownload: shareCanvas,
+                        onClearCanvas: presentClearCanvasConfirmation,
+                        onUndo: undoCanvasChange,
+                        onRedo: redoCanvasChange
                     )
                     .frame(maxWidth: .infinity, alignment: .top)
                 }
@@ -122,7 +128,7 @@ struct ContentView: View {
                 bottomPanel(proxy: proxy)
             }
             .background {
-                Color.background
+                Color.canvasBackground
                     .ignoresSafeArea()
             }
             .overlay {
@@ -287,15 +293,9 @@ struct ContentView: View {
             bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
             isPanelEnabled: canvasImage != nil,
             canClearTrace: !tracePoints.isEmpty,
-            canUndo: canvasHistory.canUndo,
-            canRedo: canvasHistory.canRedo,
-            canClearCanvas: !puzzleDots.isEmpty,
             onDrawDots: drawPuzzleDots,
             onDrawSubjectDots: drawSubjectPuzzleDots,
-            onClearTrace: clearTracePoints,
-            onClearCanvas: presentClearCanvasConfirmation,
-            onUndo: undoCanvasChange,
-            onRedo: redoCanvasChange
+            onClearTrace: clearTracePoints
         )
         // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
         .padding(.bottom, -proxy.safeAreaInsets.bottom)

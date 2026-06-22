@@ -10,11 +10,16 @@ import SwiftUI
 struct CanvasHeader: View {
     let canDownload: Bool
     var isBusy = false
+    var canUndo = false
+    var canRedo = false
+    var canClearCanvas = false
     let onBack: () -> Void
     let onDownload: () -> Void
+    var onClearCanvas: () -> Void = {}
+    var onUndo: () -> Void = {}
+    var onRedo: () -> Void = {}
 
     private static let actionButtonContentWidth: CGFloat = 46
-    private static let logoHeight: CGFloat = 14
 
     private enum ButtonAppearance {
         case white
@@ -61,13 +66,14 @@ struct CanvasHeader: View {
                 )
             }
 
-            Image("chocho")
-                .resizable()
-                .interpolation(.none)
-                .scaledToFit()
-                .frame(height: Self.logoHeight)
-                .accessibilityLabel("chocho")
-                .allowsHitTesting(false)
+            CanvasHistoryControls(
+                canUndo: canUndo,
+                canRedo: canRedo,
+                canClear: canClearCanvas,
+                onClear: onClearCanvas,
+                onUndo: onUndo,
+                onRedo: onRedo
+            )
         }
         .padding(.horizontal, BottomSheetPanel.contentHorizontalInset)
         .padding(.top, 4)

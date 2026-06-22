@@ -108,12 +108,6 @@ struct AboutView: View {
                     .buttonStyle(.plain)
                 }
             }
-
-            Text(AboutContent.developerIntroduction)
-                .font(AboutViewStyle.sectionBodyFont)
-                .foregroundStyle(Color.mutedForeground)
-                .lineSpacing(5)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 20)
     }

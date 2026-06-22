@@ -13,8 +13,6 @@ nonisolated enum AboutContent {
     static var contactEmailURL: URL {
         URL(string: "mailto:\(contactEmail)")!
     }
-
-    static let developerIntroduction = "hi！我是olcchi，喜欢古早味，lofi，y2k艺术，chocho是我的第一款app，希望你玩的开心，也请继续期待更多有趣的app即将到来，爱你！❤️"
 }
 
 enum AboutLegalDocument: String, Identifiable, CaseIterable {
