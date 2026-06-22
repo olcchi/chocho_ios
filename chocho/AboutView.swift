@@ -1,5 +1,9 @@
 import SwiftUI
 
+private enum AboutViewStyle {
+    static let sectionBodyFont = Font.system(size: 12, weight: .medium)
+}
+
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -67,10 +71,6 @@ struct AboutView: View {
                 .accessibilityHidden(true)
                 .padding(.bottom, 4)
 
-            Text(AboutContent.appName)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(Color.foreground)
-
             Text("用 chocho 给照片加点古早味 (o^^o)")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(Color.mutedForeground)
@@ -89,45 +89,31 @@ struct AboutView: View {
 
     private var developerSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("关于我")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.foreground)
-
-            Text(AboutContent.developerIntroduction)
-                .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(Color.foreground)
-                .lineSpacing(5)
-                .fixedSize(horizontal: false, vertical: true)
-
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("开发者")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.mutedForeground)
-                    Button {
-                        openURL(AboutContent.developerWebsiteURL)
-                    } label: {
-                        Text(AboutContent.developerName)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.secondaryForeground)
-                    }
-                    .buttonStyle(.plain)
-                }
-                HStack(spacing: 6) {
-                    Text("小红书")
-                        .font(.system(size: 12, weight: .medium))
+                Text("chocho的开发者 (^^)")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.foreground)
+
+                HStack(spacing: 0) {
+                    Text("小红书：")
+                        .font(AboutViewStyle.sectionBodyFont)
                         .foregroundStyle(Color.mutedForeground)
                     Button {
                         openURL(AboutContent.xiaohongshuURL)
                     } label: {
                         Text(AboutContent.xiaohongshuHandle)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.secondaryForeground)
+                            .font(AboutViewStyle.sectionBodyFont)
+                            .foregroundStyle(Color.mutedForeground)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.top, 4)
+
+            Text(AboutContent.developerIntroduction)
+                .font(AboutViewStyle.sectionBodyFont)
+                .foregroundStyle(Color.mutedForeground)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 20)
     }
@@ -154,13 +140,13 @@ struct AboutView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Text("邮箱")
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundStyle(Color.foreground)
+                            .font(AboutViewStyle.sectionBodyFont)
+                            .foregroundStyle(Color.mutedForeground)
 
                         Spacer(minLength: 0)
 
                         Text(AboutContent.contactEmail)
-                            .font(.system(size: 15, weight: .regular))
+                            .font(AboutViewStyle.sectionBodyFont)
                             .foregroundStyle(Color.mutedForeground)
 
                         Image(systemName: "chevron.right")
@@ -215,8 +201,8 @@ private struct AboutLegalLinkRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(title)
-                .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(Color.foreground)
+                .font(AboutViewStyle.sectionBodyFont)
+                .foregroundStyle(Color.mutedForeground)
 
             Spacer(minLength: 0)
 

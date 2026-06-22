@@ -187,6 +187,7 @@ struct BottomSheetPanel: View {
             dotControls: dotControls,
             liveControls: liveControls,
             backgroundControls: backgroundControls,
+            isDotEditingEnabled: isDotEditingEnabled,
             canClearTrace: canClearTrace,
             onDrawDots: onDrawDots,
             onDrawSubjectDots: onDrawSubjectDots,
@@ -445,6 +446,7 @@ private struct PanelContentCard: View {
     let dotControls: BottomSheetDotControls
     let liveControls: BottomSheetLiveControls
     let backgroundControls: BottomSheetBackgroundControls
+    let isDotEditingEnabled: Bool
     let canClearTrace: Bool
     let onDrawDots: () -> Void
     let onDrawSubjectDots: () -> Void
@@ -466,7 +468,9 @@ private struct PanelContentCard: View {
                     dotCount: dotControls.dotCount,
                     usesRandomDotColors: dotControls.usesRandomDotColors,
                     isTraceDrawingEnabled: dotControls.isTraceDrawingEnabled,
+                    isDotEditingEnabled: isDotEditingEnabled,
                     photoCompression: dotControls.photoCompression,
+                    y2kCCDFilterSettings: dotControls.y2kCCDFilterSettings,
                     canClearTrace: canClearTrace,
                     isDrawingSubjectDots: dotControls.isDrawingSubjectDots,
                     onDrawDots: onDrawDots,
@@ -484,6 +488,7 @@ private struct PanelContentCard: View {
             case .livePhoto:
                 LivePanelControls(
                     liveDotAnimation: liveControls.liveDotAnimation,
+                    isY2KCCDFilterEnabled: dotControls.y2kCCDFilterSettings.wrappedValue.enabled,
                     isSourceLivePhoto: liveControls.isSourceLivePhoto,
                     isSourceLiveMotionEnabled: liveControls.isSourceLiveMotionEnabled,
                     canPlayLivePreview: liveControls.canPlayLivePreview,
@@ -541,6 +546,7 @@ private struct PanelRowSeparator: View {
 /// 实况 Tab：「动画」菜单绑定 `LiveDotAnimation`；「原图实况」与圆环预览按钮同一行。
 private struct LivePanelControls: View {
     @Binding var liveDotAnimation: LiveDotAnimation
+    var isY2KCCDFilterEnabled: Bool
     var isSourceLivePhoto: Bool
     @Binding var isSourceLiveMotionEnabled: Bool
     var canPlayLivePreview: Bool
@@ -550,6 +556,20 @@ private struct LivePanelControls: View {
 
     private var controlLabelFont: Font {
         .system(size: 13, weight: .regular)
+    }
+
+    private var canUseSourceLiveMotion: Bool {
+        isSourceLivePhoto && !isY2KCCDFilterEnabled
+    }
+
+    private var sourceLiveMotionAccessibilityHint: String {
+        if isY2KCCDFilterEnabled {
+            return "CCD 滤镜开启时无法使用原图实况"
+        }
+        if isSourceLivePhoto {
+            return "播放上传 Live Photo 的原片动效"
+        }
+        return "当前照片不是 Live Photo，无法开启"
     }
 
     var body: some View {
@@ -578,16 +598,12 @@ private struct LivePanelControls: View {
                 PanelCompactToggleButton(
                     title: "原图实况",
                     isOn: isSourceLiveMotionEnabled,
-                    isEnabled: isSourceLivePhoto
+                    isEnabled: canUseSourceLiveMotion
                 ) {
                     isSourceLiveMotionEnabled.toggle()
                 }
                 .frame(maxWidth: .infinity)
-                .accessibilityHint(
-                    isSourceLivePhoto
-                        ? "播放上传 Live Photo 的原片动效"
-                        : "当前照片不是 Live Photo，无法开启"
-                )
+                .accessibilityHint(sourceLiveMotionAccessibilityHint)
 
                 PanelSeparator(orientation: .vertical)
 
@@ -998,7 +1014,9 @@ private struct DrawPanelControls: View {
     @Binding var dotCount: Double
     @Binding var usesRandomDotColors: Bool
     @Binding var isTraceDrawingEnabled: Bool
+    let isDotEditingEnabled: Bool
     @Binding var photoCompression: MainPhotoCompression
+    @Binding var y2kCCDFilterSettings: Y2KCCDFilterSettings
     let canClearTrace: Bool
     let isDrawingSubjectDots: Bool
     let onDrawDots: () -> Void
@@ -1038,20 +1056,34 @@ private struct DrawPanelControls: View {
                 PanelRowSeparator()
                     .padding(.top, 4)
 
-                HStack(spacing: 8) {
-                    Text("挤压")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(Color.mutedForeground)
+                HStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Text("挤压")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(Color.mutedForeground)
 
-                    Spacer(minLength: 8)
+                        Spacer(minLength: 8)
 
-                    PanelValueMenu(
-                        accessibilityTitle: "挤压",
-                        selection: $photoCompression,
-                        options: MainPhotoCompression.allCases,
-                        title: { $0.title },
-                        font: .system(size: 12, weight: .regular)
-                    )
+                        PanelValueMenu(
+                            accessibilityTitle: "挤压",
+                            selection: $photoCompression,
+                            options: MainPhotoCompression.allCases,
+                            title: { $0.title },
+                            font: .system(size: 12, weight: .regular)
+                        )
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    PanelSeparator(orientation: .vertical)
+
+                    PanelCompactToggleButton(
+                        title: "CCD(实验)",
+                        isOn: y2kCCDFilterSettings.enabled
+                    ) {
+                        y2kCCDFilterSettings.enabled.toggle()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityHint("开启 Y2K 数码相机滤镜")
                 }
                 .frame(height: 30)
                 .padding(.top, 4)
@@ -1076,7 +1108,8 @@ private struct DrawPanelControls: View {
             HStack(spacing: DrawPanelTraceButtonLayout.spacing) {
                 PanelCompactToggleButton(
                     title: "手绘轨迹",
-                    isOn: isTraceDrawingEnabled
+                    isOn: isTraceDrawingEnabled,
+                    isEnabled: !isDotEditingEnabled
                 ) {
                     isTraceDrawingEnabled.toggle()
                 }

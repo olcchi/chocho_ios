@@ -4,7 +4,7 @@ nonisolated enum AboutContent {
     static let developerName = "olcchi"
     static let xiaohongshuHandle = "黑色聖女果"
     static let appName = "chocho"
-    static let contactEmail = "cohchoapp@outlook.com"
+    static let contactEmail = "chochoapp@outlook.com"
     static let privacyPolicyURL = URL(string: "https://www.chocho.cc/privacy")!
     static let termsOfServiceURL = URL(string: "https://www.chocho.cc/terms")!
     static let supportURL = URL(string: "https://www.chocho.cc/support")!

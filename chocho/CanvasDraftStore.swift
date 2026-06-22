@@ -22,6 +22,7 @@ struct CanvasDraftCapture: Sendable {
     let viewportScale: CGFloat
     let viewportOffset: CGSize
     let liveDotAnimation: LiveDotAnimation
+    let y2kCCDFilterSettings: Y2KCCDFilterSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
 }
@@ -46,6 +47,7 @@ struct CanvasDraftRestore: Sendable {
     let viewportScale: CGFloat
     let viewportOffset: CGSize
     let liveDotAnimation: LiveDotAnimation
+    let y2kCCDFilterSettings: Y2KCCDFilterSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
 }
@@ -71,8 +73,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 7
-    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7]
+    static let currentVersion = 8
+    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, 8]
 
     var version: Int
     var savedAt: Date
@@ -99,6 +101,8 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var viewportOffsetHeight: Double
     /// v3+：波点动画类型（旧草稿缺省为 nil → 恢复为 .none）
     var liveDotAnimationRawValue: String?
+    /// v8+：Y2K CCD 滤镜设置（旧草稿缺省为 .default，即关闭）
+    var y2kCCDFilterSettings: Y2KCCDFilterSettings?
     /// v3+：原图实况开关（旧草稿缺省为 nil → 恢复为 false）
     var isSourceLiveMotionEnabled: Bool?
     /// v3+：相册 PHAsset local identifier（旧草稿缺省为 nil）
@@ -258,6 +262,7 @@ nonisolated enum CanvasDraftStore {
             viewportOffsetWidth: Double(capture.viewportOffset.width),
             viewportOffsetHeight: Double(capture.viewportOffset.height),
             liveDotAnimationRawValue: capture.liveDotAnimation.rawValue,
+            y2kCCDFilterSettings: capture.y2kCCDFilterSettings,
             isSourceLiveMotionEnabled: capture.isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: capture.sourcePhotoAssetLocalIdentifier
         )
@@ -377,6 +382,7 @@ nonisolated enum CanvasDraftStore {
                     height: manifest.viewportOffsetHeight
                 ),
                 liveDotAnimation: liveDotAnimation,
+                y2kCCDFilterSettings: manifest.y2kCCDFilterSettings ?? .default,
                 isSourceLiveMotionEnabled: manifest.isSourceLiveMotionEnabled ?? false,
                 sourcePhotoAssetLocalIdentifier: manifest.sourcePhotoAssetLocalIdentifier
             )

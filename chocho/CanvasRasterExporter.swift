@@ -21,11 +21,32 @@ nonisolated enum CanvasRasterExporter {
         dotCharacterText: String = CharacterDotText.defaultText,
         liveDotAnimation: LiveDotAnimation = .none,
         blinkTime: TimeInterval? = nil,
+        y2kCCDFilterSettings: Y2KCCDFilterSettings = .default,
         photoFrameImage: UIImage? = nil
     ) -> UIImage? {
         guard exportSize.width > 0, exportSize.height > 0 else { return nil }
 
-        let imageSize = CanvasImageLoader.pixelSize(for: image)
+        let renderImage: UIImage
+        let renderPhotoFrameImage: UIImage?
+        if y2kCCDFilterSettings.enabled {
+            renderImage = Y2KCCDFilterRenderer.render(
+                image: image,
+                settings: y2kCCDFilterSettings,
+                sourceKey: "export-base"
+            ) ?? image
+            renderPhotoFrameImage = photoFrameImage.flatMap {
+                Y2KCCDFilterRenderer.render(
+                    image: $0,
+                    settings: y2kCCDFilterSettings,
+                    sourceKey: "export-frame-\(blinkTime ?? 0)"
+                ) ?? $0
+            }
+        } else {
+            renderImage = image
+            renderPhotoFrameImage = photoFrameImage
+        }
+
+        let imageSize = CanvasImageLoader.pixelSize(for: renderImage)
         let layout = PuzzleCanvasLayout.layout(
             imageSize: imageSize,
             availableSize: exportSize,
@@ -60,15 +81,15 @@ nonisolated enum CanvasRasterExporter {
                 photoFrameHeight: layout.backgroundPatternReferenceHeight,
                 extensionRatio: layout.extensionRatio,
                 extensionSide: layout.extensionSide,
-                sourceImage: image
+                sourceImage: renderImage
             )
 
             if layout.extensionSide == .center {
                 drawDots(
                     in: context,
                     layout: layout,
-                    image: image,
-                    liveFrameImage: photoFrameImage,
+                    image: renderImage,
+                    liveFrameImage: renderPhotoFrameImage,
                     backgroundStyle: backgroundStyle,
                     backgroundColors: backgroundColors,
                     backgroundPatternSpacing: backgroundPatternSpacing,
@@ -83,14 +104,14 @@ nonisolated enum CanvasRasterExporter {
                 )
             }
 
-            let displayPhoto = photoFrameImage ?? image
+            let displayPhoto = renderPhotoFrameImage ?? renderImage
             displayPhoto.draw(in: layout.photoFrame)
 
             drawDots(
                 in: context,
                 layout: layout,
-                image: image,
-                liveFrameImage: photoFrameImage,
+                image: renderImage,
+                liveFrameImage: renderPhotoFrameImage,
                 backgroundStyle: backgroundStyle,
                 backgroundColors: backgroundColors,
                 backgroundPatternSpacing: backgroundPatternSpacing,

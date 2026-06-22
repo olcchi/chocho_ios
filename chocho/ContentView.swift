@@ -15,12 +15,12 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     // MARK: 底部面板与波点编辑状态
-    @State private var hasEnteredHome = false
+    @State private var hasEnteredHome = ContentViewPreviewBootstrap.isEnabled
     @State private var shouldAutoAdvanceHome = true
     @State private var selectedTab: PanelTab = .dots
     @State private var isRecentPhotoPickerPresented = false
-    @State private var didAutoPresentPhotoPicker = false
-    @State private var canvasImage: UIImage?
+    @State private var didAutoPresentPhotoPicker = ContentViewPreviewBootstrap.isEnabled
+    @State private var canvasImage: UIImage? = ContentViewPreviewBootstrap.initialCanvasImage
     @State private var extensionRatio: CGFloat = PuzzleCanvasDefaults.defaultExtensionRatio
     @State private var extensionSide: PuzzleCanvasExtensionSide = .right
     @State private var backgroundStyle: PuzzleBackgroundStyle = .grid
@@ -40,6 +40,11 @@ struct ContentView: View {
     @State private var dotCharacterText = CharacterDotText.defaultText
     @State private var isTraceDrawingEnabled = false
     @State private var photoCompression: MainPhotoCompression = .none
+    @State private var y2kCCDFilterSettings: Y2KCCDFilterSettings = .default
+    @State private var y2kCCDFilterCache = Y2KCCDFilterCache()
+    @State private var filteredCanvasPreviewImage: UIImage?
+    @State private var filteredCanvasPreviewKey: String?
+    @State private var filteredCanvasPreviewTask: Task<Void, Never>?
     @State private var isDrawingSubjectDots = false
     @State private var subjectDotGenerationID = UUID()
 
@@ -57,7 +62,7 @@ struct ContentView: View {
     @State private var sourceLiveVideo: CanvasSourceLiveVideo?
 
     @State private var tracePoints: [PuzzleCanvasTracePoint] = []
-    @State private var puzzleDots: [PuzzleDot] = []
+    @State private var puzzleDots: [PuzzleDot] = ContentViewPreviewBootstrap.initialPuzzleDots
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
     @State private var showsClearCanvasConfirmation = false
     @State private var isDotEditingEnabled = false
@@ -73,7 +78,7 @@ struct ContentView: View {
     @State private var lastMagnification: CGFloat = 1
 
     // MARK: 画布草稿（自动保存 / 冷启动恢复）
-    @State private var hasAttemptedDraftRestore = false
+    @State private var hasAttemptedDraftRestore = ContentViewPreviewBootstrap.isEnabled
     @State private var pendingDraftSave: Task<Void, Never>?
 
     var body: some View {
@@ -139,6 +144,10 @@ struct ContentView: View {
     private func applyAsyncTasks<Content: View>(to content: Content) -> some View {
         content
             .task {
+                guard !ContentViewPreviewBootstrap.isEnabled else {
+                    hasAttemptedDraftRestore = true
+                    return
+                }
                 await restoreCanvasDraftOnLaunch()
             }
             .onChange(of: hasEnteredHome) { _, entered in
@@ -150,6 +159,7 @@ struct ContentView: View {
                 presentInitialPhotoPickerIfNeeded()
             }
             .task {
+                guard !ContentViewPreviewBootstrap.isEnabled else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: CanvasDraftStore.autosaveInterval)
                     persistCanvasDraft()
@@ -163,7 +173,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private func applyDraftSaveObservers<Content: View>(to content: Content) -> some View {
-        content
+        applyMotionDraftSaveObservers(
+            to: content
             .onChange(of: extensionRatio) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: extensionSide) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: backgroundStyle) { _, _ in scheduleCanvasDraftSave() }
@@ -174,8 +185,31 @@ struct ContentView: View {
             .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: dotCharacterText) { _, _ in scheduleCanvasDraftSave() }
-            .onChange(of: isTraceDrawingEnabled) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: isTraceDrawingEnabled) { _, isEnabled in
+                if isEnabled, isDotEditingEnabled {
+                    withoutAnimation {
+                        isDotEditingEnabled = false
+                        selectedDotID = nil
+                    }
+                }
+                scheduleCanvasDraftSave()
+            }
             .onChange(of: photoCompression) { _, _ in scheduleCanvasDraftSave() }
+        )
+    }
+
+    @ViewBuilder
+    private func applyMotionDraftSaveObservers<Content: View>(to content: Content) -> some View {
+        content
+            .onChange(of: y2kCCDFilterSettings) { _, newSettings in
+                invalidateY2KCCDPreviewImage()
+                refreshY2KCCDPreviewImageIfNeeded()
+                if newSettings.enabled {
+                    isSourceLiveMotionEnabled = false
+                    stopLivePreviewPlayback()
+                }
+                scheduleCanvasDraftSave()
+            }
             .onChange(of: liveDotAnimation) { _, _ in
                 stopLivePreviewPlayback()
                 scheduleCanvasDraftSave()
@@ -231,6 +265,7 @@ struct ContentView: View {
                 dotCharacterText: $dotCharacterText,
                 isTraceDrawingEnabled: $isTraceDrawingEnabled,
                 photoCompression: $photoCompression,
+                y2kCCDFilterSettings: $y2kCCDFilterSettings,
                 isDrawingSubjectDots: isDrawingSubjectDots
             ),
             liveControls: BottomSheetLiveControls(
@@ -290,8 +325,9 @@ struct ContentView: View {
     private var canvasArea: some View {
         if let canvasImage {
             GeometryReader { canvasProxy in
+                let previewImage = filteredCanvasPreviewImage ?? canvasImage
                 let canvas = PuzzleCanvasView(
-                    image: canvasImage,
+                    image: previewImage,
                     extensionRatio: extensionRatio,
                     extensionSide: extensionSide,
                     photoCompression: photoCompression,
@@ -311,6 +347,7 @@ struct ContentView: View {
                     isTraceDrawingEnabled: isTraceDrawingEnabled,
                     liveDotAnimation: liveDotAnimation,
                     livePreviewPlaybackStart: livePreviewPlaybackStart,
+                    isY2KCCDFilterPreviewEnabled: y2kCCDFilterSettings.enabled,
                     isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
                     sourceLiveVideo: sourceLiveVideo,
                     isDotEditingEnabled: isDotEditingEnabled,
@@ -345,6 +382,70 @@ struct ContentView: View {
 
     private func topCanvasInset(for proxy: GeometryProxy) -> CGFloat {
         topActionBarHeight
+    }
+
+    @MainActor
+    private func invalidateY2KCCDPreviewImage() {
+        filteredCanvasPreviewTask?.cancel()
+        filteredCanvasPreviewTask = nil
+        filteredCanvasPreviewImage = nil
+        filteredCanvasPreviewKey = nil
+        y2kCCDFilterCache.clear()
+    }
+
+    @MainActor
+    private func refreshY2KCCDPreviewImageIfNeeded() {
+        filteredCanvasPreviewTask?.cancel()
+        filteredCanvasPreviewTask = nil
+
+        guard y2kCCDFilterSettings.enabled, let canvasImage else {
+            filteredCanvasPreviewImage = nil
+            filteredCanvasPreviewKey = nil
+            return
+        }
+
+        let sourceKey = "preview-\(ObjectIdentifier(canvasImage).hashValue)"
+        let pixelSize = y2kCCDPreviewPixelSize(for: canvasImage)
+        let cacheKey = y2kCCDFilterSettings.renderCacheKey(
+            sourceKey: sourceKey,
+            pixelSize: pixelSize
+        )
+        guard filteredCanvasPreviewKey != cacheKey || filteredCanvasPreviewImage == nil else {
+            return
+        }
+
+        filteredCanvasPreviewImage = nil
+        filteredCanvasPreviewKey = cacheKey
+
+        let settings = y2kCCDFilterSettings
+        let cache = y2kCCDFilterCache
+        filteredCanvasPreviewTask = Task {
+            let filteredImage = await Task.detached(priority: .userInitiated) {
+                Y2KCCDFilterRenderer.render(
+                    image: canvasImage,
+                    settings: settings,
+                    targetPixelSize: pixelSize,
+                    sourceKey: sourceKey,
+                    cache: cache
+                )
+            }.value
+
+            guard !Task.isCancelled, filteredCanvasPreviewKey == cacheKey else { return }
+            filteredCanvasPreviewImage = filteredImage
+        }
+    }
+
+    private func y2kCCDPreviewPixelSize(for image: UIImage) -> CGSize {
+        let pixelSize = CanvasImageLoader.pixelSize(for: image)
+        let maxLongEdge: CGFloat = 1080
+        let longEdge = max(pixelSize.width, pixelSize.height)
+        guard longEdge > maxLongEdge else { return pixelSize }
+
+        let scale = maxLongEdge / longEdge
+        return CGSize(
+            width: max(1, (pixelSize.width * scale).rounded()),
+            height: max(1, (pixelSize.height * scale).rounded())
+        )
     }
 
     private var topActionBarHeight: CGFloat {
@@ -559,6 +660,8 @@ struct ContentView: View {
             )
         }
         canvasImage = source.keyPhoto
+        invalidateY2KCCDPreviewImage()
+        refreshY2KCCDPreviewImageIfNeeded()
         imageViewportResetID = UUID()
         viewportScale = 1
         viewportOffset = .zero
@@ -724,6 +827,7 @@ struct ContentView: View {
                 isTraceDrawingEnabled = false
                 isDotEditingEnabled = true
                 selectedDotID = nil
+                selectedTab = .dots
             }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             dismissToast()
@@ -903,8 +1007,14 @@ struct ContentView: View {
         guard let restored = await CanvasDraftStore.load() else { return }
 
         canvasImage = restored.image
+        y2kCCDFilterSettings = restored.y2kCCDFilterSettings
+        invalidateY2KCCDPreviewImage()
+        refreshY2KCCDPreviewImageIfNeeded()
         liveDotAnimation = restored.liveDotAnimation
         isSourceLiveMotionEnabled = restored.isSourceLiveMotionEnabled
+        if y2kCCDFilterSettings.enabled {
+            isSourceLiveMotionEnabled = false
+        }
         sourcePhotoAssetLocalIdentifier = restored.sourcePhotoAssetLocalIdentifier
         sourceLiveVideo?.removeTemporaryFiles()
         sourceLiveVideo = nil
@@ -952,6 +1062,8 @@ struct ContentView: View {
 
     @MainActor
     private func persistCanvasDraft() {
+        guard !ContentViewPreviewBootstrap.isEnabled else { return }
+
         pendingDraftSave?.cancel()
         pendingDraftSave = nil
 
@@ -980,6 +1092,7 @@ struct ContentView: View {
             viewportScale: viewportScale,
             viewportOffset: viewportOffset,
             liveDotAnimation: liveDotAnimation,
+            y2kCCDFilterSettings: y2kCCDFilterSettings,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
         )
@@ -1033,6 +1146,7 @@ struct ContentView: View {
             usesRandomDotColors: usesRandomDotColors,
             dotCharacterText: dotCharacterText,
             liveDotAnimation: liveDotAnimation,
+            y2kCCDFilterSettings: y2kCCDFilterSettings,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             hasSourceLiveVideo: hasSourceLiveVideo,
             sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
@@ -1067,6 +1181,7 @@ struct ContentView: View {
                         usesRandomDotColors: snapshot.usesRandomDotColors,
                         dotCharacterText: snapshot.dotCharacterText,
                         liveDotAnimation: snapshot.liveDotAnimation,
+                        y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
                         isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
                         hasSourceLiveVideo: snapshot.hasSourceLiveVideo,
                         sourcePhotoAssetLocalIdentifier: snapshot.sourcePhotoAssetLocalIdentifier
@@ -1094,7 +1209,8 @@ struct ContentView: View {
                         dotScale: snapshot.dotScale,
                         dotColor: snapshot.dotColor,
                         usesRandomDotColors: snapshot.usesRandomDotColors,
-                        dotCharacterText: snapshot.dotCharacterText
+                        dotCharacterText: snapshot.dotCharacterText,
+                        y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings
                     ) else {
                         return nil
                     }
@@ -1265,4 +1381,32 @@ private struct CanvasShareItem: Identifiable {
     let product: CanvasExportProduct
 
     var shareItems: [Any] { product.shareItems }
+}
+
+private enum ContentViewPreviewBootstrap {
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    }
+
+    static var initialCanvasImage: UIImage? {
+        isEnabled ? makeSampleImage() : nil
+    }
+
+    static var initialPuzzleDots: [PuzzleDot] {
+        isEnabled ? PuzzleDotFactory.makeDots(count: 10) : []
+    }
+
+    static func makeSampleImage() -> UIImage {
+        let size = CGSize(width: 320, height: 220)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(red: 0.55, green: 0.35, blue: 0.22, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+}
+
+#Preview("App") {
+    ContentView()
 }

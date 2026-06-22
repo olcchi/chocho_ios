@@ -25,6 +25,7 @@ struct PuzzleCanvasView: View {
     var isTraceDrawingEnabled = false
     var liveDotAnimation: LiveDotAnimation = .none
     var livePreviewPlaybackStart: Date?
+    var isY2KCCDFilterPreviewEnabled = false
     var isSourceLiveMotionEnabled = false
     var sourceLiveVideo: CanvasSourceLiveVideo?
     var isDotEditingEnabled = false
@@ -54,6 +55,7 @@ struct PuzzleCanvasView: View {
     private var shouldRunLivePreviewTimeline: Bool {
         guard livePreviewPlaybackStart != nil else { return false }
         if liveDotAnimation != .none { return true }
+        if isY2KCCDFilterPreviewEnabled { return false }
         return isSourceLiveMotionEnabled && sourceLiveVideo != nil
     }
 
@@ -290,6 +292,7 @@ struct PuzzleCanvasView: View {
     }
 
     private func photoImage(for blinkTime: TimeInterval?) -> UIImage {
+        guard !isY2KCCDFilterPreviewEnabled else { return image }
         guard isSourceLiveMotionEnabled,
               let sourceLiveVideo,
               let blinkTime else {
@@ -304,6 +307,7 @@ struct PuzzleCanvasView: View {
 
     /// 拼贴波点所需的实况帧：原图实况开启且有帧数据时返回；否则 nil（用静态原图）。
     private func liveFrameImageForDots(blinkTime: TimeInterval?) -> UIImage? {
+        guard !isY2KCCDFilterPreviewEnabled else { return nil }
         guard isSourceLiveMotionEnabled,
               let sourceLiveVideo,
               let blinkTime else {

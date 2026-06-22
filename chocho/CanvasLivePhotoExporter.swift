@@ -58,6 +58,7 @@ nonisolated enum CanvasLivePhotoExporter {
         let usesRandomDotColors: Bool
         let dotCharacterText: String
         let liveDotAnimation: LiveDotAnimation
+        let y2kCCDFilterSettings: Y2KCCDFilterSettings
         let isSourceLiveMotionEnabled: Bool
         let hasSourceLiveVideo: Bool
         let sourcePhotoAssetLocalIdentifier: String?
@@ -198,6 +199,7 @@ nonisolated enum CanvasLivePhotoExporter {
             dotCharacterText: snapshot.dotCharacterText,
             liveDotAnimation: snapshot.liveDotAnimation,
             blinkTime: blinkTime,
+            y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
             photoFrameImage: photoFrameImage
         )
     }

@@ -80,9 +80,13 @@ struct RecentPhotoPickerView: View {
                 Button {
                     isAboutPresented = true
                 } label: {
-                    Text("关于")
-                        .font(.system(size: 13, weight: .regular))
-                        .frame(height: 30)
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(.system(size: 13, weight: .regular))
+                        Text("关于")
+                            .font(.system(size: 13, weight: .regular))
+                    }
+                    .frame(height: 30)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.foreground)
