@@ -360,7 +360,7 @@ nonisolated enum ASCIIArtRenderer {
                         height: cellH
                     )
 
-                    if isEdge && settings.showOutline {
+                    if isEdge {
                         drawCharacter(
                             String(preset.outlineCharacter),
                             in: cellRect,
@@ -368,6 +368,8 @@ nonisolated enum ASCIIArtRenderer {
                             alpha: 0.90,
                             context: cgCtx
                         )
+                    // Cells between 0.15 and 0.35 subject fraction are left as-is to create
+                    // a soft transition zone and avoid messy half-occluded character cells.
                     } else if subjectFraction > 0.35 {
                         let alpha = 0.82 + avgBrightness * 0.18
                         drawCharacter(
@@ -414,10 +416,8 @@ nonisolated enum ASCIIArtRenderer {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue).rawValue
         ) else { return nil }
 
-        ctx.draw(
-            image.cgImage ?? UIImage().cgImage!,
-            in: CGRect(x: 0, y: 0, width: w, height: h)
-        )
+        guard let cgImage = image.cgImage else { return nil }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
 
         return raw.map { CGFloat($0) / 255.0 }
     }
@@ -430,22 +430,21 @@ nonisolated enum ASCIIArtRenderer {
             for x in 0..<width {
                 let center = maskBitmap[y * width + x]
                 guard center else { continue }
-                var isEdge = false
-                neighborLoop: for dy in -1...1 {
-                    for dx in -1...1 {
-                        guard !(dx == 0 && dy == 0) else { continue }
-                        let nx = x + dx
-                        let ny = y + dy
-                        if nx < 0 || nx >= width || ny < 0 || ny >= height {
-                            isEdge = true
-                            break neighborLoop
-                        }
-                        if maskBitmap[ny * width + nx] != center {
-                            isEdge = true
-                            break neighborLoop
-                        }
-                    }
+                // Out-of-bounds neighbors are treated as same as center to avoid
+                // falsely marking subject pixels at the image border as edges.
+                func pixel(_ px: Int, _ py: Int) -> Bool {
+                    guard px >= 0, px < width, py >= 0, py < height else { return center }
+                    return maskBitmap[py * width + px]
                 }
+                let isEdge =
+                    pixel(x-1, y-1) != center ||
+                    pixel(x-1, y)   != center ||
+                    pixel(x-1, y+1) != center ||
+                    pixel(x,   y-1) != center ||
+                    pixel(x,   y+1) != center ||
+                    pixel(x+1, y-1) != center ||
+                    pixel(x+1, y)   != center ||
+                    pixel(x+1, y+1) != center
                 edges[y * width + x] = isEdge
             }
         }
