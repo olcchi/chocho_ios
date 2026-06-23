@@ -22,28 +22,33 @@ nonisolated enum CanvasRasterExporter {
         liveDotAnimation: LiveDotAnimation = .none,
         blinkTime: TimeInterval? = nil,
         y2kCCDFilterSettings: Y2KCCDFilterSettings = .default,
+        subjectGlowSettings: SubjectGlowSettings = .default,
+        subjectGlowMask: SubjectMask? = nil,
+        asciiArtSettings: ASCIIArtSettings = .default,
+        asciiArtMask: SubjectMask? = nil,
         photoFrameImage: UIImage? = nil
     ) -> UIImage? {
         guard exportSize.width > 0, exportSize.height > 0 else { return nil }
 
-        let renderImage: UIImage
-        let renderPhotoFrameImage: UIImage?
-        if y2kCCDFilterSettings.enabled {
-            renderImage = Y2KCCDFilterRenderer.render(
-                image: image,
-                settings: y2kCCDFilterSettings,
-                sourceKey: "export-base"
-            ) ?? image
-            renderPhotoFrameImage = photoFrameImage.flatMap {
-                Y2KCCDFilterRenderer.render(
-                    image: $0,
-                    settings: y2kCCDFilterSettings,
-                    sourceKey: "export-frame-\(blinkTime ?? 0)"
-                ) ?? $0
-            }
-        } else {
-            renderImage = image
-            renderPhotoFrameImage = photoFrameImage
+        let renderImage = CanvasStyledPhotoRenderer.renderSync(
+            image: image,
+            subjectGlowSettings: subjectGlowSettings,
+            y2kCCDFilterSettings: y2kCCDFilterSettings,
+            sourceKey: "export-base",
+            subjectGlowMask: subjectGlowMask,
+            asciiArtSettings: asciiArtSettings,
+            asciiArtMask: asciiArtMask
+        )
+        let renderPhotoFrameImage = photoFrameImage.map {
+            CanvasStyledPhotoRenderer.renderSync(
+                image: $0,
+                subjectGlowSettings: subjectGlowSettings,
+                y2kCCDFilterSettings: y2kCCDFilterSettings,
+                sourceKey: "export-frame-\(blinkTime ?? 0)",
+                subjectGlowMask: subjectGlowMask,
+                asciiArtSettings: asciiArtSettings,
+                asciiArtMask: asciiArtMask
+            )
         }
 
         let imageSize = CanvasImageLoader.pixelSize(for: renderImage)
