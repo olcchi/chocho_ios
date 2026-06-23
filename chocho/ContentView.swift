@@ -505,11 +505,11 @@ struct ContentView: View {
                 image: canvasImage,
                 subjectGlowSettings: glowSettings,
                 y2kCCDFilterSettings: ccdSettings,
-                asciiArtSettings: asciiSettings,
                 targetPixelSize: pixelSize,
                 sourceKey: sourceKey,
                 subjectGlowCache: glowCache,
                 y2kCCDCache: ccdCache,
+                asciiArtSettings: asciiSettings,
                 asciiArtCache: asciiCache
             )
 
