@@ -1485,7 +1485,7 @@ nonisolated enum PuzzleBackgroundPatternSpacing {
 }
 
 enum PuzzleCanvasUploadDefaults {
-    static let dotShapeName = BuiltInDotShape.snow.rawValue
+    static let dotShapeName = "shapes/像素/像素8"
     static let dotScaleControlValue: Double = 10
     static let dotScale = DotSizeControl.renderedScale(forControlValue: dotScaleControlValue)
 

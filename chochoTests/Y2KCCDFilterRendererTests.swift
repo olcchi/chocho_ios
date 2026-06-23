@@ -29,6 +29,70 @@ struct Y2KCCDFilterRendererTests {
         )
     }
 
+    @Test func defaultSettingsRepresentTunedCCDPreset() {
+        let settings = Y2KCCDFilterSettings.default
+
+        #expect(!settings.enabled)
+        #expect(settings.downsample == 0.2)
+        #expect(settings.exposure == 0.18)
+        #expect(settings.temperature == -0.65)
+        #expect(settings.jpegArtifacts == 0.2)
+    }
+
+    @Test func missingExposureDecodesToTunedCCDPresetExposure() throws {
+        let json = """
+        {
+          "enabled": true,
+          "downsample": 0.2,
+          "bloom": 0.6,
+          "bloomThreshold": 0.7,
+          "noise": 0.2,
+          "chromaNoise": 0.1,
+          "jpegArtifacts": 0.2,
+          "sharpen": 0.7,
+          "temperature": -0.65,
+          "tint": -0.2,
+          "contrast": 0.15,
+          "saturation": 1.0,
+          "highlightClip": 0.8,
+          "rgbShift": 0.15
+        }
+        """
+
+        let settings = try JSONDecoder().decode(
+            Y2KCCDFilterSettings.self,
+            from: try #require(json.data(using: .utf8))
+        )
+
+        #expect(settings.exposure == Y2KCCDFilterSettings.default.exposure)
+    }
+
+    @Test func panelEditingDefaultsToEnabledAndKeepsAdjustableValues() {
+        var settings = Y2KCCDFilterSettings.default
+        settings.enabled = false
+        settings.downsample = 0.72
+        settings.exposure = 0.18
+        settings.temperature = 0.36
+        settings.jpegArtifacts = 0.44
+
+        let editingSettings = settings.enabledForPanelEditing
+
+        #expect(editingSettings.enabled)
+        #expect(editingSettings.downsample == settings.downsample)
+        #expect(editingSettings.exposure == settings.exposure)
+        #expect(editingSettings.temperature == settings.temperature)
+        #expect(editingSettings.jpegArtifacts == settings.jpegArtifacts)
+    }
+
+    @Test func previewRenderPolicyDownsamplesLargeImagesForInteractiveUpdates() {
+        let largeSize = CGSize(width: 2_000, height: 1_000)
+        let smallSize = CGSize(width: 320, height: 240)
+
+        #expect(Y2KCCDPreviewRenderPolicy.pixelSize(for: largeSize) == CGSize(width: 720, height: 360))
+        #expect(Y2KCCDPreviewRenderPolicy.pixelSize(for: smallSize) == smallSize)
+        #expect(Y2KCCDPreviewRenderPolicy.refreshDebounce == .milliseconds(90))
+    }
+
     @Test func renderedImageKeepsInputPixelSize() throws {
         let source = try #require(makeY2KGradientImage(width: 17, height: 11))
         var settings = Y2KCCDFilterSettings.default
@@ -50,6 +114,7 @@ struct Y2KCCDFilterRendererTests {
         base.chromaNoise = 0
         base.jpegArtifacts = 0
         base.sharpen = 0
+        base.exposure = 0
         base.temperature = 0
         base.tint = 0
         base.contrast = 0
@@ -62,6 +127,8 @@ struct Y2KCCDFilterRendererTests {
         toned.tint = -0.6
         toned.contrast = 0.35
         toned.saturation = 0.8
+        var exposed = base
+        exposed.exposure = 0.45
         var downsampled = base
         downsampled.downsample = 1
         var jpegCrushed = base
@@ -69,11 +136,13 @@ struct Y2KCCDFilterRendererTests {
 
         let baseImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: base))
         let tonedImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: toned))
+        let exposedImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: exposed))
         let downsampledImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: downsampled))
         let jpegImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: jpegCrushed))
 
         let sampleRect = CGRect(x: 2, y: 2, width: 14, height: 6)
         #expect(containsDifferentPixels(in: baseImage, and: tonedImage, rect: sampleRect))
+        #expect(containsDifferentPixels(in: baseImage, and: exposedImage, rect: sampleRect))
         #expect(containsDifferentPixels(in: baseImage, and: downsampledImage, rect: sampleRect))
         #expect(containsDifferentPixels(in: baseImage, and: jpegImage, rect: sampleRect))
     }

@@ -29,24 +29,31 @@ struct ContentView: View {
     @State private var imageViewportResetID = UUID()
     @State private var viewportScale: CGFloat = 1
     @State private var viewportOffset: CGSize = .zero
-    @State private var isPanelExpanded = true
+    @State private var isPanelExpanded = false
     @State private var panelVisibleHeight: CGFloat = 0
     @State private var dotCount: Double = 10
     @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
     @State private var selectedDotColor: Color = .clear
     @State private var usesRandomDotColors = false
+    @State private var randomDrawClickCount = 0
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var selectedDotShapeCategory: DotShapeCategory = .basic
     @State private var dotCharacterText = CharacterDotText.defaultText
     @State private var isTraceDrawingEnabled = false
+    @State private var isTraceVisible = true
+    @State private var isSubjectOutlineEnabled = false
+    @State private var subjectOutlinePoints: [PuzzleCanvasTracePoint] = []
+    @State private var traceFeatureSessionSnapshot: TraceFeatureSessionSnapshot?
     @State private var photoCompression: MainPhotoCompression = .none
+    @State private var photoCompressionSessionSnapshot: MainPhotoCompression?
     @State private var y2kCCDFilterSettings: Y2KCCDFilterSettings = .default
+    @State private var y2kCCDFilterSessionSnapshot: Y2KCCDFilterSettings?
     @State private var y2kCCDFilterCache = Y2KCCDFilterCache()
     @State private var filteredCanvasPreviewImage: UIImage?
     @State private var filteredCanvasPreviewKey: String?
     @State private var filteredCanvasPreviewTask: Task<Void, Never>?
-    @State private var isDrawingSubjectDots = false
-    @State private var subjectDotGenerationID = UUID()
+    @State private var isDetectingSubjectOutline = false
+    @State private var subjectOutlineGenerationID = UUID()
 
     // MARK: 实况动画（预览播放与导出格式由 liveDotAnimation 决定）
     @State private var liveDotAnimation: LiveDotAnimation = .none
@@ -80,6 +87,9 @@ struct ContentView: View {
     // MARK: 画布草稿（自动保存 / 冷启动恢复）
     @State private var hasAttemptedDraftRestore = ContentViewPreviewBootstrap.isEnabled
     @State private var pendingDraftSave: Task<Void, Never>?
+    @State private var pendingTraceDotSyncTask: Task<Void, Never>?
+
+    private static let traceDotSyncDebounceInterval: Duration = .milliseconds(300)
 
     var body: some View {
         ZStack {
@@ -128,7 +138,7 @@ struct ContentView: View {
                 bottomPanel(proxy: proxy)
             }
             .background {
-                Color.canvasBackground
+                Color.background
                     .ignoresSafeArea()
             }
             .overlay {
@@ -187,7 +197,10 @@ struct ContentView: View {
             .onChange(of: backgroundColors) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: backgroundPatternSpacing) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: dotScale) { _, _ in scheduleCanvasDraftSave() }
-            .onChange(of: selectedDotColor) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: selectedDotColor) { _, _ in
+                usesRandomDotColors = false
+                scheduleCanvasDraftSave()
+            }
             .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: dotCharacterText) { _, _ in scheduleCanvasDraftSave() }
@@ -200,6 +213,9 @@ struct ContentView: View {
                 }
                 scheduleCanvasDraftSave()
             }
+            .onChange(of: isTraceVisible) { _, _ in
+                scheduleCanvasDraftSave()
+            }
             .onChange(of: photoCompression) { _, _ in scheduleCanvasDraftSave() }
         )
     }
@@ -208,8 +224,7 @@ struct ContentView: View {
     private func applyMotionDraftSaveObservers<Content: View>(to content: Content) -> some View {
         content
             .onChange(of: y2kCCDFilterSettings) { _, newSettings in
-                invalidateY2KCCDPreviewImage()
-                refreshY2KCCDPreviewImageIfNeeded()
+                refreshY2KCCDPreviewImageIfNeeded(debounces: true)
                 if newSettings.enabled {
                     isSourceLiveMotionEnabled = false
                     stopLivePreviewPlayback()
@@ -265,14 +280,14 @@ struct ContentView: View {
                 dotCount: $dotCount,
                 dotScale: dotScaleBinding,
                 selectedDotColor: $selectedDotColor,
-                usesRandomDotColors: $usesRandomDotColors,
                 selectedDotShape: selectedDotShapeBinding,
                 selectedDotShapeCategory: $selectedDotShapeCategory,
                 dotCharacterText: $dotCharacterText,
-                isTraceDrawingEnabled: $isTraceDrawingEnabled,
+                isTraceVisible: $isTraceVisible,
+                isSubjectOutlineEnabled: $isSubjectOutlineEnabled,
                 photoCompression: $photoCompression,
                 y2kCCDFilterSettings: $y2kCCDFilterSettings,
-                isDrawingSubjectDots: isDrawingSubjectDots
+                isDetectingSubjectOutline: isDetectingSubjectOutline
             ),
             liveControls: BottomSheetLiveControls(
                 liveDotAnimation: $liveDotAnimation,
@@ -292,10 +307,19 @@ struct ContentView: View {
             ),
             bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
             isPanelEnabled: canvasImage != nil,
-            canClearTrace: !tracePoints.isEmpty,
+            canClearTrace: hasClearableTrace,
             onDrawDots: drawPuzzleDots,
-            onDrawSubjectDots: drawSubjectPuzzleDots,
-            onClearTrace: clearTracePoints
+            onToggleSubjectOutline: toggleSubjectOutline,
+            onClearTrace: clearTracePoints,
+            onBeginTraceFeature: beginTraceFeatureSession,
+            onConfirmTraceFeature: confirmTraceFeatureSession,
+            onCancelTraceFeature: cancelTraceFeatureSession,
+            onBeginPhotoCompressionFeature: beginPhotoCompressionFeatureSession,
+            onConfirmPhotoCompressionFeature: confirmPhotoCompressionFeatureSession,
+            onCancelPhotoCompressionFeature: cancelPhotoCompressionFeatureSession,
+            onBeginY2KCCDFilterFeature: beginY2KCCDFilterFeatureSession,
+            onConfirmY2KCCDFilterFeature: confirmY2KCCDFilterFeatureSession,
+            onCancelY2KCCDFilterFeature: cancelY2KCCDFilterFeatureSession
         )
         // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
         .padding(.bottom, -proxy.safeAreaInsets.bottom)
@@ -344,7 +368,10 @@ struct ContentView: View {
                     viewportScale: viewportScale,
                     viewportOffset: viewportOffset,
                     tracePoints: tracePoints,
+                    subjectOutlinePoints: subjectOutlinePoints,
                     isTraceDrawingEnabled: isTraceDrawingEnabled,
+                    isTraceVisible: isTraceVisible,
+                    isSubjectOutlineEnabled: isSubjectOutlineEnabled,
                     liveDotAnimation: liveDotAnimation,
                     livePreviewPlaybackStart: livePreviewPlaybackStart,
                     isY2KCCDFilterPreviewEnabled: y2kCCDFilterSettings.enabled,
@@ -357,6 +384,7 @@ struct ContentView: View {
                     onDoubleTapBackground: applyCanvasViewportReset,
                     onViewportReset: applyCanvasViewportResetWithoutAnimation,
                     onTraceChanged: updateTracePoints,
+                    onTraceStrokeEnded: commitTraceStrokeDots,
                     onSelectDot: selectDot,
                     onMoveSelectedDot: previewMoveSelectedDot(to:),
                     onScaleSelectedDot: previewScaleSelectedDot(by:),
@@ -394,7 +422,7 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func refreshY2KCCDPreviewImageIfNeeded() {
+    private func refreshY2KCCDPreviewImageIfNeeded(debounces: Bool = false) {
         filteredCanvasPreviewTask?.cancel()
         filteredCanvasPreviewTask = nil
 
@@ -414,12 +442,22 @@ struct ContentView: View {
             return
         }
 
-        filteredCanvasPreviewImage = nil
+        if let cachedImage = y2kCCDFilterCache.image(for: cacheKey) {
+            filteredCanvasPreviewImage = cachedImage
+            filteredCanvasPreviewKey = cacheKey
+            return
+        }
+
         filteredCanvasPreviewKey = cacheKey
 
         let settings = y2kCCDFilterSettings
         let cache = y2kCCDFilterCache
         filteredCanvasPreviewTask = Task {
+            if debounces {
+                try? await Task.sleep(for: Y2KCCDPreviewRenderPolicy.refreshDebounce)
+                guard !Task.isCancelled else { return }
+            }
+
             let filteredImage = await Task.detached(priority: .userInitiated) {
                 Y2KCCDFilterRenderer.render(
                     image: canvasImage,
@@ -437,15 +475,7 @@ struct ContentView: View {
 
     private func y2kCCDPreviewPixelSize(for image: UIImage) -> CGSize {
         let pixelSize = CanvasImageLoader.pixelSize(for: image)
-        let maxLongEdge: CGFloat = 1080
-        let longEdge = max(pixelSize.width, pixelSize.height)
-        guard longEdge > maxLongEdge else { return pixelSize }
-
-        let scale = maxLongEdge / longEdge
-        return CGSize(
-            width: max(1, (pixelSize.width * scale).rounded()),
-            height: max(1, (pixelSize.height * scale).rounded())
-        )
+        return Y2KCCDPreviewRenderPolicy.pixelSize(for: pixelSize)
     }
 
     private var topActionBarHeight: CGFloat {
@@ -608,9 +638,10 @@ struct ContentView: View {
     @MainActor
     private func applyPhotoUploadDefaults() {
         selectedDotShape = DotShapeAsset(name: PuzzleCanvasUploadDefaults.dotShapeName)
-        selectedDotShapeCategory = .basic
+        selectedDotShapeCategory = .pixel
         dotScale = PuzzleCanvasUploadDefaults.dotScale
-        selectedTab = .draw
+        selectedTab = .style
+        isPanelExpanded = true
     }
 
     @MainActor
@@ -626,7 +657,7 @@ struct ContentView: View {
     private func loadRecentPhotoAsset(_ asset: PHAsset) async {
         isPhotoLoading = true
         showToast("正在加载…")
-        invalidateSubjectDotGeneration()
+        invalidateSubjectOutlineDetection()
         defer {
             isPhotoLoading = false
         }
@@ -669,15 +700,48 @@ struct ContentView: View {
         isDotEditingEnabled = false
         selectedDotID = nil
         tracePoints = []
+        disableSubjectOutline()
         canvasHistory.reset(to: [])
         puzzleDots = []
+        randomDrawClickCount = 0
+        usesRandomDotColors = false
 
         await Task.yield()
 
         applyPuzzleDots(initialDots)
     }
 
-    /// 「抽卡」：沿轨迹或随机布局生成波点，并记入撤销栈。
+    private var hasClearableTrace: Bool {
+        !tracePoints.isEmpty || !subjectOutlinePoints.isEmpty
+    }
+
+    private var activeTracePoints: [PuzzleCanvasTracePoint] {
+        combinedTracePoints(
+            subjectOutline: isSubjectOutlineEnabled ? subjectOutlinePoints : [],
+            manualTrace: tracePoints
+        )
+    }
+
+    private func combinedTracePoints(
+        subjectOutline: [PuzzleCanvasTracePoint],
+        manualTrace: [PuzzleCanvasTracePoint]
+    ) -> [PuzzleCanvasTracePoint] {
+        guard !subjectOutline.isEmpty else { return manualTrace }
+        guard !manualTrace.isEmpty else { return subjectOutline }
+
+        var manualWithSeparatedStroke = manualTrace
+        if let firstPoint = manualWithSeparatedStroke.first, !firstPoint.startsNewStroke {
+            manualWithSeparatedStroke[0] = PuzzleCanvasTracePoint(
+                side: firstPoint.side,
+                point: firstPoint.point,
+                startsNewStroke: true
+            )
+        }
+
+        return subjectOutline + manualWithSeparatedStroke
+    }
+
+    /// 「抽卡」：沿轨迹或随机布局生成波点，并记入撤销栈。每点满 3 次「随机一下」生成一次随机色彩波点。
     @MainActor
     private func drawPuzzleDots() {
         guard canvasImage != nil else {
@@ -685,73 +749,101 @@ struct ContentView: View {
             return
         }
 
-        invalidateSubjectDotGeneration()
+        randomDrawClickCount += 1
+        usesRandomDotColors = randomDrawClickCount.isMultiple(of: 3)
 
-        let newDots = PuzzleDotFactory.makeDots(
-            count: Int(dotCount.rounded()),
-            along: tracePoints,
-            extensionRatio: extensionRatio,
-            shapeAssetName: selectedDotShape.name
-        )
+        invalidateSubjectOutlineDetection()
+
         if isTraceDrawingEnabled {
-            guard !tracePoints.isEmpty else {
+            guard !activeTracePoints.isEmpty else {
                 showToast("先画一条轨迹")
                 return
             }
 
-            guard !newDots.isEmpty else {
+            guard let newDots = puzzleDotsAlongCurrentTrace(), !newDots.isEmpty else {
                 showToast("右侧背景太窄")
                 return
             }
+
+            applyPuzzleDots(newDots)
+            dismissToast()
+            return
         }
 
-        let fallbackDots = isTraceDrawingEnabled
-            ? newDots
-            : PuzzleDotFactory.makeDots(
-                count: Int(dotCount.rounded()),
-                shapeAssetName: selectedDotShape.name
+        let fallbackDots = PuzzleDotFactory.makeDots(
+            count: Int(dotCount.rounded()),
+            shapeAssetName: selectedDotShape.name
         )
         applyPuzzleDots(fallbackDots)
         dismissToast()
     }
 
     @MainActor
-    private func drawSubjectPuzzleDots() {
-        guard let canvasImage else {
+    private func toggleSubjectOutline() {
+        guard canvasImage != nil else {
             showToast("请先上传图片")
             return
         }
-        guard !isDrawingSubjectDots else { return }
+
+        if isSubjectOutlineEnabled {
+            invalidateSubjectOutlineDetection()
+            disableSubjectOutline()
+            if isTraceDrawingEnabled {
+                scheduleTraceDotPreviewSync()
+            }
+            return
+        }
+
+        guard !isDetectingSubjectOutline else { return }
+
+        isSubjectOutlineEnabled = true
+        detectSubjectOutline()
+    }
+
+    @MainActor
+    private func detectSubjectOutline() {
+        guard let canvasImage else {
+            disableSubjectOutline()
+            showToast("请先上传图片")
+            return
+        }
+        guard !isDetectingSubjectOutline else { return }
 
         let generationID = UUID()
-        subjectDotGenerationID = generationID
-        isDrawingSubjectDots = true
+        subjectOutlineGenerationID = generationID
+        isDetectingSubjectOutline = true
         showToast("正在识别主体…")
 
         Task {
             do {
-                let dots = try await SubjectContourDotGenerator().dots(
-                    for: canvasImage,
-                    count: Int(dotCount.rounded()),
-                    shapeAssetName: selectedDotShape.name
-                )
+                let outlinePoints = try await SubjectContourDotGenerator().outlineTracePoints(for: canvasImage)
                 await MainActor.run {
-                    guard subjectDotGenerationID == generationID else { return }
-                    applyPuzzleDots(dots)
-                    isDrawingSubjectDots = false
+                    guard subjectOutlineGenerationID == generationID, isSubjectOutlineEnabled else { return }
+                    subjectOutlinePoints = outlinePoints
+                    isDetectingSubjectOutline = false
                     dismissToast()
+                    if isTraceDrawingEnabled {
+                        scheduleTraceDotPreviewSync()
+                    }
                 }
             } catch {
                 await MainActor.run {
-                    guard subjectDotGenerationID == generationID else { return }
-                    isDrawingSubjectDots = false
-                    showToast(subjectDotErrorMessage(for: error))
+                    guard subjectOutlineGenerationID == generationID, isSubjectOutlineEnabled else { return }
+                    disableSubjectOutline()
+                    isDetectingSubjectOutline = false
+                    showToast(subjectOutlineErrorMessage(for: error))
                 }
             }
         }
     }
 
-    private func subjectDotErrorMessage(for error: Error) -> String {
+    @MainActor
+    private func disableSubjectOutline() {
+        isSubjectOutlineEnabled = false
+        subjectOutlinePoints = []
+    }
+
+    private func subjectOutlineErrorMessage(for error: Error) -> String {
         guard let generationError = error as? SubjectContourDotGenerationError else {
             return "主体识别失败"
         }
@@ -770,16 +862,11 @@ struct ContentView: View {
     private func syncPuzzleDots(to count: Int) {
         guard canvasImage != nil else { return }
 
-        invalidateSubjectDotGeneration()
+        invalidateSubjectOutlineDetection()
 
         let syncedDots: [PuzzleDot]
-        if isTraceDrawingEnabled, !tracePoints.isEmpty {
-            syncedDots = PuzzleDotFactory.makeDots(
-                count: count,
-                along: tracePoints,
-                extensionRatio: extensionRatio,
-                shapeAssetName: selectedDotShape.name
-            )
+        if isTraceDrawingEnabled, !activeTracePoints.isEmpty {
+            syncedDots = puzzleDotsAlongCurrentTrace(count: count) ?? []
         } else {
             syncedDots = PuzzleDotFactory.adjusting(
                 puzzleDots,
@@ -793,7 +880,7 @@ struct ContentView: View {
     @MainActor
     private func addPuzzleDot(at location: PuzzleCanvasTracePoint) {
         guard !isDotEditingEnabled else { return }
-        invalidateSubjectDotGeneration()
+        invalidateSubjectOutlineDetection()
 
         let position = PuzzleCanvasCoordinate.dotPosition(
             for: location,
@@ -811,10 +898,63 @@ struct ContentView: View {
 
     @MainActor
     private func updateTracePoints(_ points: [PuzzleCanvasTracePoint]) {
-        invalidateSubjectDotGeneration()
+        invalidateSubjectOutlineDetection()
         tracePoints = points
         dismissToast()
         scheduleCanvasDraftSave()
+
+        if isTraceDrawingEnabled {
+            scheduleTraceDotPreviewSync()
+        }
+    }
+
+    @MainActor
+    private func puzzleDotsAlongCurrentTrace(count: Int? = nil) -> [PuzzleDot]? {
+        guard !activeTracePoints.isEmpty else { return nil }
+
+        let resolvedCount = count ?? Int(dotCount.rounded())
+        let dots = PuzzleDotFactory.makeDots(
+            count: resolvedCount,
+            along: activeTracePoints,
+            extensionRatio: extensionRatio,
+            shapeAssetName: selectedDotShape.name
+        )
+        return dots.isEmpty ? nil : dots
+    }
+
+    @MainActor
+    private func scheduleTraceDotPreviewSync() {
+        pendingTraceDotSyncTask?.cancel()
+        pendingTraceDotSyncTask = Task {
+            try? await Task.sleep(for: Self.traceDotSyncDebounceInterval)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                previewPuzzleDotsFromCurrentTrace()
+            }
+        }
+    }
+
+    @MainActor
+    private func previewPuzzleDotsFromCurrentTrace() {
+        guard canvasImage != nil, isTraceDrawingEnabled else { return }
+        guard let syncedDots = puzzleDotsAlongCurrentTrace() else { return }
+
+        puzzleDots = syncedDots
+        if let selectedDotID, !syncedDots.contains(where: { $0.id == selectedDotID }) {
+            self.selectedDotID = nil
+        }
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func commitTraceStrokeDots() {
+        pendingTraceDotSyncTask?.cancel()
+        pendingTraceDotSyncTask = nil
+
+        guard canvasImage != nil, isTraceDrawingEnabled, !activeTracePoints.isEmpty else { return }
+        guard let syncedDots = puzzleDotsAlongCurrentTrace() else { return }
+
+        applyPuzzleDots(syncedDots)
     }
 
     @MainActor
@@ -824,10 +964,12 @@ struct ContentView: View {
             guard !isDotEditingEnabled else { return }
 
             withoutAnimation {
+                commitTraceStrokeDots()
                 isTraceDrawingEnabled = false
                 isDotEditingEnabled = true
                 selectedDotID = nil
                 selectedTab = .dots
+                isPanelExpanded = true
             }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             dismissToast()
@@ -926,11 +1068,127 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func clearTracePoints() {
-        guard !tracePoints.isEmpty else { return }
+    private func beginTraceFeatureSession() {
+        guard traceFeatureSessionSnapshot == nil else { return }
 
-        invalidateSubjectDotGeneration()
+        traceFeatureSessionSnapshot = TraceFeatureSessionSnapshot(
+            tracePoints: tracePoints,
+            subjectOutlinePoints: subjectOutlinePoints,
+            isSubjectOutlineEnabled: isSubjectOutlineEnabled,
+            puzzleDots: puzzleDots,
+            dotCount: dotCount
+        )
+
+        if isDotEditingEnabled {
+            withoutAnimation {
+                isDotEditingEnabled = false
+                selectedDotID = nil
+            }
+        }
+
+        isTraceVisible = true
+        isTraceDrawingEnabled = true
+    }
+
+    @MainActor
+    private func confirmTraceFeatureSession() {
+        commitTraceStrokeDots()
+        traceFeatureSessionSnapshot = nil
+        isTraceVisible = true
+        isTraceDrawingEnabled = false
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func cancelTraceFeatureSession() {
+        guard let snapshot = traceFeatureSessionSnapshot else { return }
+
+        pendingTraceDotSyncTask?.cancel()
+        pendingTraceDotSyncTask = nil
+        invalidateSubjectOutlineDetection()
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            tracePoints = snapshot.tracePoints
+            subjectOutlinePoints = snapshot.subjectOutlinePoints
+            isSubjectOutlineEnabled = snapshot.isSubjectOutlineEnabled
+            puzzleDots = snapshot.puzzleDots
+            dotCount = snapshot.dotCount
+        }
+
+        if let selectedDotID, !puzzleDots.contains(where: { $0.id == selectedDotID }) {
+            self.selectedDotID = nil
+        }
+
+        traceFeatureSessionSnapshot = nil
+        isTraceVisible = true
+        isTraceDrawingEnabled = false
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func beginPhotoCompressionFeatureSession() {
+        guard photoCompressionSessionSnapshot == nil else { return }
+        photoCompressionSessionSnapshot = photoCompression
+    }
+
+    @MainActor
+    private func confirmPhotoCompressionFeatureSession() {
+        photoCompressionSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func cancelPhotoCompressionFeatureSession() {
+        guard let snapshot = photoCompressionSessionSnapshot else { return }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            photoCompression = snapshot
+        }
+
+        photoCompressionSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func beginY2KCCDFilterFeatureSession() {
+        guard y2kCCDFilterSessionSnapshot == nil else { return }
+        y2kCCDFilterSessionSnapshot = y2kCCDFilterSettings
+        y2kCCDFilterSettings = y2kCCDFilterSettings.enabledForPanelEditing
+    }
+
+    @MainActor
+    private func confirmY2KCCDFilterFeatureSession() {
+        y2kCCDFilterSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func cancelY2KCCDFilterFeatureSession() {
+        guard let snapshot = y2kCCDFilterSessionSnapshot else { return }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            y2kCCDFilterSettings = snapshot
+        }
+
+        y2kCCDFilterSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func clearTracePoints() {
+        guard hasClearableTrace else { return }
+
+        pendingTraceDotSyncTask?.cancel()
+        pendingTraceDotSyncTask = nil
+        invalidateSubjectOutlineDetection()
         tracePoints = []
+        disableSubjectOutline()
         dismissToast()
         scheduleCanvasDraftSave()
     }
@@ -946,7 +1204,7 @@ struct ContentView: View {
     private func clearCanvasContent() {
         guard !puzzleDots.isEmpty else { return }
 
-        invalidateSubjectDotGeneration()
+        invalidateSubjectOutlineDetection()
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -960,7 +1218,7 @@ struct ContentView: View {
     private func undoCanvasChange() {
         guard let previousDots = canvasHistory.undo() else { return }
 
-        invalidateSubjectDotGeneration()
+        invalidateSubjectOutlineDetection()
         puzzleDots = previousDots
         if let selectedDotID, !puzzleDots.contains(where: { $0.id == selectedDotID }) {
             self.selectedDotID = nil
@@ -972,7 +1230,7 @@ struct ContentView: View {
     private func redoCanvasChange() {
         guard let nextDots = canvasHistory.redo() else { return }
 
-        invalidateSubjectDotGeneration()
+        invalidateSubjectOutlineDetection()
         puzzleDots = nextDots
         if let selectedDotID, !puzzleDots.contains(where: { $0.id == selectedDotID }) {
             self.selectedDotID = nil
@@ -981,10 +1239,10 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func invalidateSubjectDotGeneration() {
-        subjectDotGenerationID = UUID()
-        if isDrawingSubjectDots {
-            isDrawingSubjectDots = false
+    private func invalidateSubjectOutlineDetection() {
+        subjectOutlineGenerationID = UUID()
+        if isDetectingSubjectOutline {
+            isDetectingSubjectOutline = false
         }
     }
 
@@ -1354,6 +1612,14 @@ struct ContentView: View {
             updates()
         }
     }
+}
+
+private struct TraceFeatureSessionSnapshot {
+    let tracePoints: [PuzzleCanvasTracePoint]
+    let subjectOutlinePoints: [PuzzleCanvasTracePoint]
+    let isSubjectOutlineEnabled: Bool
+    let puzzleDots: [PuzzleDot]
+    let dotCount: Double
 }
 
 private struct ClearCanvasConfirmationAlertModifier: ViewModifier {

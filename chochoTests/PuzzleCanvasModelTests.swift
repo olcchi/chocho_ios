@@ -124,17 +124,15 @@ struct PuzzleCanvasModelTests {
         #expect(shortOcclusion < tallOcclusion)
     }
 
-    @Test func collapsedPanelUsesCompactIconOnlyTabBarHeight() {
-        let expandedTabBarHeight = BottomSheetPanel.tabBarItemHeight(isExpanded: true)
-        let collapsedTabBarHeight = BottomSheetPanel.tabBarItemHeight(isExpanded: false)
+    @Test func detailPanelIsTallerThanMenuPanel() {
+        let menuHeight = BottomSheetPanel.visibleHeight(isExpanded: false, contentHeight: 0)
+        let detailHeight = BottomSheetPanel.visibleHeight(
+            isExpanded: true,
+            contentHeight: BottomSheetPanel.defaultExpandedContentHeight
+        )
 
-        #expect(collapsedTabBarHeight < expandedTabBarHeight)
-        #expect(expandedTabBarHeight - collapsedTabBarHeight >= 12)
-    }
-
-    @Test func drawPanelTraceButtonsUseTwoToOneWidthRatio() {
-        #expect(DrawPanelTraceButtonLayout.traceToggleWeight == 2)
-        #expect(DrawPanelTraceButtonLayout.clearTraceButtonWeight == 1)
+        #expect(menuHeight > 0)
+        #expect(detailHeight > menuHeight)
     }
 
     @Test func panelTrackingOffsetFollowsBottomInsetChanges() {
@@ -951,8 +949,8 @@ struct PuzzleCanvasModelTests {
         #expect(DotShapeAsset.defaultSelection.builtInShape == .circle)
     }
 
-    @Test func photoUploadDefaultsUseSnowShapeAndSizeTen() {
-        #expect(PuzzleCanvasUploadDefaults.dotShapeName == BuiltInDotShape.snow.rawValue)
+    @Test func photoUploadDefaultsUsePixelEightShapeAndSizeTen() {
+        #expect(PuzzleCanvasUploadDefaults.dotShapeName == "shapes/像素/像素8")
         #expect(PuzzleCanvasUploadDefaults.dotScaleControlValue == 10)
         #expect(PuzzleCanvasUploadDefaults.dotScale == DotSizeControl.renderedScale(forControlValue: 10))
     }
@@ -961,7 +959,7 @@ struct PuzzleCanvasModelTests {
         let dots = PuzzleCanvasUploadDefaults.initialDots(dotCount: 10.4)
 
         #expect(dots.count == 10)
-        #expect(dots.allSatisfy { $0.shapeAssetName == BuiltInDotShape.snow.rawValue })
+        #expect(dots.allSatisfy { $0.shapeAssetName == "shapes/像素/像素8" })
         #expect(dots.allSatisfy { 0...1 ~= $0.position.x && 0...1 ~= $0.position.y })
     }
 

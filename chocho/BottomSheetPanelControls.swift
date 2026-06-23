@@ -4,14 +4,14 @@ struct BottomSheetDotControls {
     var dotCount: Binding<Double>
     var dotScale: Binding<Double>
     var selectedDotColor: Binding<Color>
-    var usesRandomDotColors: Binding<Bool>
     var selectedDotShape: Binding<DotShapeAsset>
     var selectedDotShapeCategory: Binding<DotShapeCategory>
     var dotCharacterText: Binding<String>
-    var isTraceDrawingEnabled: Binding<Bool>
+    var isTraceVisible: Binding<Bool>
+    var isSubjectOutlineEnabled: Binding<Bool>
     var photoCompression: Binding<MainPhotoCompression>
     var y2kCCDFilterSettings: Binding<Y2KCCDFilterSettings>
-    var isDrawingSubjectDots: Bool = false
+    var isDetectingSubjectOutline: Bool = false
 }
 
 struct BottomSheetLiveControls {

@@ -13,6 +13,7 @@ nonisolated struct Y2KCCDFilterSettings: Codable, Equatable, Hashable, Sendable 
     var chromaNoise: Double
     var jpegArtifacts: Double
     var sharpen: Double
+    var exposure: Double
     var temperature: Double
     var tint: Double
     var contrast: Double
@@ -29,6 +30,7 @@ nonisolated struct Y2KCCDFilterSettings: Codable, Equatable, Hashable, Sendable 
         chromaNoise: 0.1,
         jpegArtifacts: 0.2,
         sharpen: 0.7,
+        exposure: 0.18,
         temperature: -0.65,
         tint: -0.2,
         contrast: 0.15,
@@ -36,6 +38,103 @@ nonisolated struct Y2KCCDFilterSettings: Codable, Equatable, Hashable, Sendable 
         highlightClip: 0.8,
         rgbShift: 0.15
     )
+
+    nonisolated init(
+        enabled: Bool,
+        downsample: Double,
+        bloom: Double,
+        bloomThreshold: Double,
+        noise: Double,
+        chromaNoise: Double,
+        jpegArtifacts: Double,
+        sharpen: Double,
+        exposure: Double = 0,
+        temperature: Double,
+        tint: Double,
+        contrast: Double,
+        saturation: Double,
+        highlightClip: Double,
+        rgbShift: Double
+    ) {
+        self.enabled = enabled
+        self.downsample = downsample
+        self.bloom = bloom
+        self.bloomThreshold = bloomThreshold
+        self.noise = noise
+        self.chromaNoise = chromaNoise
+        self.jpegArtifacts = jpegArtifacts
+        self.sharpen = sharpen
+        self.exposure = exposure
+        self.temperature = temperature
+        self.tint = tint
+        self.contrast = contrast
+        self.saturation = saturation
+        self.highlightClip = highlightClip
+        self.rgbShift = rgbShift
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case downsample
+        case bloom
+        case bloomThreshold
+        case noise
+        case chromaNoise
+        case jpegArtifacts
+        case sharpen
+        case exposure
+        case temperature
+        case tint
+        case contrast
+        case saturation
+        case highlightClip
+        case rgbShift
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decode(Bool.self, forKey: .enabled)
+        downsample = try container.decode(Double.self, forKey: .downsample)
+        bloom = try container.decode(Double.self, forKey: .bloom)
+        bloomThreshold = try container.decode(Double.self, forKey: .bloomThreshold)
+        noise = try container.decode(Double.self, forKey: .noise)
+        chromaNoise = try container.decode(Double.self, forKey: .chromaNoise)
+        jpegArtifacts = try container.decode(Double.self, forKey: .jpegArtifacts)
+        sharpen = try container.decode(Double.self, forKey: .sharpen)
+        exposure = try container.decodeIfPresent(Double.self, forKey: .exposure)
+            ?? Y2KCCDFilterSettings.default.exposure
+        temperature = try container.decode(Double.self, forKey: .temperature)
+        tint = try container.decode(Double.self, forKey: .tint)
+        contrast = try container.decode(Double.self, forKey: .contrast)
+        saturation = try container.decode(Double.self, forKey: .saturation)
+        highlightClip = try container.decode(Double.self, forKey: .highlightClip)
+        rgbShift = try container.decode(Double.self, forKey: .rgbShift)
+    }
+
+    nonisolated func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(enabled, forKey: .enabled)
+        try container.encode(downsample, forKey: .downsample)
+        try container.encode(bloom, forKey: .bloom)
+        try container.encode(bloomThreshold, forKey: .bloomThreshold)
+        try container.encode(noise, forKey: .noise)
+        try container.encode(chromaNoise, forKey: .chromaNoise)
+        try container.encode(jpegArtifacts, forKey: .jpegArtifacts)
+        try container.encode(sharpen, forKey: .sharpen)
+        try container.encode(exposure, forKey: .exposure)
+        try container.encode(temperature, forKey: .temperature)
+        try container.encode(tint, forKey: .tint)
+        try container.encode(contrast, forKey: .contrast)
+        try container.encode(saturation, forKey: .saturation)
+        try container.encode(highlightClip, forKey: .highlightClip)
+        try container.encode(rgbShift, forKey: .rgbShift)
+    }
+
+    nonisolated var enabledForPanelEditing: Y2KCCDFilterSettings {
+        var settings = self
+        settings.enabled = true
+        return settings
+    }
 
     nonisolated var cacheKey: String {
         [
@@ -47,6 +146,7 @@ nonisolated struct Y2KCCDFilterSettings: Codable, Equatable, Hashable, Sendable 
             Self.unit(chromaNoise).fixed3,
             Self.unit(jpegArtifacts).fixed3,
             Self.unit(sharpen).fixed3,
+            Self.signedUnit(exposure).fixed3,
             Self.signedUnit(temperature).fixed3,
             Self.signedUnit(tint).fixed3,
             Self.signedUnit(contrast).fixed3,
@@ -112,6 +212,22 @@ nonisolated final class Y2KCCDFilterCache {
             entries.removeAll()
             keys.removeAll()
         }
+    }
+}
+
+nonisolated enum Y2KCCDPreviewRenderPolicy {
+    nonisolated static let maxLongEdge: CGFloat = 720
+    nonisolated static let refreshDebounce: Duration = .milliseconds(90)
+
+    nonisolated static func pixelSize(for sourcePixelSize: CGSize) -> CGSize {
+        let longEdge = max(sourcePixelSize.width, sourcePixelSize.height)
+        guard longEdge > maxLongEdge else { return sourcePixelSize }
+
+        let scale = maxLongEdge / longEdge
+        return CGSize(
+            width: max(1, (sourcePixelSize.width * scale).rounded()),
+            height: max(1, (sourcePixelSize.height * scale).rounded())
+        )
     }
 }
 
@@ -209,10 +325,11 @@ nonisolated enum Y2KCCDFilterRenderer {
         let temperature = Y2KCCDFilterSettings.signedUnit(settings.temperature)
         let tint = Y2KCCDFilterSettings.signedUnit(settings.tint)
         let contrast = Y2KCCDFilterSettings.signedUnit(settings.contrast)
+        let exposure = Y2KCCDFilterSettings.signedUnit(settings.exposure)
         let saturation = min(1.8, max(0.2, settings.saturation.isFinite ? settings.saturation : 1))
         let colorControls = source.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: saturation,
-            kCIInputBrightnessKey: 0.045,
+            kCIInputBrightnessKey: exposure * 0.24,
             kCIInputContrastKey: 1 + contrast * 0.55
         ])
         let tone = colorControls.applyingFilter("CIColorMatrix", parameters: [
@@ -245,6 +362,8 @@ nonisolated enum Y2KCCDFilterRenderer {
 }
 
 private final class Y2KCCDFilterCIContextBox: @unchecked Sendable {
+    nonisolated init() {}
+
     let context = CIContext(options: [
         .workingColorSpace: CGColorSpaceCreateDeviceRGB()
     ])

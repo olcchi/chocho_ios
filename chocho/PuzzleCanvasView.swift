@@ -22,7 +22,10 @@ struct PuzzleCanvasView: View {
     var viewportScale: CGFloat = 1
     var viewportOffset: CGSize = .zero
     var tracePoints: [PuzzleCanvasTracePoint] = []
+    var subjectOutlinePoints: [PuzzleCanvasTracePoint] = []
     var isTraceDrawingEnabled = false
+    var isTraceVisible = true
+    var isSubjectOutlineEnabled = false
     var liveDotAnimation: LiveDotAnimation = .none
     var livePreviewPlaybackStart: Date?
     var isY2KCCDFilterPreviewEnabled = false
@@ -35,6 +38,7 @@ struct PuzzleCanvasView: View {
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onTraceChanged: (([PuzzleCanvasTracePoint]) -> Void)?
+    var onTraceStrokeEnded: (() -> Void)?
     var onSelectDot: ((UUID?) -> Void)?
     var onMoveSelectedDot: ((CGPoint) -> Void)?
     var onScaleSelectedDot: ((CGFloat) -> Void)?
@@ -237,7 +241,21 @@ struct PuzzleCanvasView: View {
                 x: referenceFrame.width / 2,
                 y: referenceFrame.height / 2
             )
-            .opacity(isTraceDrawingEnabled ? 1 : 0)
+            .opacity(isTraceDrawingEnabled && isTraceVisible && !tracePoints.isEmpty ? 1 : 0)
+
+            PuzzleTraceCanvas(
+                tracePoints: subjectOutlinePoints,
+                layout: layout
+            )
+            .frame(
+                width: referenceFrame.width,
+                height: referenceFrame.height
+            )
+            .position(
+                x: referenceFrame.width / 2,
+                y: referenceFrame.height / 2
+            )
+            .opacity(isTraceDrawingEnabled && isTraceVisible && isSubjectOutlineEnabled && !subjectOutlinePoints.isEmpty ? 1 : 0)
 
             PuzzleDotsCanvas(
                 image: image,
@@ -677,6 +695,7 @@ struct PuzzleCanvasView: View {
             }
             .onEnded { _ in
                 isTracingCurrentStroke = false
+                onTraceStrokeEnded?()
             }
     }
 
@@ -1481,5 +1500,5 @@ private struct PuzzleTraceDisplayPoint {
         dots: PuzzleDotFactory.makeDots(count: 10)
     )
     .padding()
-    .background(Color.canvasBackground)
+    .background(Color.background)
 }

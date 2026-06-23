@@ -59,6 +59,37 @@ struct SubjectContourDotGeneratorTests {
         #expect(zeroWidthPositions.isEmpty)
     }
 
+    @Test func outlinePathReturnsClosedContourForRectangle() {
+        let mask = SubjectMask.rectangle(width: 10, height: 10, x: 3, y: 3, width: 4, height: 4)
+
+        let path = SubjectContourSampler.outlinePath(in: mask)
+        let tracePoints = SubjectContourSampler.outlineTracePoints(in: mask)
+
+        #expect(!path.isEmpty)
+        #expect(path.allSatisfy { $0.x >= 0 && $0.x <= 1 && $0.y >= 0 && $0.y <= 1 })
+        #expect(tracePoints.count == path.count + 1)
+        #expect(tracePoints.allSatisfy { $0.side == .photo })
+        #expect(tracePoints.first?.point == tracePoints.last?.point)
+    }
+
+    @Test func outlinePathReturnsEmptyForEmptyMask() {
+        let mask = SubjectMask(width: 4, height: 4, pixels: Array(repeating: false, count: 16))
+
+        #expect(SubjectContourSampler.outlinePath(in: mask).isEmpty)
+        #expect(SubjectContourSampler.outlineTracePoints(in: mask).isEmpty)
+    }
+
+    @Test func generatorOutlineTracePointsUsesInjectedMaskProvider() async throws {
+        let mask = SubjectMask.rectangle(width: 10, height: 10, x: 2, y: 2, width: 6, height: 6)
+        let generator = SubjectContourDotGenerator(maskProvider: FakeSubjectMaskProvider(mask: mask))
+        let image = UIImage()
+
+        let tracePoints = try await generator.outlineTracePoints(for: image)
+
+        #expect(!tracePoints.isEmpty)
+        #expect(tracePoints.allSatisfy { $0.side == .photo })
+    }
+
     @Test func samplerGeneratesRequestedCountAroundRectangle() {
         let mask = SubjectMask.rectangle(width: 10, height: 10, x: 3, y: 3, width: 4, height: 4)
         var generator = SeededRandomNumberGenerator(seed: 7)

@@ -60,6 +60,13 @@ struct SubjectContourDotGenerator: Sendable {
             PuzzleDotFactory.makeDot(position: position, index: index, shapeAssetName: shapeAssetName)
         }
     }
+
+    func outlineTracePoints(for image: UIImage) async throws -> [PuzzleCanvasTracePoint] {
+        let mask = try await maskProvider.subjectMask(for: image)
+        let points = SubjectContourSampler.outlineTracePoints(in: mask)
+        guard !points.isEmpty else { throw SubjectContourDotGenerationError.noSubject }
+        return points
+    }
 }
 
 private enum SubjectContourDotSeed {
@@ -101,6 +108,37 @@ struct VisionSubjectMaskProvider: SubjectMaskProviding {
 }
 
 nonisolated enum SubjectContourSampler {
+    static func outlineTracePoints(
+        in mask: SubjectMask,
+        maxPoints: Int = 360
+    ) -> [PuzzleCanvasTracePoint] {
+        let path = outlinePath(in: mask, maxPoints: maxPoints)
+        guard !path.isEmpty else { return [] }
+
+        var points = path.map { PuzzleCanvasTracePoint(side: .photo, point: $0) }
+        if let firstPoint = points.first?.point {
+            points.append(PuzzleCanvasTracePoint(side: .photo, point: firstPoint))
+        }
+        return points
+    }
+
+    static func outlinePath(in mask: SubjectMask, maxPoints: Int = 360) -> [CGPoint] {
+        let boundary = exteriorBoundaryPoints(in: mask)
+        guard !boundary.isEmpty else { return [] }
+
+        let center = subjectCenter(in: mask) ?? CGPoint(x: 0.5, y: 0.5)
+        let sorted = boundary.sorted { first, second in
+            angle(from: center, to: first) < angle(from: center, to: second)
+        }
+
+        guard sorted.count > maxPoints else { return sorted }
+
+        let stride = max(1, sorted.count / maxPoints)
+        return sorted.enumerated().compactMap { index, point in
+            index.isMultiple(of: stride) ? point : nil
+        }
+    }
+
     static func positions<Generator: RandomNumberGenerator>(
         in mask: SubjectMask,
         count: Int,
