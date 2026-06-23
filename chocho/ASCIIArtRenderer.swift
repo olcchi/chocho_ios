@@ -136,7 +136,7 @@ nonisolated final class ASCIIArtCache {
     private var maskKeys: [String] = []
     private let lock = NSLock()
 
-    init(maxEntries: Int = 8) {
+    init(maxEntries: Int = 6) {
         self.maxEntries = max(1, maxEntries)
     }
 
