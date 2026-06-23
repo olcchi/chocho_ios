@@ -5,6 +5,14 @@ import UIKit
 @testable import chocho
 
 struct CanvasDraftStoreTests {
+    @Test func manifest_currentVersion_is10() {
+        #expect(CanvasDraftManifest.currentVersion == 10)
+    }
+
+    @Test func manifest_supportsVersion10() {
+        #expect(CanvasDraftManifest.supportedVersions.contains(10))
+    }
+
     @Test func writesAndReadsDraftFilesDirectly() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("chocho-draft-direct-\(UUID().uuidString)", isDirectory: true)
@@ -123,6 +131,12 @@ struct CanvasDraftStoreTests {
                 highlightClip: 0.8,
                 rgbShift: 0.15
             ),
+            subjectGlowSettings: SubjectGlowSettings(
+                enabled: true,
+                intensity: 0.7,
+                radius: 0.4
+            ),
+            asciiArtSettings: .default,
             isSourceLiveMotionEnabled: true,
             sourcePhotoAssetLocalIdentifier: "test-live-asset"
         )
@@ -147,6 +161,7 @@ struct CanvasDraftStoreTests {
         #expect(loaded.viewportOffset == capture.viewportOffset)
         #expect(loaded.liveDotAnimation == capture.liveDotAnimation)
         #expect(loaded.y2kCCDFilterSettings == capture.y2kCCDFilterSettings)
+        #expect(loaded.subjectGlowSettings == capture.subjectGlowSettings)
         #expect(loaded.isSourceLiveMotionEnabled == capture.isSourceLiveMotionEnabled)
         #expect(loaded.sourcePhotoAssetLocalIdentifier == capture.sourcePhotoAssetLocalIdentifier)
         #expect(loaded.puzzleDots.count == capture.puzzleDots.count)
@@ -302,6 +317,8 @@ struct CanvasDraftStoreTests {
             viewportOffset: .zero,
             liveDotAnimation: .none,
             y2kCCDFilterSettings: .default,
+            subjectGlowSettings: .default,
+            asciiArtSettings: .default,
             isSourceLiveMotionEnabled: false,
             sourcePhotoAssetLocalIdentifier: nil
         )

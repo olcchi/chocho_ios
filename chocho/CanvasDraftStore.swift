@@ -23,6 +23,8 @@ struct CanvasDraftCapture: Sendable {
     let viewportOffset: CGSize
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
+    let subjectGlowSettings: SubjectGlowSettings
+    let asciiArtSettings: ASCIIArtSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
 }
@@ -48,6 +50,8 @@ struct CanvasDraftRestore: Sendable {
     let viewportOffset: CGSize
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
+    let subjectGlowSettings: SubjectGlowSettings
+    let asciiArtSettings: ASCIIArtSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
 }
@@ -73,8 +77,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 8
-    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, 8]
+    static let currentVersion = 10
+    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     var version: Int
     var savedAt: Date
@@ -103,6 +107,10 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var liveDotAnimationRawValue: String?
     /// v8+：Y2K CCD 滤镜设置（旧草稿缺省为 .default，即关闭）
     var y2kCCDFilterSettings: Y2KCCDFilterSettings?
+    /// v9+：主体发光设置（旧草稿缺省为 .default，即关闭）
+    var subjectGlowSettings: SubjectGlowSettings?
+    /// v10+：ASCII 字符纹理设置（旧草稿缺省为 nil → 恢复为 .default，即关闭）
+    var asciiArtSettings: ASCIIArtSettings?
     /// v3+：原图实况开关（旧草稿缺省为 nil → 恢复为 false）
     var isSourceLiveMotionEnabled: Bool?
     /// v3+：相册 PHAsset local identifier（旧草稿缺省为 nil）
@@ -263,6 +271,8 @@ nonisolated enum CanvasDraftStore {
             viewportOffsetHeight: Double(capture.viewportOffset.height),
             liveDotAnimationRawValue: capture.liveDotAnimation.rawValue,
             y2kCCDFilterSettings: capture.y2kCCDFilterSettings,
+            subjectGlowSettings: capture.subjectGlowSettings,
+            asciiArtSettings: capture.asciiArtSettings,
             isSourceLiveMotionEnabled: capture.isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: capture.sourcePhotoAssetLocalIdentifier
         )
@@ -383,6 +393,8 @@ nonisolated enum CanvasDraftStore {
                 ),
                 liveDotAnimation: liveDotAnimation,
                 y2kCCDFilterSettings: manifest.y2kCCDFilterSettings ?? .default,
+                subjectGlowSettings: manifest.subjectGlowSettings ?? .default,
+                asciiArtSettings: manifest.asciiArtSettings ?? .default,
                 isSourceLiveMotionEnabled: manifest.isSourceLiveMotionEnabled ?? false,
                 sourcePhotoAssetLocalIdentifier: manifest.sourcePhotoAssetLocalIdentifier
             )
