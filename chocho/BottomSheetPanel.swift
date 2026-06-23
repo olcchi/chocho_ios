@@ -309,6 +309,10 @@ struct BottomSheetPanel: View {
             cancelY2KCCDFilterFeature()
             return
         }
+        if selectedTab == .style, selectedStyleFeature == .glow {
+            cancelSubjectGlowFeature()
+            return
+        }
         if selectedTab == .style, selectedStyleFeature == .ascii {
             cancelASCIIArtFeature()
             return
