@@ -6,8 +6,8 @@ final class ASCIIArtRendererTests: XCTestCase {
         for preset in ASCIIArtPreset.allCases {
             XCTAssertFalse(preset.fillCharacters.isEmpty,
                 "\(preset.rawValue) fillCharacters should not be empty")
-            XCTAssertFalse(String(preset.outlineCharacter).isEmpty,
-                "\(preset.rawValue) outlineCharacter should not be empty")
+            XCTAssertNotEqual(preset.outlineCharacter, Character(" "),
+                "\(preset.rawValue) outlineCharacter should not be a space")
         }
     }
 
@@ -21,5 +21,35 @@ final class ASCIIArtRendererTests: XCTestCase {
     func test_settings_default_isDisabled() {
         XCTAssertFalse(ASCIIArtSettings.default.enabled)
         XCTAssertEqual(ASCIIArtSettings.default.preset, .softDots)
+    }
+
+    func test_brightnessToCharacter_darkMapsToFirstChar() {
+        let preset = ASCIIArtPreset.classicASCII
+        let char = ASCIIArtRenderer.character(for: 0.0, preset: preset)
+        XCTAssertEqual(char, preset.fillCharacters.first)
+    }
+
+    func test_brightnessToCharacter_brightMapsToLastChar() {
+        let preset = ASCIIArtPreset.classicASCII
+        let char = ASCIIArtRenderer.character(for: 1.0, preset: preset)
+        XCTAssertEqual(char, preset.fillCharacters.last)
+    }
+
+    func test_cache_hitAfterSet() {
+        let cache = ASCIIArtCache()
+        let image = UIImage()
+        cache.setImage(image, for: "key1")
+        XCTAssertNotNil(cache.image(for: "key1"))
+    }
+
+    func test_cache_missWhenEmpty() {
+        let cache = ASCIIArtCache()
+        XCTAssertNil(cache.image(for: "missing"))
+    }
+
+    func test_previewPolicy_downscalesLargeImage() {
+        let large = CGSize(width: 3000, height: 4000)
+        let result = ASCIIArtPreviewRenderPolicy.pixelSize(for: large)
+        XCTAssertLessThanOrEqual(max(result.width, result.height), ASCIIArtPreviewRenderPolicy.maxLongEdge)
     }
 }
