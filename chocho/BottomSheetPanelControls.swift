@@ -11,6 +11,8 @@ struct BottomSheetDotControls {
     var isSubjectOutlineEnabled: Binding<Bool>
     var photoCompression: Binding<MainPhotoCompression>
     var y2kCCDFilterSettings: Binding<Y2KCCDFilterSettings>
+    var subjectGlowSettings: Binding<SubjectGlowSettings>
+    var asciiArtSettings: Binding<ASCIIArtSettings>
     var isDetectingSubjectOutline: Bool = false
 }
 
