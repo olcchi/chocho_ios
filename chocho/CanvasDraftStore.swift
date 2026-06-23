@@ -23,7 +23,6 @@ struct CanvasDraftCapture: Sendable {
     let viewportOffset: CGSize
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
-    let subjectGlowSettings: SubjectGlowSettings
     let asciiArtSettings: ASCIIArtSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
@@ -50,7 +49,6 @@ struct CanvasDraftRestore: Sendable {
     let viewportOffset: CGSize
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
-    let subjectGlowSettings: SubjectGlowSettings
     let asciiArtSettings: ASCIIArtSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
@@ -107,8 +105,8 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var liveDotAnimationRawValue: String?
     /// v8+：Y2K CCD 滤镜设置（旧草稿缺省为 .default，即关闭）
     var y2kCCDFilterSettings: Y2KCCDFilterSettings?
-    /// v9+：主体发光设置（旧草稿缺省为 .default，即关闭）
-    var subjectGlowSettings: SubjectGlowSettings?
+    /// v9 legacy：旧草稿可能含主体发光设置，恢复时忽略。
+    var subjectGlowSettings: LegacySubjectGlowSettings?
     /// v10+：ASCII 字符纹理设置（旧草稿缺省为 nil → 恢复为 .default，即关闭）
     var asciiArtSettings: ASCIIArtSettings?
     /// v3+：原图实况开关（旧草稿缺省为 nil → 恢复为 false）
@@ -117,11 +115,24 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var sourcePhotoAssetLocalIdentifier: String?
 }
 
-nonisolated struct CanvasDraftColorComponents: Codable, Equatable, Sendable {
+nonisolated struct LegacySubjectGlowSettings: Codable, Equatable, Sendable {
+    var enabled: Bool
+    var intensity: Double
+    var radius: Double
+}
+
+nonisolated struct CanvasDraftColorComponents: Codable, Equatable, Hashable, Sendable {
     var red: Double
     var green: Double
     var blue: Double
     var opacity: Double
+
+    init(red: Double, green: Double, blue: Double, opacity: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.opacity = opacity
+    }
 
     init(_ color: Color) {
         let uiColor = UIColor(color)
@@ -143,6 +154,10 @@ nonisolated struct CanvasDraftColorComponents: Codable, Equatable, Sendable {
 
     var color: Color {
         Color(.sRGB, red: red, green: green, blue: blue, opacity: opacity)
+    }
+
+    var uiColor: UIColor {
+        UIColor(red: red, green: green, blue: blue, alpha: opacity)
     }
 }
 
@@ -271,7 +286,6 @@ nonisolated enum CanvasDraftStore {
             viewportOffsetHeight: Double(capture.viewportOffset.height),
             liveDotAnimationRawValue: capture.liveDotAnimation.rawValue,
             y2kCCDFilterSettings: capture.y2kCCDFilterSettings,
-            subjectGlowSettings: capture.subjectGlowSettings,
             asciiArtSettings: capture.asciiArtSettings,
             isSourceLiveMotionEnabled: capture.isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: capture.sourcePhotoAssetLocalIdentifier
@@ -393,7 +407,6 @@ nonisolated enum CanvasDraftStore {
                 ),
                 liveDotAnimation: liveDotAnimation,
                 y2kCCDFilterSettings: manifest.y2kCCDFilterSettings ?? .default,
-                subjectGlowSettings: manifest.subjectGlowSettings ?? .default,
                 asciiArtSettings: manifest.asciiArtSettings ?? .default,
                 isSourceLiveMotionEnabled: manifest.isSourceLiveMotionEnabled ?? false,
                 sourcePhotoAssetLocalIdentifier: manifest.sourcePhotoAssetLocalIdentifier

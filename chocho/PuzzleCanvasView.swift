@@ -5,6 +5,7 @@ import UIKit
 /// 照片 + 扩展背景 + 波点层；实况动画时由 `TimelineView` 驱动 `blinkTime`（仅波点，背景不动）。
 struct PuzzleCanvasView: View {
     let image: UIImage
+    var layoutImageSize: CGSize? = nil
     let extensionRatio: CGFloat
     var extensionSide: PuzzleCanvasExtensionSide = .right
     var photoCompression: MainPhotoCompression = .none
@@ -28,7 +29,7 @@ struct PuzzleCanvasView: View {
     var isSubjectOutlineEnabled = false
     var liveDotAnimation: LiveDotAnimation = .none
     var livePreviewPlaybackStart: Date?
-    var isY2KCCDFilterPreviewEnabled = false
+    var isStyledPhotoPreviewEnabled = false
     var isSourceLiveMotionEnabled = false
     var sourceLiveVideo: CanvasSourceLiveVideo?
     var isDotEditingEnabled = false
@@ -59,7 +60,7 @@ struct PuzzleCanvasView: View {
     private var shouldRunLivePreviewTimeline: Bool {
         guard livePreviewPlaybackStart != nil else { return false }
         if liveDotAnimation != .none { return true }
-        if isY2KCCDFilterPreviewEnabled { return false }
+        if isStyledPhotoPreviewEnabled { return false }
         return isSourceLiveMotionEnabled && sourceLiveVideo != nil
     }
 
@@ -74,7 +75,7 @@ struct PuzzleCanvasView: View {
     var body: some View {
         GeometryReader { proxy in
             let layout = PuzzleCanvasLayout.layout(
-                imageSize: image.size,
+                imageSize: layoutImageSize ?? image.size,
                 availableSize: proxy.size,
                 extensionRatio: extensionRatio,
                 extensionSide: extensionSide,
@@ -310,7 +311,7 @@ struct PuzzleCanvasView: View {
     }
 
     private func photoImage(for blinkTime: TimeInterval?) -> UIImage {
-        guard !isY2KCCDFilterPreviewEnabled else { return image }
+        guard !isStyledPhotoPreviewEnabled else { return image }
         guard isSourceLiveMotionEnabled,
               let sourceLiveVideo,
               let blinkTime else {
@@ -325,7 +326,7 @@ struct PuzzleCanvasView: View {
 
     /// 拼贴波点所需的实况帧：原图实况开启且有帧数据时返回；否则 nil（用静态原图）。
     private func liveFrameImageForDots(blinkTime: TimeInterval?) -> UIImage? {
-        guard !isY2KCCDFilterPreviewEnabled else { return nil }
+        guard !isStyledPhotoPreviewEnabled else { return nil }
         guard isSourceLiveMotionEnabled,
               let sourceLiveVideo,
               let blinkTime else {

@@ -22,38 +22,34 @@ nonisolated enum CanvasRasterExporter {
         liveDotAnimation: LiveDotAnimation = .none,
         blinkTime: TimeInterval? = nil,
         y2kCCDFilterSettings: Y2KCCDFilterSettings = .default,
-        subjectGlowSettings: SubjectGlowSettings = .default,
-        subjectGlowMask: SubjectMask? = nil,
         asciiArtSettings: ASCIIArtSettings = .default,
         asciiArtMask: SubjectMask? = nil,
         photoFrameImage: UIImage? = nil
     ) -> UIImage? {
         guard exportSize.width > 0, exportSize.height > 0 else { return nil }
 
+        let sourceImageSize = CanvasImageLoader.pixelSize(for: image)
         let renderImage = CanvasStyledPhotoRenderer.renderSync(
             image: image,
-            subjectGlowSettings: subjectGlowSettings,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             sourceKey: "export-base",
-            subjectGlowMask: subjectGlowMask,
             asciiArtSettings: asciiArtSettings,
-            asciiArtMask: asciiArtMask
+            asciiArtMask: asciiArtMask,
+            photoCompression: photoCompression
         )
         let renderPhotoFrameImage = photoFrameImage.map {
             CanvasStyledPhotoRenderer.renderSync(
                 image: $0,
-                subjectGlowSettings: subjectGlowSettings,
                 y2kCCDFilterSettings: y2kCCDFilterSettings,
                 sourceKey: "export-frame-\(blinkTime ?? 0)",
-                subjectGlowMask: subjectGlowMask,
                 asciiArtSettings: asciiArtSettings,
-                asciiArtMask: asciiArtMask
+                asciiArtMask: asciiArtMask,
+                photoCompression: photoCompression
             )
         }
 
-        let imageSize = CanvasImageLoader.pixelSize(for: renderImage)
         let layout = PuzzleCanvasLayout.layout(
-            imageSize: imageSize,
+            imageSize: sourceImageSize,
             availableSize: exportSize,
             extensionRatio: extensionRatio,
             extensionSide: extensionSide,

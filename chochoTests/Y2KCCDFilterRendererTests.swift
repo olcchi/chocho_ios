@@ -33,10 +33,47 @@ struct Y2KCCDFilterRendererTests {
         let settings = Y2KCCDFilterSettings.default
 
         #expect(!settings.enabled)
+        #expect(settings.preset == .classic)
+        #expect(settings.intensity == 1)
         #expect(settings.downsample == 0.2)
         #expect(settings.exposure == 0.18)
         #expect(settings.temperature == -0.65)
         #expect(settings.jpegArtifacts == 0.2)
+    }
+
+    @Test func presetsExposeChineseTitlesAndResolvedLooks() {
+        #expect(Y2KCCDPreset.allCases.map(\.title) == ["经典", "冷色调", "暖色调"])
+
+        var cool = Y2KCCDFilterSettings.default
+        cool.preset = .cool
+        cool.intensity = 1
+        let coolParameters = cool.resolvedParameters
+
+        var warm = Y2KCCDFilterSettings.default
+        warm.preset = .warm
+        warm.intensity = 1
+        let warmParameters = warm.resolvedParameters
+
+        #expect(coolParameters.temperature < 0)
+        #expect(warmParameters.temperature > 0)
+        #expect(coolParameters.jpegArtifacts > 0)
+        #expect(warmParameters.jpegArtifacts > 0)
+    }
+
+    @Test func intensityBlendsPresetTowardNeutralSettings() {
+        var settings = Y2KCCDFilterSettings.default
+        settings.preset = .cool
+        settings.intensity = 0
+
+        let neutral = settings.resolvedParameters
+
+        #expect(neutral.downsample == 0)
+        #expect(neutral.exposure == 0)
+        #expect(neutral.temperature == 0)
+        #expect(neutral.tint == 0)
+        #expect(neutral.jpegArtifacts == 0)
+        #expect(neutral.contrast == 0)
+        #expect(neutral.saturation == 1)
     }
 
     @Test func missingExposureDecodesToTunedCCDPresetExposure() throws {
@@ -70,6 +107,8 @@ struct Y2KCCDFilterRendererTests {
     @Test func panelEditingDefaultsToEnabledAndKeepsAdjustableValues() {
         var settings = Y2KCCDFilterSettings.default
         settings.enabled = false
+        settings.preset = .warm
+        settings.intensity = 0.68
         settings.downsample = 0.72
         settings.exposure = 0.18
         settings.temperature = 0.36
@@ -78,6 +117,8 @@ struct Y2KCCDFilterRendererTests {
         let editingSettings = settings.enabledForPanelEditing
 
         #expect(editingSettings.enabled)
+        #expect(editingSettings.preset == settings.preset)
+        #expect(editingSettings.intensity == settings.intensity)
         #expect(editingSettings.downsample == settings.downsample)
         #expect(editingSettings.exposure == settings.exposure)
         #expect(editingSettings.temperature == settings.temperature)
@@ -104,47 +145,30 @@ struct Y2KCCDFilterRendererTests {
         #expect(pixelSize == CGSize(width: 17, height: 11))
     }
 
-    @Test func downsampleAndToneChangeOutputPixels() throws {
+    @Test func presetAndIntensityChangeOutputPixels() throws {
         let source = try #require(makeY2KGradientImage(width: 18, height: 10))
         var base = Y2KCCDFilterSettings.default
         base.enabled = true
-        base.downsample = 0
-        base.bloom = 0
-        base.noise = 0
-        base.chromaNoise = 0
-        base.jpegArtifacts = 0
-        base.sharpen = 0
-        base.exposure = 0
-        base.temperature = 0
-        base.tint = 0
-        base.contrast = 0
-        base.saturation = 1
-        base.highlightClip = 0
-        base.rgbShift = 0
+        base.intensity = 0
 
-        var toned = base
-        toned.temperature = -0.8
-        toned.tint = -0.6
-        toned.contrast = 0.35
-        toned.saturation = 0.8
-        var exposed = base
-        exposed.exposure = 0.45
-        var downsampled = base
-        downsampled.downsample = 1
-        var jpegCrushed = base
-        jpegCrushed.jpegArtifacts = 1
+        var classic = base
+        classic.preset = .classic
+        classic.intensity = 1
+        var cool = base
+        cool.preset = .cool
+        cool.intensity = 1
+        var warm = base
+        warm.preset = .warm
+        warm.intensity = 1
 
         let baseImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: base))
-        let tonedImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: toned))
-        let exposedImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: exposed))
-        let downsampledImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: downsampled))
-        let jpegImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: jpegCrushed))
+        let classicImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: classic))
+        let coolImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: cool))
+        let warmImage = try #require(Y2KCCDFilterRenderer.render(image: source, settings: warm))
 
         let sampleRect = CGRect(x: 2, y: 2, width: 14, height: 6)
-        #expect(containsDifferentPixels(in: baseImage, and: tonedImage, rect: sampleRect))
-        #expect(containsDifferentPixels(in: baseImage, and: exposedImage, rect: sampleRect))
-        #expect(containsDifferentPixels(in: baseImage, and: downsampledImage, rect: sampleRect))
-        #expect(containsDifferentPixels(in: baseImage, and: jpegImage, rect: sampleRect))
+        #expect(containsDifferentPixels(in: baseImage, and: classicImage, rect: sampleRect))
+        #expect(containsDifferentPixels(in: coolImage, and: warmImage, rect: sampleRect))
     }
 }
 

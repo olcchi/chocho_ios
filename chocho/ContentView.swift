@@ -50,9 +50,6 @@ struct ContentView: View {
     @State private var y2kCCDFilterSettings: Y2KCCDFilterSettings = .default
     @State private var y2kCCDFilterSessionSnapshot: Y2KCCDFilterSettings?
     @State private var y2kCCDFilterCache = Y2KCCDFilterCache()
-    @State private var subjectGlowSettings: SubjectGlowSettings = .default
-    @State private var subjectGlowSessionSnapshot: SubjectGlowSettings?
-    @State private var subjectGlowCache = SubjectGlowCache()
     @State private var asciiArtSettings: ASCIIArtSettings = .default
     @State private var asciiArtSessionSnapshot: ASCIIArtSettings?
     @State private var asciiArtCache = ASCIIArtCache()
@@ -223,7 +220,10 @@ struct ContentView: View {
             .onChange(of: isTraceVisible) { _, _ in
                 scheduleCanvasDraftSave()
             }
-            .onChange(of: photoCompression) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: photoCompression) { _, _ in
+                refreshStyledPreviewImageIfNeeded(debounces: true)
+                scheduleCanvasDraftSave()
+            }
         )
     }
 
@@ -231,14 +231,6 @@ struct ContentView: View {
     private func applyMotionDraftSaveObservers<Content: View>(to content: Content) -> some View {
         content
             .onChange(of: y2kCCDFilterSettings) { _, newSettings in
-                refreshStyledPreviewImageIfNeeded(debounces: true)
-                if newSettings.enabled {
-                    isSourceLiveMotionEnabled = false
-                    stopLivePreviewPlayback()
-                }
-                scheduleCanvasDraftSave()
-            }
-            .onChange(of: subjectGlowSettings) { _, newSettings in
                 refreshStyledPreviewImageIfNeeded(debounces: true)
                 if newSettings.enabled {
                     isSourceLiveMotionEnabled = false
@@ -310,7 +302,6 @@ struct ContentView: View {
                 isSubjectOutlineEnabled: $isSubjectOutlineEnabled,
                 photoCompression: $photoCompression,
                 y2kCCDFilterSettings: $y2kCCDFilterSettings,
-                subjectGlowSettings: $subjectGlowSettings,
                 asciiArtSettings: $asciiArtSettings,
                 isDetectingSubjectOutline: isDetectingSubjectOutline
             ),
@@ -345,9 +336,6 @@ struct ContentView: View {
             onBeginY2KCCDFilterFeature: beginY2KCCDFilterFeatureSession,
             onConfirmY2KCCDFilterFeature: confirmY2KCCDFilterFeatureSession,
             onCancelY2KCCDFilterFeature: cancelY2KCCDFilterFeatureSession,
-            onBeginSubjectGlowFeature: beginSubjectGlowFeatureSession,
-            onConfirmSubjectGlowFeature: confirmSubjectGlowFeatureSession,
-            onCancelSubjectGlowFeature: cancelSubjectGlowFeatureSession,
             onBeginASCIIArtFeature: beginASCIIArtFeatureSession,
             onConfirmASCIIArtFeature: confirmASCIIArtFeatureSession,
             onCancelASCIIArtFeature: cancelASCIIArtFeatureSession
@@ -384,6 +372,7 @@ struct ContentView: View {
                 let previewImage = filteredCanvasPreviewImage ?? canvasImage
                 let canvas = PuzzleCanvasView(
                     image: previewImage,
+                    layoutImageSize: CanvasImageLoader.pixelSize(for: canvasImage),
                     extensionRatio: extensionRatio,
                     extensionSide: extensionSide,
                     photoCompression: photoCompression,
@@ -407,7 +396,6 @@ struct ContentView: View {
                     liveDotAnimation: liveDotAnimation,
                     livePreviewPlaybackStart: livePreviewPlaybackStart,
                     isStyledPhotoPreviewEnabled: CanvasStyledPhotoRenderer.styledPreviewEnabled(
-                        subjectGlowSettings: subjectGlowSettings,
                         y2kCCDFilterSettings: y2kCCDFilterSettings,
                         asciiArtSettings: asciiArtSettings
                     ),
@@ -455,7 +443,7 @@ struct ContentView: View {
         filteredCanvasPreviewImage = nil
         filteredCanvasPreviewKey = nil
         y2kCCDFilterCache.clear()
-        subjectGlowCache.clear()
+        asciiArtCache.clear()
     }
 
     @MainActor
@@ -464,7 +452,6 @@ struct ContentView: View {
         filteredCanvasPreviewTask = nil
 
         guard CanvasStyledPhotoRenderer.styledPreviewEnabled(
-            subjectGlowSettings: subjectGlowSettings,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             asciiArtSettings: asciiArtSettings
         ), let canvasImage else {
@@ -473,14 +460,14 @@ struct ContentView: View {
             return
         }
 
-        let sourceKey = "preview-\(ObjectIdentifier(canvasImage).hashValue)"
+        let sourceKey = "preview-\(ASCIIArtRenderer.sourceKey(for: canvasImage))"
         let pixelSize = styledPreviewPixelSize(for: canvasImage)
         let cacheKey = [
             sourceKey,
             "\(Int(pixelSize.width.rounded()))x\(Int(pixelSize.height.rounded()))",
-            subjectGlowSettings.cacheKey,
             y2kCCDFilterSettings.cacheKey,
-            asciiArtSettings.cacheKey
+            asciiArtSettings.cacheKey,
+            photoCompression.rawValue
         ].joined(separator: "|")
 
         guard filteredCanvasPreviewKey != cacheKey || filteredCanvasPreviewImage == nil else {
@@ -489,28 +476,26 @@ struct ContentView: View {
 
         filteredCanvasPreviewKey = cacheKey
 
-        let glowSettings = subjectGlowSettings
         let ccdSettings = y2kCCDFilterSettings
         let asciiSettings = asciiArtSettings
-        let glowCache = subjectGlowCache
+        let compression = photoCompression
         let ccdCache = y2kCCDFilterCache
         let asciiCache = asciiArtCache
         filteredCanvasPreviewTask = Task {
             if debounces {
-                try? await Task.sleep(for: SubjectGlowPreviewRenderPolicy.refreshDebounce)
+                try? await Task.sleep(for: Y2KCCDPreviewRenderPolicy.refreshDebounce)
                 guard !Task.isCancelled else { return }
             }
 
             let filteredImage = await CanvasStyledPhotoRenderer.render(
                 image: canvasImage,
-                subjectGlowSettings: glowSettings,
                 y2kCCDFilterSettings: ccdSettings,
                 targetPixelSize: pixelSize,
                 sourceKey: sourceKey,
-                subjectGlowCache: glowCache,
                 y2kCCDCache: ccdCache,
                 asciiArtSettings: asciiSettings,
-                asciiArtCache: asciiCache
+                asciiArtCache: asciiCache,
+                photoCompression: compression
             )
 
             guard !Task.isCancelled, filteredCanvasPreviewKey == cacheKey else { return }
@@ -520,8 +505,7 @@ struct ContentView: View {
 
     private func styledPreviewPixelSize(for image: UIImage) -> CGSize {
         let pixelSize = CanvasImageLoader.pixelSize(for: image)
-        let glowSize = SubjectGlowPreviewRenderPolicy.pixelSize(for: pixelSize)
-        let ccdSize = Y2KCCDPreviewRenderPolicy.pixelSize(for: glowSize)
+        let ccdSize = Y2KCCDPreviewRenderPolicy.pixelSize(for: pixelSize)
         return ASCIIArtPreviewRenderPolicy.pixelSize(for: ccdSize)
     }
 
@@ -691,7 +675,7 @@ struct ContentView: View {
         traceFeatureSessionSnapshot = nil
         photoCompressionSessionSnapshot = nil
         y2kCCDFilterSessionSnapshot = nil
-        subjectGlowSessionSnapshot = nil
+        asciiArtSessionSnapshot = nil
 
         selectedTab = .dots
         isPanelExpanded = false
@@ -708,7 +692,6 @@ struct ContentView: View {
         isTraceVisible = true
         photoCompression = .none
         y2kCCDFilterSettings = .default
-        subjectGlowSettings = .default
         asciiArtSettings = .default
 
         extensionRatio = PuzzleCanvasDefaults.defaultExtensionRatio
@@ -1257,33 +1240,6 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func beginSubjectGlowFeatureSession() {
-        guard subjectGlowSessionSnapshot == nil else { return }
-        subjectGlowSessionSnapshot = subjectGlowSettings
-        subjectGlowSettings = subjectGlowSettings.enabledForPanelEditing
-    }
-
-    @MainActor
-    private func confirmSubjectGlowFeatureSession() {
-        subjectGlowSessionSnapshot = nil
-        scheduleCanvasDraftSave()
-    }
-
-    @MainActor
-    private func cancelSubjectGlowFeatureSession() {
-        guard let snapshot = subjectGlowSessionSnapshot else { return }
-
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            subjectGlowSettings = snapshot
-        }
-
-        subjectGlowSessionSnapshot = nil
-        scheduleCanvasDraftSave()
-    }
-
-    @MainActor
     private func beginASCIIArtFeatureSession() {
         guard asciiArtSessionSnapshot == nil else { return }
         asciiArtSessionSnapshot = asciiArtSettings
@@ -1396,13 +1352,12 @@ struct ContentView: View {
 
         canvasImage = restored.image
         y2kCCDFilterSettings = restored.y2kCCDFilterSettings
-        subjectGlowSettings = restored.subjectGlowSettings
         asciiArtSettings = restored.asciiArtSettings
         invalidateStyledPreviewImage()
         refreshStyledPreviewImageIfNeeded()
         liveDotAnimation = restored.liveDotAnimation
         isSourceLiveMotionEnabled = restored.isSourceLiveMotionEnabled
-        if y2kCCDFilterSettings.enabled || subjectGlowSettings.enabled || asciiArtSettings.enabled {
+        if y2kCCDFilterSettings.enabled || asciiArtSettings.enabled {
             isSourceLiveMotionEnabled = false
         }
         sourcePhotoAssetLocalIdentifier = restored.sourcePhotoAssetLocalIdentifier
@@ -1483,7 +1438,6 @@ struct ContentView: View {
             viewportOffset: viewportOffset,
             liveDotAnimation: liveDotAnimation,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
-            subjectGlowSettings: subjectGlowSettings,
             asciiArtSettings: asciiArtSettings,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
@@ -1539,7 +1493,6 @@ struct ContentView: View {
             dotCharacterText: dotCharacterText,
             liveDotAnimation: liveDotAnimation,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
-            subjectGlowSettings: subjectGlowSettings,
             asciiArtSettings: asciiArtSettings,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             hasSourceLiveVideo: hasSourceLiveVideo,
@@ -1576,7 +1529,6 @@ struct ContentView: View {
                         dotCharacterText: snapshot.dotCharacterText,
                         liveDotAnimation: snapshot.liveDotAnimation,
                         y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
-                        subjectGlowSettings: snapshot.subjectGlowSettings,
                         asciiArtSettings: snapshot.asciiArtSettings,
                         isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
                         hasSourceLiveVideo: snapshot.hasSourceLiveVideo,
@@ -1592,12 +1544,10 @@ struct ContentView: View {
                     return .livePhoto(bundle)
 
                 case .staticJPEG:
-                    let needsMask = snapshot.subjectGlowSettings.enabled || snapshot.asciiArtSettings.enabled
-                    let sharedMask: SubjectMask? = needsMask
+                    let needsMask = snapshot.asciiArtSettings.enabled
+                    let asciiArtMask: SubjectMask? = needsMask
                         ? try? await VisionSubjectMaskProvider().subjectMask(for: snapshot.image)
                         : nil
-                    let subjectGlowMask: SubjectMask? = snapshot.subjectGlowSettings.enabled ? sharedMask : nil
-                    let asciiArtMask: SubjectMask? = snapshot.asciiArtSettings.enabled ? sharedMask : nil
 
                     guard let renderedImage = CanvasRasterExporter.render(
                         image: snapshot.image,
@@ -1614,8 +1564,6 @@ struct ContentView: View {
                         usesRandomDotColors: snapshot.usesRandomDotColors,
                         dotCharacterText: snapshot.dotCharacterText,
                         y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
-                        subjectGlowSettings: snapshot.subjectGlowSettings,
-                        subjectGlowMask: subjectGlowMask,
                         asciiArtSettings: snapshot.asciiArtSettings,
                         asciiArtMask: asciiArtMask
                     ) else {

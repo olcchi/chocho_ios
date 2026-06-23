@@ -131,11 +131,6 @@ struct CanvasDraftStoreTests {
                 highlightClip: 0.8,
                 rgbShift: 0.15
             ),
-            subjectGlowSettings: SubjectGlowSettings(
-                enabled: true,
-                intensity: 0.7,
-                radius: 0.4
-            ),
             asciiArtSettings: .default,
             isSourceLiveMotionEnabled: true,
             sourcePhotoAssetLocalIdentifier: "test-live-asset"
@@ -161,7 +156,6 @@ struct CanvasDraftStoreTests {
         #expect(loaded.viewportOffset == capture.viewportOffset)
         #expect(loaded.liveDotAnimation == capture.liveDotAnimation)
         #expect(loaded.y2kCCDFilterSettings == capture.y2kCCDFilterSettings)
-        #expect(loaded.subjectGlowSettings == capture.subjectGlowSettings)
         #expect(loaded.isSourceLiveMotionEnabled == capture.isSourceLiveMotionEnabled)
         #expect(loaded.sourcePhotoAssetLocalIdentifier == capture.sourcePhotoAssetLocalIdentifier)
         #expect(loaded.puzzleDots.count == capture.puzzleDots.count)
@@ -317,7 +311,6 @@ struct CanvasDraftStoreTests {
             viewportOffset: .zero,
             liveDotAnimation: .none,
             y2kCCDFilterSettings: .default,
-            subjectGlowSettings: .default,
             asciiArtSettings: .default,
             isSourceLiveMotionEnabled: false,
             sourcePhotoAssetLocalIdentifier: nil

@@ -5,55 +5,33 @@ import Vision
 // MARK: - 预设
 
 nonisolated enum ASCIIArtPreset: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
-    case classicASCII
-    case softDots
-    case y2kSparkle
-    case ccdNoise
-    case pixelBlock
     case heartCollage
+    case y2kSparkle
+    case softDots
 
     var id: Self { self }
 
     var title: String {
         switch self {
-        case .classicASCII: "经典"
-        case .softDots:     "波点"
-        case .y2kSparkle:   "星星"
-        case .ccdNoise:     "CCD"
-        case .pixelBlock:   "像素"
         case .heartCollage: "爱心"
+        case .y2kSparkle:   "星星"
+        case .softDots:     "波点"
         }
     }
 
     /// 亮度从低到高映射，第一个字符最暗（最密），最后一个最亮（最稀）。
     var fillCharacters: [Character] {
         switch self {
-        case .classicASCII: Array("@%#*+=-:.")
-        case .softDots:     Array("@◎●○•·")
-        case .y2kSparkle:   Array("@☆✧✦*+:.")
-        case .ccdNoise:     Array("%#*;:,`.'")
-        case .pixelBlock:   Array("█▓▒░")
         case .heartCollage: Array("@#♥♡:.")
+        case .y2kSparkle:   Array("@☆✧✦*+:.")
+        case .softDots:     Array("@◎●○•·")
         }
     }
 
-    var outlineCharacter: Character {
-        switch self {
-        case .classicASCII: "*"
-        case .softDots:     "•"
-        case .y2kSparkle:   "✦"
-        case .ccdNoise:     "."
-        case .pixelBlock:   "█"
-        case .heartCollage: "♡"
-        }
-    }
-
-    /// 新图片加载时该预设的背景默认开关。
-    var defaultShowBackground: Bool {
-        switch self {
-        case .classicASCII, .softDots, .pixelBlock: false
-        case .y2kSparkle, .ccdNoise, .heartCollage: true
-        }
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = Self(rawValue: rawValue) ?? .softDots
     }
 }
 
@@ -90,18 +68,64 @@ nonisolated struct ASCIIArtSettings: Codable, Equatable, Hashable, Sendable {
     var enabled: Bool
     var preset: ASCIIArtPreset
     var detail: ASCIIArtDetail
+    var showSubject: Bool
     var showOutline: Bool
-    var showBackground: Bool
+    var characterColor: CanvasDraftColorComponents
 
-    /// `showBackground` is seeded from `softDots.defaultShowBackground` at init time and does NOT
-    /// auto-update when `preset` changes — the UI layer is responsible for refreshing it on preset change.
+    /// Default ASCII character tint (#A8D8B9).
+    nonisolated static let defaultCharacterColor = CanvasDraftColorComponents(
+        red: 168.0 / 255.0,
+        green: 216.0 / 255.0,
+        blue: 185.0 / 255.0
+    )
+
     nonisolated static let `default` = ASCIIArtSettings(
         enabled: false,
         preset: .softDots,
-        detail: .medium,
-        showOutline: false,
-        showBackground: ASCIIArtPreset.softDots.defaultShowBackground
+        detail: .coarse,
+        showSubject: false,
+        showOutline: true,
+        characterColor: defaultCharacterColor
     )
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case preset
+        case detail
+        case showSubject
+        case showOutline
+        case characterColor
+    }
+
+    nonisolated init(
+        enabled: Bool,
+        preset: ASCIIArtPreset,
+        detail: ASCIIArtDetail,
+        showSubject: Bool,
+        showOutline: Bool,
+        characterColor: CanvasDraftColorComponents
+    ) {
+        self.enabled = enabled
+        self.preset = preset
+        self.detail = detail
+        self.showSubject = showSubject
+        self.showOutline = showOutline
+        self.characterColor = characterColor
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decode(Bool.self, forKey: .enabled)
+        preset = try container.decode(ASCIIArtPreset.self, forKey: .preset)
+        detail = try container.decode(ASCIIArtDetail.self, forKey: .detail)
+        showSubject = try container.decodeIfPresent(Bool.self, forKey: .showSubject)
+            ?? (!(try container.decodeIfPresent(Bool.self, forKey: .showOutline) ?? true))
+        showOutline = try container.decodeIfPresent(Bool.self, forKey: .showOutline) ?? true
+        characterColor = try container.decodeIfPresent(
+            CanvasDraftColorComponents.self,
+            forKey: .characterColor
+        ) ?? Self.defaultCharacterColor
+    }
 
     nonisolated var enabledForPanelEditing: ASCIIArtSettings {
         var settings = self
@@ -114,8 +138,11 @@ nonisolated struct ASCIIArtSettings: Codable, Equatable, Hashable, Sendable {
             enabled ? "1" : "0",
             preset.rawValue,
             detail.rawValue,
+            showSubject ? "1" : "0",
             showOutline ? "1" : "0",
-            showBackground ? "1" : "0"
+            String(format: "%.3f", characterColor.red),
+            String(format: "%.3f", characterColor.green),
+            String(format: "%.3f", characterColor.blue)
         ].joined(separator: ":")
     }
 
@@ -216,8 +243,42 @@ nonisolated enum ASCIIArtPreviewRenderPolicy {
 
 // MARK: - Renderer
 
+nonisolated enum ASCIIArtCellRenderStyle: Equatable {
+    case subject(String)
+    case outline(String)
+}
+
 nonisolated enum ASCIIArtRenderer {
     private nonisolated static let maskProvider = VisionSubjectMaskProvider()
+    /// Outline glyphs use the lighter preset characters, scaled up slightly for legibility.
+    private nonisolated static let outlineFontScale: CGFloat = 1.12
+
+    nonisolated static func sourceKey(for image: UIImage) -> String {
+        let pixelSize = CanvasImageLoader.pixelSize(for: image)
+        let width = max(1, Int(pixelSize.width.rounded()))
+        let height = max(1, Int(pixelSize.height.rounded()))
+        let fingerprint = imageFingerprint(for: image)
+        return "\(width)x\(height)-\(fingerprint)"
+    }
+
+    nonisolated static func cellSize(
+        for detail: ASCIIArtDetail,
+        sourcePixelSize: CGSize,
+        renderSize: CGSize
+    ) -> CGFloat {
+        guard sourcePixelSize.width > 0,
+              sourcePixelSize.height > 0,
+              renderSize.width > 0,
+              renderSize.height > 0
+        else {
+            return detail.cellSize
+        }
+        let scale = min(
+            renderSize.width / sourcePixelSize.width,
+            renderSize.height / sourcePixelSize.height
+        )
+        return max(1, detail.cellSize * scale)
+    }
 
     /// Maps a brightness value [0,1] to a character from the preset's fill set.
     /// Brightness 0 → first character (densest), brightness 1 → last character (sparsest).
@@ -227,6 +288,38 @@ nonisolated enum ASCIIArtRenderer {
         let clamped = min(1, max(0, brightness))
         let index = Int((clamped * CGFloat(chars.count - 1)).rounded())
         return chars[index]
+    }
+
+    nonisolated static func cellRenderStyle(
+        avgBrightness: CGFloat,
+        subjectFraction: CGFloat,
+        isEdge: Bool,
+        settings: ASCIIArtSettings,
+        hasSubjectMask: Bool
+    ) -> ASCIIArtCellRenderStyle? {
+        let preset = settings.preset
+        if !hasSubjectMask {
+            return .subject(String(character(for: avgBrightness, preset: preset)))
+        }
+        if isEdge, settings.showOutline {
+            return .outline(String(character(for: avgBrightness, preset: preset)))
+        }
+        if subjectFraction > 0.35, settings.showSubject {
+            return .subject(String(character(for: avgBrightness, preset: preset)))
+        }
+        return nil
+    }
+
+    nonisolated static func alpha(
+        for renderStyle: ASCIIArtCellRenderStyle,
+        avgBrightness: CGFloat
+    ) -> CGFloat {
+        switch renderStyle {
+        case .outline:
+            return 0.90
+        case .subject:
+            return 0.82 + avgBrightness * 0.18
+        }
     }
 
     /// Async entry-point: fetches the subject mask (with caching) then delegates to the sync overload.
@@ -244,6 +337,7 @@ nonisolated enum ASCIIArtRenderer {
         let width = max(1, Int(pixelSize.width.rounded()))
         let height = max(1, Int(pixelSize.height.rounded()))
         let renderSize = CGSize(width: width, height: height)
+        let sourceKey = sourceKey == "source" ? Self.sourceKey(for: image) : sourceKey
         let maskKey = "\(sourceKey)-mask"
         let cacheKey = settings.renderCacheKey(sourceKey: sourceKey, pixelSize: renderSize, maskKey: maskKey)
 
@@ -258,7 +352,14 @@ nonisolated enum ASCIIArtRenderer {
                 cache?.setMask(detected, for: maskKey)
                 mask = detected
             } catch {
-                return nil
+                return render(
+                    image: image,
+                    mask: nil,
+                    settings: settings,
+                    targetPixelSize: targetPixelSize,
+                    sourceKey: sourceKey,
+                    cache: cache
+                )
             }
         }
 
@@ -275,7 +376,7 @@ nonisolated enum ASCIIArtRenderer {
     /// Sync overload: uses the provided mask directly, skipping async Vision work.
     nonisolated static func render(
         image: UIImage,
-        mask: SubjectMask,
+        mask: SubjectMask?,
         settings: ASCIIArtSettings,
         targetPixelSize: CGSize? = nil,
         sourceKey: String = "source",
@@ -288,6 +389,7 @@ nonisolated enum ASCIIArtRenderer {
         let width = max(1, Int(pixelSize.width.rounded()))
         let height = max(1, Int(pixelSize.height.rounded()))
         let renderSize = CGSize(width: width, height: height)
+        let sourceKey = sourceKey == "source" ? Self.sourceKey(for: image) : sourceKey
         let maskKey = "\(sourceKey)-mask"
         let cacheKey = settings.renderCacheKey(sourceKey: sourceKey, pixelSize: renderSize, maskKey: maskKey)
 
@@ -297,10 +399,13 @@ nonisolated enum ASCIIArtRenderer {
             to: image,
             mask: mask,
             settings: settings,
-            renderSize: renderSize
+            renderSize: renderSize,
+            sourcePixelSize: inputSize
         ) else { return nil }
 
-        cache?.setMask(mask, for: maskKey)
+        if let mask {
+            cache?.setMask(mask, for: maskKey)
+        }
         cache?.setImage(rendered, for: cacheKey)
         return rendered
     }
@@ -309,22 +414,36 @@ nonisolated enum ASCIIArtRenderer {
 
     private nonisolated static func applyASCII(
         to image: UIImage,
-        mask: SubjectMask,
+        mask: SubjectMask?,
         settings: ASCIIArtSettings,
-        renderSize: CGSize
+        renderSize: CGSize,
+        sourcePixelSize: CGSize
     ) -> UIImage? {
         let renderW = Int(renderSize.width.rounded())
         let renderH = Int(renderSize.height.rounded())
         guard renderW > 0, renderH > 0 else { return nil }
 
         guard let brightnessMap = makeBrightnessMap(from: image, size: renderSize) else { return nil }
-        guard let maskBitmap = mask.boolBitmap(targetSize: renderSize) else { return nil }
+        let detectedMaskBitmap = mask?.boolBitmap(targetSize: renderSize)
+        let hasSubjectMask = detectedMaskBitmap?.contains(true) == true
+        let maskBitmap = hasSubjectMask
+            ? detectedMaskBitmap ?? []
+            : [Bool](repeating: true, count: renderW * renderH)
 
-        let edgeBitmap: [Bool] = settings.showOutline
-            ? makeEdgeBitmap(from: maskBitmap, width: renderW, height: renderH)
+        let cellSize = cellSize(
+            for: settings.detail,
+            sourcePixelSize: sourcePixelSize,
+            renderSize: renderSize
+        )
+        let edgeBitmap: [Bool] = settings.showOutline && hasSubjectMask
+            ? dilateBitmap(
+                makeEdgeBitmap(from: maskBitmap, width: renderW, height: renderH),
+                width: renderW,
+                height: renderH,
+                radius: outlineDilationRadius(for: cellSize)
+            )
             : []
 
-        let cellSize = settings.detail.cellSize
         let cols = Int(ceil(CGFloat(renderW) / cellSize))
         let rows = Int(ceil(CGFloat(renderH) / cellSize))
         let cellW = CGFloat(renderW) / CGFloat(cols)
@@ -335,8 +454,9 @@ nonisolated enum ASCIIArtRenderer {
         format.opaque = true
 
         let fontSize = min(cellW, cellH) * 0.92
-        let font = UIFont.systemFont(ofSize: max(4, fontSize))
-        let preset = settings.preset
+        let subjectFont = UIFont.systemFont(ofSize: max(4, fontSize))
+        let outlineFont = UIFont.systemFont(ofSize: max(4, fontSize * Self.outlineFontScale))
+        let characterColor = settings.characterColor.uiColor
 
         return UIGraphicsImageRenderer(size: renderSize, format: format).image { ctx in
             let cgCtx = ctx.cgContext
@@ -360,37 +480,35 @@ nonisolated enum ASCIIArtRenderer {
                         height: cellH
                     )
 
-                    if isEdge {
+                    guard let renderStyle = cellRenderStyle(
+                        avgBrightness: avgBrightness,
+                        subjectFraction: subjectFraction,
+                        isEdge: isEdge,
+                        settings: settings,
+                        hasSubjectMask: hasSubjectMask
+                    ) else {
+                        continue
+                    }
+
+                    switch renderStyle {
+                    case .outline(let text):
                         drawCharacter(
-                            String(preset.outlineCharacter),
+                            text,
                             in: cellRect,
-                            font: font,
-                            alpha: 0.90,
+                            font: outlineFont,
+                            color: characterColor,
+                            alpha: alpha(for: renderStyle, avgBrightness: avgBrightness),
                             context: cgCtx
                         )
-                    // Cells between 0.15 and 0.35 subject fraction are left as-is to create
-                    // a soft transition zone and avoid messy half-occluded character cells.
-                    } else if subjectFraction > 0.35 {
-                        let alpha = 0.82 + avgBrightness * 0.18
+                    case .subject(let text):
                         drawCharacter(
-                            String(character(for: avgBrightness, preset: preset)),
+                            text,
                             in: cellRect,
-                            font: font,
-                            alpha: alpha,
+                            font: subjectFont,
+                            color: characterColor,
+                            alpha: alpha(for: renderStyle, avgBrightness: avgBrightness),
                             context: cgCtx
                         )
-                    } else if settings.showBackground && subjectFraction < 0.15 {
-                        // deterministic sparse skip: draw only ~35% of background cells
-                        guard (row * 1000 + col) % 100 < 35 else { continue }
-                        if let fillChar = preset.fillCharacters.last {
-                            drawCharacter(
-                                String(fillChar),
-                                in: cellRect,
-                                font: font,
-                                alpha: 0.15,
-                                context: cgCtx
-                            )
-                        }
                     }
                 }
             }
@@ -422,6 +540,34 @@ nonisolated enum ASCIIArtRenderer {
         return raw.map { CGFloat($0) / 255.0 }
     }
 
+    private nonisolated static func imageFingerprint(for image: UIImage) -> String {
+        let sampleWidth = 16
+        let sampleHeight = 16
+        let bytesPerPixel = 4
+        var raw = [UInt8](repeating: 0, count: sampleWidth * sampleHeight * bytesPerPixel)
+        guard let context = CGContext(
+            data: &raw,
+            width: sampleWidth,
+            height: sampleHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: sampleWidth * bytesPerPixel,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ), let cgImage = image.cgImage else {
+            return "\(ObjectIdentifier(image).hashValue)"
+        }
+
+        context.interpolationQuality = .low
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
+
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in raw {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        return String(hash, radix: 16)
+    }
+
     /// 8-neighbor edge detection on the mask: a pixel is an edge if it's inside the subject
     /// and at least one of its 8 neighbors differs.
     private nonisolated static func makeEdgeBitmap(from maskBitmap: [Bool], width: Int, height: Int) -> [Bool] {
@@ -449,6 +595,35 @@ nonisolated enum ASCIIArtRenderer {
             }
         }
         return edges
+    }
+
+    /// Expands the 1px contour so coarse cells still pick up outline glyphs.
+    nonisolated static func outlineDilationRadius(for cellSize: CGFloat) -> Int {
+        max(1, Int((cellSize * 0.45).rounded()))
+    }
+
+    private nonisolated static func dilateBitmap(
+        _ bitmap: [Bool],
+        width: Int,
+        height: Int,
+        radius: Int
+    ) -> [Bool] {
+        guard radius > 0, !bitmap.isEmpty else { return bitmap }
+        var dilated = bitmap
+        for y in 0..<height {
+            for x in 0..<width {
+                guard bitmap[y * width + x] else { continue }
+                for dy in -radius...radius {
+                    for dx in -radius...radius {
+                        let px = x + dx
+                        let py = y + dy
+                        guard px >= 0, px < width, py >= 0, py < height else { continue }
+                        dilated[py * width + px] = true
+                    }
+                }
+            }
+        }
+        return dilated
     }
 
     private nonisolated static func sampleCell(
@@ -491,12 +666,13 @@ nonisolated enum ASCIIArtRenderer {
         _ text: String,
         in rect: CGRect,
         font: UIFont,
+        color: UIColor,
         alpha: CGFloat,
         context: CGContext
     ) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: UIColor.black.withAlphaComponent(alpha)
+            .foregroundColor: color.withAlphaComponent(alpha)
         ]
         let nsText = text as NSString
         let textSize = nsText.size(withAttributes: attrs)

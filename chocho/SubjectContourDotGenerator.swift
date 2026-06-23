@@ -78,6 +78,8 @@ private enum SubjectContourDotSeed {
 }
 
 struct VisionSubjectMaskProvider: SubjectMaskProviding {
+    nonisolated init() {}
+
     func subjectMask(for image: UIImage) async throws -> SubjectMask {
         guard #available(iOS 17.0, *) else {
             throw SubjectContourDotGenerationError.unsupported

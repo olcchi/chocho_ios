@@ -80,6 +80,28 @@ enum CanvasImageLoader {
     }
 
     /// 按比例缩小像素尺寸，使最长边不超过给定上限（Live Photo 配对视频编码用）。
+    /// Resamples to exact pixel dimensions (scale = 1). Used before ASCII regeneration on compressed photos.
+    nonisolated static func resampledImage(_ image: UIImage, to pixelSize: CGSize) -> UIImage? {
+        let width = max(1, Int(pixelSize.width.rounded()))
+        let height = max(1, Int(pixelSize.height.rounded()))
+        guard width > 0, height > 0 else { return nil }
+
+        let targetSize = CGSize(width: width, height: height)
+        let currentSize = Self.pixelSize(for: image)
+        if abs(currentSize.width - targetSize.width) < 0.5,
+           abs(currentSize.height - targetSize.height) < 0.5 {
+            return image
+        }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { context in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+
     nonisolated static func fittedPixelSize(
         _ size: CGSize,
         maxPixelDimension: Int

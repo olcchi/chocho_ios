@@ -130,9 +130,6 @@ struct BottomSheetPanel: View {
     var onBeginY2KCCDFilterFeature: () -> Void = {}
     var onConfirmY2KCCDFilterFeature: () -> Void = {}
     var onCancelY2KCCDFilterFeature: () -> Void = {}
-    var onBeginSubjectGlowFeature: () -> Void = {}
-    var onConfirmSubjectGlowFeature: () -> Void = {}
-    var onCancelSubjectGlowFeature: () -> Void = {}
     var onBeginASCIIArtFeature: () -> Void = {}
     var onConfirmASCIIArtFeature: () -> Void = {}
     var onCancelASCIIArtFeature: () -> Void = {}
@@ -181,8 +178,6 @@ struct BottomSheetPanel: View {
                 onBeginPhotoCompressionFeature()
             case .ccd:
                 onBeginY2KCCDFilterFeature()
-            case .glow:
-                onBeginSubjectGlowFeature()
             case .ascii:
                 onBeginASCIIArtFeature()
             default:
@@ -229,7 +224,6 @@ struct BottomSheetPanel: View {
         if selectedTab == .style, let selectedStyleFeature {
             return selectedStyleFeature == .photoCompression
                 || selectedStyleFeature == .ccd
-                || selectedStyleFeature == .glow
                 || selectedStyleFeature == .ascii
         }
         return false
@@ -254,8 +248,6 @@ struct BottomSheetPanel: View {
             onCancelPhotoCompressionFeature: cancelPhotoCompressionFeature,
             onConfirmY2KCCDFilterFeature: confirmY2KCCDFilterFeature,
             onCancelY2KCCDFilterFeature: cancelY2KCCDFilterFeature,
-            onConfirmSubjectGlowFeature: confirmSubjectGlowFeature,
-            onCancelSubjectGlowFeature: cancelSubjectGlowFeature,
             onConfirmASCIIArtFeature: confirmASCIIArtFeature,
             onCancelASCIIArtFeature: cancelASCIIArtFeature
         )
@@ -309,10 +301,6 @@ struct BottomSheetPanel: View {
             cancelY2KCCDFilterFeature()
             return
         }
-        if selectedTab == .style, selectedStyleFeature == .glow {
-            cancelSubjectGlowFeature()
-            return
-        }
         if selectedTab == .style, selectedStyleFeature == .ascii {
             cancelASCIIArtFeature()
             return
@@ -335,8 +323,6 @@ struct BottomSheetPanel: View {
             onCancelPhotoCompressionFeature()
         case .ccd:
             onCancelY2KCCDFilterFeature()
-        case .glow:
-            onCancelSubjectGlowFeature()
         case .ascii:
             onCancelASCIIArtFeature()
         default:
@@ -381,20 +367,6 @@ struct BottomSheetPanel: View {
 
     private func confirmY2KCCDFilterFeature() {
         onConfirmY2KCCDFilterFeature()
-        withAnimation(Self.panelMotion) {
-            selectedStyleFeature = nil
-        }
-    }
-
-    private func cancelSubjectGlowFeature() {
-        onCancelSubjectGlowFeature()
-        withAnimation(Self.panelMotion) {
-            selectedStyleFeature = nil
-        }
-    }
-
-    private func confirmSubjectGlowFeature() {
-        onConfirmSubjectGlowFeature()
         withAnimation(Self.panelMotion) {
             selectedStyleFeature = nil
         }
@@ -628,8 +600,6 @@ private struct PanelContentCard: View {
     let onCancelPhotoCompressionFeature: () -> Void
     let onConfirmY2KCCDFilterFeature: () -> Void
     let onCancelY2KCCDFilterFeature: () -> Void
-    let onConfirmSubjectGlowFeature: () -> Void
-    let onCancelSubjectGlowFeature: () -> Void
     let onConfirmASCIIArtFeature: () -> Void
     let onCancelASCIIArtFeature: () -> Void
 
@@ -660,14 +630,11 @@ private struct PanelContentCard: View {
                     selectedFeature: $selectedStyleFeature,
                     photoCompression: dotControls.photoCompression,
                     y2kCCDFilterSettings: dotControls.y2kCCDFilterSettings,
-                    subjectGlowSettings: dotControls.subjectGlowSettings,
                     asciiArtSettings: dotControls.asciiArtSettings,
                     onConfirmPhotoCompressionFeature: onConfirmPhotoCompressionFeature,
                     onCancelPhotoCompressionFeature: onCancelPhotoCompressionFeature,
                     onConfirmY2KCCDFilterFeature: onConfirmY2KCCDFilterFeature,
                     onCancelY2KCCDFilterFeature: onCancelY2KCCDFilterFeature,
-                    onConfirmSubjectGlowFeature: onConfirmSubjectGlowFeature,
-                    onCancelSubjectGlowFeature: onCancelSubjectGlowFeature,
                     onConfirmASCIIArtFeature: onConfirmASCIIArtFeature,
                     onCancelASCIIArtFeature: onCancelASCIIArtFeature
                 )
@@ -1182,7 +1149,6 @@ private struct PanelValueMenu<Value: Hashable & Equatable>: View {
 enum StylePanelFeature: String, CaseIterable, Identifiable {
     case photoCompression
     case ccd
-    case glow
     case ascii
 
     var id: Self { self }
@@ -1193,8 +1159,6 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
             "挤压"
         case .ccd:
             "CCD"
-        case .glow:
-            "发光"
         case .ascii:
             "ASCII"
         }
@@ -1206,8 +1170,6 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
             Image("public/CarbonZip")
         case .ccd:
             Image("public/ccd")
-        case .glow:
-            Image("public/sparkles")
         case .ascii:
             Image(systemName: "textformat.size")
         }
@@ -1420,14 +1382,11 @@ private struct StylePanelControls: View {
     @Binding var selectedFeature: StylePanelFeature?
     @Binding var photoCompression: MainPhotoCompression
     @Binding var y2kCCDFilterSettings: Y2KCCDFilterSettings
-    @Binding var subjectGlowSettings: SubjectGlowSettings
     @Binding var asciiArtSettings: ASCIIArtSettings
     let onConfirmPhotoCompressionFeature: () -> Void
     let onCancelPhotoCompressionFeature: () -> Void
     let onConfirmY2KCCDFilterFeature: () -> Void
     let onCancelY2KCCDFilterFeature: () -> Void
-    let onConfirmSubjectGlowFeature: () -> Void
-    let onCancelSubjectGlowFeature: () -> Void
     let onConfirmASCIIArtFeature: () -> Void
     let onCancelASCIIArtFeature: () -> Void
 
@@ -1458,8 +1417,6 @@ private struct StylePanelControls: View {
             photoCompressionFeatureDetail
         case .ccd:
             ccdFeatureDetail
-        case .glow:
-            glowFeatureDetail
         case .ascii:
             ASCIIArtControlsPanel(
                 settings: $asciiArtSettings,
@@ -1500,16 +1457,6 @@ private struct StylePanelControls: View {
             settings: $y2kCCDFilterSettings,
             onCancel: onCancelY2KCCDFilterFeature,
             onConfirm: onConfirmY2KCCDFilterFeature
-        )
-        .padding(.horizontal, 2)
-        .padding(.vertical, 4)
-    }
-
-    private var glowFeatureDetail: some View {
-        SubjectGlowControlsPanel(
-            settings: $subjectGlowSettings,
-            onCancel: onCancelSubjectGlowFeature,
-            onConfirm: onConfirmSubjectGlowFeature
         )
         .padding(.horizontal, 2)
         .padding(.vertical, 4)
@@ -1625,61 +1572,6 @@ private struct DotAdjustPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("随机一下")
-    }
-}
-
-private struct SubjectGlowControlsPanel: View {
-    @Binding var settings: SubjectGlowSettings
-    let onCancel: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            StyledSlider(
-                title: "强度",
-                value: intensityPercent,
-                range: 0...100,
-                step: 1,
-                valueText: percentText
-            )
-
-            StyledSlider(
-                title: "范围",
-                value: radiusPercent,
-                range: 0...100,
-                step: 1,
-                valueText: percentText
-            )
-
-            PanelFeatureActionRow(
-                title: StylePanelFeature.glow.title,
-                onCancel: onCancel,
-                onConfirm: onConfirm
-            )
-        }
-    }
-
-    private var intensityPercent: Binding<Double> {
-        Binding(
-            get: { clamped(settings.intensity, in: 0...1) * 100 },
-            set: { settings.intensity = clamped($0 / 100, in: 0...1) }
-        )
-    }
-
-    private var radiusPercent: Binding<Double> {
-        Binding(
-            get: { clamped(settings.radius, in: 0...1) * 100 },
-            set: { settings.radius = clamped($0 / 100, in: 0...1) }
-        )
-    }
-
-    private func percentText(_ value: Double) -> String {
-        "\(Int(value.rounded()))%"
-    }
-
-    private func clamped(_ value: Double, in range: ClosedRange<Double>) -> Double {
-        guard value.isFinite else { return range.lowerBound }
-        return min(max(value, range.lowerBound), range.upperBound)
     }
 }
 
@@ -2231,15 +2123,21 @@ private struct ASCIIArtControlsPanel: View {
             .frame(height: 30)
 
             HStack(spacing: 8) {
+                PanelCompactToggleButton(title: "主体", isOn: settings.showSubject) {
+                    settings.showSubject.toggle()
+                }
                 PanelCompactToggleButton(title: "轮廓", isOn: settings.showOutline) {
                     settings.showOutline.toggle()
-                }
-                PanelCompactToggleButton(title: "背景", isOn: settings.showBackground) {
-                    settings.showBackground.toggle()
                 }
                 Spacer(minLength: 0)
             }
             .frame(height: 30)
+
+            ColorPicker("颜色", selection: characterColorBinding, supportsOpacity: false)
+                .font(controlFont)
+                .foregroundStyle(Color.foreground)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 30)
 
             PanelFeatureActionRow(
                 title: StylePanelFeature.ascii.title,
@@ -2247,5 +2145,16 @@ private struct ASCIIArtControlsPanel: View {
                 onConfirm: onConfirm
             )
         }
+    }
+
+    private var characterColorBinding: Binding<Color> {
+        Binding(
+            get: { settings.characterColor.color },
+            set: { newValue in
+                settings.characterColor = CanvasDraftColorComponents(
+                    DotColorPickerSelection.selectedColor(fromPickerColor: newValue)
+                )
+            }
+        )
     }
 }
