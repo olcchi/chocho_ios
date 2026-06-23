@@ -52,4 +52,24 @@ final class ASCIIArtRendererTests: XCTestCase {
         let result = ASCIIArtPreviewRenderPolicy.pixelSize(for: large)
         XCTAssertLessThanOrEqual(max(result.width, result.height), ASCIIArtPreviewRenderPolicy.maxLongEdge)
     }
+
+    func test_styledPreviewEnabled_withASCII() {
+        var settings = ASCIIArtSettings.default
+        settings.enabled = true
+        let enabled = CanvasStyledPhotoRenderer.styledPreviewEnabled(
+            subjectGlowSettings: .default,
+            y2kCCDFilterSettings: .default,
+            asciiArtSettings: settings
+        )
+        XCTAssertTrue(enabled)
+    }
+
+    func test_styledPreviewEnabled_allDisabled() {
+        let enabled = CanvasStyledPhotoRenderer.styledPreviewEnabled(
+            subjectGlowSettings: .default,
+            y2kCCDFilterSettings: .default,
+            asciiArtSettings: .default
+        )
+        XCTAssertFalse(enabled)
+    }
 }
