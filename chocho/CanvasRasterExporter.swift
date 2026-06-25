@@ -24,12 +24,14 @@ nonisolated enum CanvasRasterExporter {
         y2kCCDFilterSettings: Y2KCCDFilterSettings = .default,
         asciiArtSettings: ASCIIArtSettings = .default,
         asciiArtMask: SubjectMask? = nil,
-        photoFrameImage: UIImage? = nil
+        photoFrameImage: UIImage? = nil,
+        styledBaseImage: UIImage? = nil,
+        styledLiveFrameImage: UIImage? = nil
     ) -> UIImage? {
         guard exportSize.width > 0, exportSize.height > 0 else { return nil }
 
         let sourceImageSize = CanvasImageLoader.pixelSize(for: image)
-        let renderImage = CanvasStyledPhotoRenderer.renderSync(
+        let renderImage = styledBaseImage ?? CanvasStyledPhotoRenderer.renderSync(
             image: image,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             sourceKey: "export-base",
@@ -37,7 +39,7 @@ nonisolated enum CanvasRasterExporter {
             asciiArtMask: asciiArtMask,
             photoCompression: photoCompression
         )
-        let renderPhotoFrameImage = photoFrameImage.map {
+        let renderPhotoFrameImage = styledLiveFrameImage ?? photoFrameImage.map {
             CanvasStyledPhotoRenderer.renderSync(
                 image: $0,
                 y2kCCDFilterSettings: y2kCCDFilterSettings,

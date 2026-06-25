@@ -63,20 +63,20 @@ nonisolated struct Y2KCCDFilterSettings: Codable, Equatable, Hashable, Sendable 
         enabled: false,
         preset: .classic,
         intensity: 1,
-        downsample: 0.2,
+        downsample: 0.32,
         bloom: 0.6,
         bloomThreshold: 0.7,
-        noise: 0.2,
-        chromaNoise: 0.1,
-        jpegArtifacts: 0.2,
-        sharpen: 0.7,
-        exposure: 0.18,
-        temperature: -0.65,
-        tint: -0.2,
-        contrast: 0.15,
-        saturation: 1.0,
-        highlightClip: 0.8,
-        rgbShift: 0.15
+        noise: 0.38,
+        chromaNoise: 0.18,
+        jpegArtifacts: 0.36,
+        sharpen: 0.72,
+        exposure: 0.14,
+        temperature: -0.2,
+        tint: 0,
+        contrast: 0.12,
+        saturation: 0.96,
+        highlightClip: 0.72,
+        rgbShift: 0.28
     )
 
     nonisolated init(
@@ -250,55 +250,58 @@ nonisolated struct Y2KCCDFilterSettings: Codable, Equatable, Hashable, Sendable 
     private nonisolated static func parameters(for preset: Y2KCCDPreset) -> Y2KCCDResolvedParameters {
         switch preset {
         case .classic:
+            // 经典：清透 lofi，画质有 CCD 颗粒/JPEG 块感，但白平衡基本端正、只带极轻冷调
             Y2KCCDResolvedParameters(
-                downsample: 0.2,
+                downsample: 0.32,
                 bloom: 0.6,
                 bloomThreshold: 0.7,
-                noise: 0.2,
-                chromaNoise: 0.1,
-                jpegArtifacts: 0.2,
-                sharpen: 0.7,
-                exposure: 0.18,
-                temperature: -0.65,
-                tint: -0.2,
-                contrast: 0.15,
-                saturation: 1.0,
-                highlightClip: 0.8,
-                rgbShift: 0.15
-            )
-        case .cool:
-            Y2KCCDResolvedParameters(
-                downsample: 0.24,
-                bloom: 0.55,
-                bloomThreshold: 0.72,
-                noise: 0.22,
-                chromaNoise: 0.12,
-                jpegArtifacts: 0.24,
+                noise: 0.38,
+                chromaNoise: 0.18,
+                jpegArtifacts: 0.36,
                 sharpen: 0.72,
                 exposure: 0.14,
-                temperature: -0.8,
-                tint: -0.26,
-                contrast: 0.18,
-                saturation: 0.92,
-                highlightClip: 0.78,
-                rgbShift: 0.18
+                temperature: -0.2,
+                tint: 0,
+                contrast: 0.12,
+                saturation: 0.96,
+                highlightClip: 0.72,
+                rgbShift: 0.28
+            )
+        case .cool:
+            // 冷色调：保留 lofi 画质，色彩端正，只比经典再多一点点冷感
+            Y2KCCDResolvedParameters(
+                downsample: 0.38,
+                bloom: 0.55,
+                bloomThreshold: 0.72,
+                noise: 0.44,
+                chromaNoise: 0.22,
+                jpegArtifacts: 0.42,
+                sharpen: 0.78,
+                exposure: 0.08,
+                temperature: -0.4,
+                tint: 0,
+                contrast: 0.14,
+                saturation: 0.93,
+                highlightClip: 0.68,
+                rgbShift: 0.35
             )
         case .warm:
+            // 暖色调：保留 lofi 画质，色彩端正，只带轻微暖意
             Y2KCCDResolvedParameters(
-                downsample: 0.18,
+                downsample: 0.26,
                 bloom: 0.66,
                 bloomThreshold: 0.68,
-                noise: 0.18,
-                chromaNoise: 0.09,
-                jpegArtifacts: 0.18,
-                sharpen: 0.64,
-                exposure: 0.22,
-                temperature: 0.34,
-                tint: 0.12,
-                contrast: 0.12,
-                saturation: 1.12,
-                highlightClip: 0.82,
-                rgbShift: 0.12
+                noise: 0.32,
+                chromaNoise: 0.14,
+                jpegArtifacts: 0.30,
+                sharpen: 0.65,
+                exposure: 0.28,
+                temperature: 0.3,
+                tint: 0.04,
+                contrast: 0.1,
+                saturation: 1.0,
+                highlightClip: 0.62,
+                rgbShift: 0.20
             )
         }
     }
@@ -395,8 +398,11 @@ nonisolated enum Y2KCCDFilterRenderer {
         }
 
         let tonedImage = applyLofiTone(to: lowImage, parameters: parameters) ?? lowImage
-        let filteredImage = applyJPEGArtifacts(to: tonedImage, strength: parameters.jpegArtifacts)
-            ?? tonedImage
+        let sharpenedImage = applySharpen(to: tonedImage, strength: parameters.sharpen) ?? tonedImage
+        let noisyImage = applyNoise(to: sharpenedImage, noise: parameters.noise) ?? sharpenedImage
+        let shiftedImage = applyRGBShift(to: noisyImage, strength: parameters.rgbShift) ?? noisyImage
+        let filteredImage = applyJPEGArtifacts(to: shiftedImage, strength: parameters.jpegArtifacts)
+            ?? shiftedImage
 
         cache?.setImage(filteredImage, for: cacheKey)
         return filteredImage
@@ -454,23 +460,166 @@ nonisolated enum Y2KCCDFilterRenderer {
     ) -> UIImage? {
         guard let sourceCGImage = image.cgImage else { return image }
         let source = CIImage(cgImage: sourceCGImage)
-        let temperature = Y2KCCDFilterSettings.signedUnit(parameters.temperature)
-        let tint = Y2KCCDFilterSettings.signedUnit(parameters.tint)
-        let contrast = Y2KCCDFilterSettings.signedUnit(parameters.contrast)
         let exposure = Y2KCCDFilterSettings.signedUnit(parameters.exposure)
-        let saturation = min(1.8, max(0.2, parameters.saturation.isFinite ? parameters.saturation : 1))
-        let colorControls = source.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: saturation,
-            kCIInputBrightnessKey: exposure * 0.24,
-            kCIInputContrastKey: 1 + contrast * 0.55
+
+        // 不做任何白平衡 / 色调 / 饱和度 / 对比度处理，保持色彩完全端正；
+        // 仅做极轻微提亮，营造清透感（亮度操作不引入偏色）。
+        let tone: CIImage
+        if abs(exposure) > 0.001 {
+            tone = source.applyingFilter("CIColorControls", parameters: [
+                kCIInputBrightnessKey: exposure * 0.18
+            ])
+        } else {
+            tone = source
+        }
+
+        // 高光裁切：CCD 高光溢出，亮度超过阈值后压成纯白（线性渐变到白）
+        let highlightClip = Y2KCCDFilterSettings.unit(parameters.highlightClip)
+        let clipped: CIImage
+        if highlightClip < 0.99 {
+            // 阈值以上的像素线性推向白色，模拟 CCD 高光溢出
+            let threshold = Float(0.72 + highlightClip * 0.22)  // 0.72–0.94 范围
+            let clippedFilter = CIFilter(name: "CIToneCurve")
+            let p0 = CIVector(x: 0, y: 0)
+            let p1 = CIVector(x: CGFloat(threshold * 0.6), y: CGFloat(threshold * 0.6))
+            let p2 = CIVector(x: CGFloat(threshold), y: CGFloat(threshold))
+            let p3 = CIVector(x: CGFloat(min(1.0, threshold + 0.08)), y: 1.0)
+            let p4 = CIVector(x: 1.0, y: 1.0)
+            clippedFilter?.setValue(tone, forKey: kCIInputImageKey)
+            clippedFilter?.setValue(p0, forKey: "inputPoint0")
+            clippedFilter?.setValue(p1, forKey: "inputPoint1")
+            clippedFilter?.setValue(p2, forKey: "inputPoint2")
+            clippedFilter?.setValue(p3, forKey: "inputPoint3")
+            clippedFilter?.setValue(p4, forKey: "inputPoint4")
+            clipped = clippedFilter?.outputImage ?? tone
+        } else {
+            clipped = tone
+        }
+
+        guard let cgImage = ciContextBox.context.createCGImage(clipped, from: source.extent) else {
+            return image
+        }
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+    }
+
+    /// 反锐化蒙版：模拟 CCD 机内处理的过度锐化边缘感。
+    private nonisolated static func applySharpen(
+        to image: UIImage,
+        strength: Double
+    ) -> UIImage? {
+        let normalized = Y2KCCDFilterSettings.unit(strength)
+        guard normalized > 0.01, let sourceCGImage = image.cgImage else { return image }
+        let source = CIImage(cgImage: sourceCGImage)
+        // CIUnsharpMask: radius 控制边缘范围，intensity 控制锐化强度
+        // 注意：CIUnsharpMask 只支持 inputRadius / inputIntensity，
+        // 传入其它 key（如 inputThreshold）会触发 setValue:forUndefinedKey: 崩溃。
+        let sharpened = source.applyingFilter("CIUnsharpMask", parameters: [
+            kCIInputRadiusKey: Float(normalized * 2.2),
+            kCIInputIntensityKey: Float(normalized * 0.9)
         ])
-        let tone = colorControls.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 1 + temperature * 0.08 + max(tint, 0) * 0.04, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 1 - tint * 0.06, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 1 - temperature * 0.08 + max(-tint, 0) * 0.04, w: 0)
+        guard let cgImage = ciContextBox.context.createCGImage(sharpened, from: source.extent) else {
+            return image
+        }
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+    }
+
+    /// CCD 传感器噪点：仅中性灰亮度颗粒，不含色度噪点（避免引入彩色色块）。
+    /// 全程 Core Image GPU 管线，不阻塞主线程。
+    private nonisolated static func applyNoise(
+        to image: UIImage,
+        noise: Double
+    ) -> UIImage? {
+        let normalizedNoise = Y2KCCDFilterSettings.unit(noise)
+        guard normalizedNoise > 0.005 else { return image }
+        guard let sourceCGImage = image.cgImage else { return image }
+
+        let source = CIImage(cgImage: sourceCGImage)
+        let extent = source.extent
+
+        // CIRandomGenerator 生成 [0,1] 随机纹理，裁剪到图像尺寸
+        guard let randomFilter = CIFilter(name: "CIRandomGenerator") else { return image }
+        let randomFull = randomFilter.outputImage!
+            .cropped(to: extent)
+
+        // --- 亮度噪点：中性灰颗粒 ---
+        // 三个通道都取随机图的同一通道（R），保证是中性灰噪点而非彩色雪花。
+        // 将随机值映射到 [-noiseAmp, +noiseAmp] 范围，再叠加到原图。
+        let lumaScale = Float(normalizedNoise * 0.15)  // 最大约 ±0.15 亮度
+        let lumaNoise = randomFull.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: CGFloat(lumaScale), y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: CGFloat(lumaScale), y: 0, z: 0, w: 0),
+            "inputBVector": CIVector(x: CGFloat(lumaScale), y: 0, z: 0, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBiasVector": CIVector(x: CGFloat(-lumaScale / 2),
+                                        y: CGFloat(-lumaScale / 2),
+                                        z: CGFloat(-lumaScale / 2),
+                                        w: 0)
         ])
 
-        guard let cgImage = ciContextBox.context.createCGImage(tone, from: source.extent) else {
+        // 只叠加中性灰亮度噪点到原图（AdditionCompositing = 线性加法）。
+        let withLuma = lumaNoise
+            .applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: source])
+            .cropped(to: extent)
+
+        guard let cgImage = ciContextBox.context.createCGImage(withLuma, from: extent) else {
+            return image
+        }
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+    }
+
+    /// RGB 色差偏移：R 通道右移、B 通道左移，模拟廉价镜头色差。
+    /// 使用 Core Image 分通道平移后合并，避免创建两个完整像素缓冲区。
+    private nonisolated static func applyRGBShift(
+        to image: UIImage,
+        strength: Double
+    ) -> UIImage? {
+        let normalized = Y2KCCDFilterSettings.unit(strength)
+        guard normalized > 0.005, let sourceCGImage = image.cgImage else { return image }
+
+        let ciSource = CIImage(cgImage: sourceCGImage)
+        let extent = ciSource.extent
+        guard extent.width > 0, extent.height > 0 else { return image }
+
+        // 偏移量（点数）：最大约宽度的 0.6%
+        let shiftPx = CGFloat(extent.width * CGFloat(normalized) * 0.006).rounded()
+        guard shiftPx >= 0.5 else { return image }
+
+        let edgeExtendedSource = ciSource.clampedToExtent()
+
+        // 提取 R 通道（仅保留 R，G/B 清零）并向右平移。
+        // 先扩展边缘再裁回原尺寸，避免平移后边缘丢失红/蓝通道，导致整体偏绿。
+        let rOnly = edgeExtendedSource.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+        ]).transformed(by: CGAffineTransform(translationX: shiftPx, y: 0))
+            .cropped(to: extent)
+
+        // 提取 B 通道并向左平移。alpha 必须保留；否则预乘 alpha 合成会把蓝色当透明吃掉。
+        let bOnly = edgeExtendedSource.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+        ]).transformed(by: CGAffineTransform(translationX: -shiftPx, y: 0))
+            .cropped(to: extent)
+
+        // G 通道保持原位
+        let gOnly = ciSource.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+        ])
+
+        // 用加法合并三通道（AdditionCompositing）
+        let combined = rOnly
+            .applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: gOnly])
+            .applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: bOnly])
+            .cropped(to: extent)
+
+        guard let cgImage = ciContextBox.context.createCGImage(combined, from: extent) else {
             return image
         }
         return UIImage(cgImage: cgImage, scale: 1, orientation: .up)

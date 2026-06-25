@@ -151,6 +151,21 @@ nonisolated struct ASCIIArtSettings: Codable, Equatable, Hashable, Sendable {
         let h = max(1, Int(pixelSize.height.rounded()))
         return "\(sourceKey)|\(w)x\(h)|\(maskKey)|\(cacheKey)"
     }
+
+    nonisolated func renderCacheKey(
+        sourceKey: String,
+        pixelSize: CGSize,
+        sourcePixelSize: CGSize,
+        maskKey: String
+    ) -> String {
+        let sourceW = max(1, Int(sourcePixelSize.width.rounded()))
+        let sourceH = max(1, Int(sourcePixelSize.height.rounded()))
+        return renderCacheKey(
+            sourceKey: "\(sourceKey)|source:\(sourceW)x\(sourceH)",
+            pixelSize: pixelSize,
+            maskKey: maskKey
+        )
+    }
 }
 
 // MARK: - Cache
@@ -227,7 +242,7 @@ nonisolated final class ASCIIArtCache {
 // MARK: - Preview Policy
 
 nonisolated enum ASCIIArtPreviewRenderPolicy {
-    nonisolated static let maxLongEdge: CGFloat = 720
+    nonisolated static let maxLongEdge: CGFloat = 1440
     nonisolated static let refreshDebounce: Duration = .milliseconds(150)
 
     nonisolated static func pixelSize(for sourcePixelSize: CGSize) -> CGSize {
@@ -327,19 +342,28 @@ nonisolated enum ASCIIArtRenderer {
         image: UIImage,
         settings: ASCIIArtSettings,
         targetPixelSize: CGSize? = nil,
+        sourcePixelSize: CGSize? = nil,
         sourceKey: String = "source",
+        maskSourceKey: String? = nil,
         cache: ASCIIArtCache? = nil
     ) async -> UIImage? {
         guard settings.enabled else { return nil }
 
         let inputSize = CanvasImageLoader.pixelSize(for: image)
+        let sourcePixelSize = sourcePixelSize ?? inputSize
         let pixelSize = targetPixelSize ?? inputSize
         let width = max(1, Int(pixelSize.width.rounded()))
         let height = max(1, Int(pixelSize.height.rounded()))
         let renderSize = CGSize(width: width, height: height)
         let sourceKey = sourceKey == "source" ? Self.sourceKey(for: image) : sourceKey
-        let maskKey = "\(sourceKey)-mask"
-        let cacheKey = settings.renderCacheKey(sourceKey: sourceKey, pixelSize: renderSize, maskKey: maskKey)
+        let maskSourceKey = maskSourceKey ?? sourceKey
+        let maskKey = "\(maskSourceKey)-mask"
+        let cacheKey = settings.renderCacheKey(
+            sourceKey: sourceKey,
+            pixelSize: renderSize,
+            sourcePixelSize: sourcePixelSize,
+            maskKey: maskKey
+        )
 
         if let cached = cache?.image(for: cacheKey) { return cached }
 
@@ -357,7 +381,9 @@ nonisolated enum ASCIIArtRenderer {
                     mask: nil,
                     settings: settings,
                     targetPixelSize: targetPixelSize,
+                    sourcePixelSize: sourcePixelSize,
                     sourceKey: sourceKey,
+                    maskSourceKey: maskSourceKey,
                     cache: cache
                 )
             }
@@ -368,7 +394,9 @@ nonisolated enum ASCIIArtRenderer {
             mask: mask,
             settings: settings,
             targetPixelSize: targetPixelSize,
+            sourcePixelSize: sourcePixelSize,
             sourceKey: sourceKey,
+            maskSourceKey: maskSourceKey,
             cache: cache
         )
     }
@@ -379,19 +407,28 @@ nonisolated enum ASCIIArtRenderer {
         mask: SubjectMask?,
         settings: ASCIIArtSettings,
         targetPixelSize: CGSize? = nil,
+        sourcePixelSize: CGSize? = nil,
         sourceKey: String = "source",
+        maskSourceKey: String? = nil,
         cache: ASCIIArtCache? = nil
     ) -> UIImage? {
         guard settings.enabled else { return nil }
 
         let inputSize = CanvasImageLoader.pixelSize(for: image)
+        let sourcePixelSize = sourcePixelSize ?? inputSize
         let pixelSize = targetPixelSize ?? inputSize
         let width = max(1, Int(pixelSize.width.rounded()))
         let height = max(1, Int(pixelSize.height.rounded()))
         let renderSize = CGSize(width: width, height: height)
         let sourceKey = sourceKey == "source" ? Self.sourceKey(for: image) : sourceKey
-        let maskKey = "\(sourceKey)-mask"
-        let cacheKey = settings.renderCacheKey(sourceKey: sourceKey, pixelSize: renderSize, maskKey: maskKey)
+        let maskSourceKey = maskSourceKey ?? sourceKey
+        let maskKey = "\(maskSourceKey)-mask"
+        let cacheKey = settings.renderCacheKey(
+            sourceKey: sourceKey,
+            pixelSize: renderSize,
+            sourcePixelSize: sourcePixelSize,
+            maskKey: maskKey
+        )
 
         if let cached = cache?.image(for: cacheKey) { return cached }
 
@@ -400,7 +437,7 @@ nonisolated enum ASCIIArtRenderer {
             mask: mask,
             settings: settings,
             renderSize: renderSize,
-            sourcePixelSize: inputSize
+            sourcePixelSize: sourcePixelSize
         ) else { return nil }
 
         if let mask {

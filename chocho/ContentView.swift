@@ -36,7 +36,6 @@ struct ContentView: View {
     @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
     @State private var selectedDotColor: Color = .clear
     @State private var usesRandomDotColors = false
-    @State private var randomDrawClickCount = 0
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var selectedDotShapeCategory: DotShapeCategory = .basic
     @State private var dotCharacterText = CharacterDotText.defaultText
@@ -92,6 +91,7 @@ struct ContentView: View {
     @State private var hasAttemptedDraftRestore = ContentViewPreviewBootstrap.isEnabled
     @State private var pendingDraftSave: Task<Void, Never>?
     @State private var pendingTraceDotSyncTask: Task<Void, Never>?
+    @State private var needsTraceDotSync = false
 
     private static let traceDotSyncDebounceInterval: Duration = .milliseconds(300)
 
@@ -215,6 +215,9 @@ struct ContentView: View {
                         selectedDotID = nil
                     }
                 }
+                if isEnabled, isTraceDotSyncActive, !activeTracePoints.isEmpty {
+                    scheduleTraceDotPreviewSync()
+                }
                 scheduleCanvasDraftSave()
             }
             .onChange(of: isTraceVisible) { _, _ in
@@ -299,6 +302,7 @@ struct ContentView: View {
                 selectedDotShapeCategory: $selectedDotShapeCategory,
                 dotCharacterText: $dotCharacterText,
                 isTraceVisible: $isTraceVisible,
+                isTraceDrawingEnabled: $isTraceDrawingEnabled,
                 isSubjectOutlineEnabled: $isSubjectOutlineEnabled,
                 photoCompression: $photoCompression,
                 y2kCCDFilterSettings: $y2kCCDFilterSettings,
@@ -319,12 +323,12 @@ struct ContentView: View {
                 extensionSide: $extensionSide,
                 backgroundStyle: $backgroundStyle,
                 backgroundColors: $backgroundColors,
-                backgroundPatternSpacing: $backgroundPatternSpacing
+                backgroundPatternSpacing: $backgroundPatternSpacing,
+                previewImage: filteredCanvasPreviewImage ?? canvasImage
             ),
             bottomSafeAreaInset: proxy.safeAreaInsets.bottom,
             isPanelEnabled: canvasImage != nil,
             canClearTrace: hasClearableTrace,
-            onDrawDots: drawPuzzleDots,
             onToggleSubjectOutline: toggleSubjectOutline,
             onClearTrace: clearTracePoints,
             onBeginTraceFeature: beginTraceFeatureSession,
@@ -333,12 +337,15 @@ struct ContentView: View {
             onBeginPhotoCompressionFeature: beginPhotoCompressionFeatureSession,
             onConfirmPhotoCompressionFeature: confirmPhotoCompressionFeatureSession,
             onCancelPhotoCompressionFeature: cancelPhotoCompressionFeatureSession,
+            onRemovePhotoCompressionFeature: removePhotoCompressionFeature,
             onBeginY2KCCDFilterFeature: beginY2KCCDFilterFeatureSession,
             onConfirmY2KCCDFilterFeature: confirmY2KCCDFilterFeatureSession,
             onCancelY2KCCDFilterFeature: cancelY2KCCDFilterFeatureSession,
+            onRemoveY2KCCDFilterFeature: removeY2KCCDFilterFeature,
             onBeginASCIIArtFeature: beginASCIIArtFeatureSession,
             onConfirmASCIIArtFeature: confirmASCIIArtFeatureSession,
-            onCancelASCIIArtFeature: cancelASCIIArtFeatureSession
+            onCancelASCIIArtFeature: cancelASCIIArtFeatureSession,
+            onRemoveASCIIArtFeature: removeASCIIArtFeature
         )
         .id(panelResetID)
         // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
@@ -392,6 +399,7 @@ struct ContentView: View {
                     subjectOutlinePoints: subjectOutlinePoints,
                     isTraceDrawingEnabled: isTraceDrawingEnabled,
                     isTraceVisible: isTraceVisible,
+                    isTraceFeatureSessionActive: traceFeatureSessionSnapshot != nil,
                     isSubjectOutlineEnabled: isSubjectOutlineEnabled,
                     liveDotAnimation: liveDotAnimation,
                     livePreviewPlaybackStart: livePreviewPlaybackStart,
@@ -505,8 +513,13 @@ struct ContentView: View {
 
     private func styledPreviewPixelSize(for image: UIImage) -> CGSize {
         let pixelSize = CanvasImageLoader.pixelSize(for: image)
-        let ccdSize = Y2KCCDPreviewRenderPolicy.pixelSize(for: pixelSize)
-        return ASCIIArtPreviewRenderPolicy.pixelSize(for: ccdSize)
+        if asciiArtSettings.enabled {
+            return ASCIIArtPreviewRenderPolicy.pixelSize(for: pixelSize)
+        }
+        if y2kCCDFilterSettings.enabled {
+            return Y2KCCDPreviewRenderPolicy.pixelSize(for: pixelSize)
+        }
+        return pixelSize
     }
 
     private var topActionBarHeight: CGFloat {
@@ -670,6 +683,7 @@ struct ContentView: View {
     private func applyPhotoUploadDefaults() {
         pendingTraceDotSyncTask?.cancel()
         pendingTraceDotSyncTask = nil
+        needsTraceDotSync = false
         stopLivePreviewPlayback()
 
         traceFeatureSessionSnapshot = nil
@@ -762,7 +776,6 @@ struct ContentView: View {
         disableSubjectOutline()
         canvasHistory.reset(to: [])
         puzzleDots = []
-        randomDrawClickCount = 0
         usesRandomDotColors = false
 
         await Task.yield()
@@ -779,6 +792,10 @@ struct ContentView: View {
             subjectOutline: isSubjectOutlineEnabled ? subjectOutlinePoints : [],
             manualTrace: tracePoints
         )
+    }
+
+    private var isTraceDotSyncActive: Bool {
+        traceFeatureSessionSnapshot != nil || isTraceDrawingEnabled
     }
 
     private func combinedTracePoints(
@@ -800,43 +817,6 @@ struct ContentView: View {
         return subjectOutline + manualWithSeparatedStroke
     }
 
-    /// 「抽卡」：沿轨迹或随机布局生成波点，并记入撤销栈。每点满 3 次「随机一下」生成一次随机色彩波点。
-    @MainActor
-    private func drawPuzzleDots() {
-        guard canvasImage != nil else {
-            showToast("请先上传图片")
-            return
-        }
-
-        randomDrawClickCount += 1
-        usesRandomDotColors = randomDrawClickCount.isMultiple(of: 3)
-
-        invalidateSubjectOutlineDetection()
-
-        if isTraceDrawingEnabled {
-            guard !activeTracePoints.isEmpty else {
-                showToast("先画一条轨迹")
-                return
-            }
-
-            guard let newDots = puzzleDotsAlongCurrentTrace(), !newDots.isEmpty else {
-                showToast("右侧背景太窄")
-                return
-            }
-
-            applyPuzzleDots(newDots)
-            dismissToast()
-            return
-        }
-
-        let fallbackDots = PuzzleDotFactory.makeDots(
-            count: Int(dotCount.rounded()),
-            shapeAssetName: selectedDotShape.name
-        )
-        applyPuzzleDots(fallbackDots)
-        dismissToast()
-    }
-
     @MainActor
     private func toggleSubjectOutline() {
         guard canvasImage != nil else {
@@ -847,7 +827,7 @@ struct ContentView: View {
         if isSubjectOutlineEnabled {
             invalidateSubjectOutlineDetection()
             disableSubjectOutline()
-            if isTraceDrawingEnabled {
+            if isTraceDotSyncActive {
                 scheduleTraceDotPreviewSync()
             }
             return
@@ -881,7 +861,7 @@ struct ContentView: View {
                     subjectOutlinePoints = outlinePoints
                     isDetectingSubjectOutline = false
                     dismissToast()
-                    if isTraceDrawingEnabled {
+                    if isTraceDotSyncActive {
                         scheduleTraceDotPreviewSync()
                     }
                 }
@@ -924,7 +904,10 @@ struct ContentView: View {
         invalidateSubjectOutlineDetection()
 
         let syncedDots: [PuzzleDot]
-        if isTraceDrawingEnabled, !activeTracePoints.isEmpty {
+        if isTraceDotSyncActive, !activeTracePoints.isEmpty {
+            pendingTraceDotSyncTask?.cancel()
+            pendingTraceDotSyncTask = nil
+            needsTraceDotSync = false
             syncedDots = puzzleDotsAlongCurrentTrace(count: count) ?? []
         } else {
             syncedDots = PuzzleDotFactory.adjusting(
@@ -984,18 +967,21 @@ struct ContentView: View {
     @MainActor
     private func scheduleTraceDotPreviewSync() {
         pendingTraceDotSyncTask?.cancel()
+        needsTraceDotSync = true
         pendingTraceDotSyncTask = Task {
             try? await Task.sleep(for: Self.traceDotSyncDebounceInterval)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 previewPuzzleDotsFromCurrentTrace()
+                pendingTraceDotSyncTask = nil
+                needsTraceDotSync = false
             }
         }
     }
 
     @MainActor
     private func previewPuzzleDotsFromCurrentTrace() {
-        guard canvasImage != nil, isTraceDrawingEnabled else { return }
+        guard canvasImage != nil, isTraceDotSyncActive else { return }
         guard let syncedDots = puzzleDotsAlongCurrentTrace() else { return }
 
         puzzleDots = syncedDots
@@ -1010,10 +996,18 @@ struct ContentView: View {
         pendingTraceDotSyncTask?.cancel()
         pendingTraceDotSyncTask = nil
 
-        guard canvasImage != nil, isTraceDrawingEnabled, !activeTracePoints.isEmpty else { return }
-        guard let syncedDots = puzzleDotsAlongCurrentTrace() else { return }
+        guard canvasImage != nil, !activeTracePoints.isEmpty else {
+            needsTraceDotSync = false
+            return
+        }
 
-        applyPuzzleDots(syncedDots)
+        if needsTraceDotSync {
+            needsTraceDotSync = false
+            guard let syncedDots = puzzleDotsAlongCurrentTrace() else { return }
+            applyPuzzleDots(syncedDots)
+        } else {
+            applyPuzzleDots(puzzleDots)
+        }
     }
 
     @MainActor
@@ -1146,7 +1140,10 @@ struct ContentView: View {
         }
 
         isTraceVisible = true
-        isTraceDrawingEnabled = true
+
+        if !activeTracePoints.isEmpty {
+            scheduleTraceDotPreviewSync()
+        }
     }
 
     @MainActor
@@ -1164,6 +1161,7 @@ struct ContentView: View {
 
         pendingTraceDotSyncTask?.cancel()
         pendingTraceDotSyncTask = nil
+        needsTraceDotSync = false
         invalidateSubjectOutlineDetection()
 
         var transaction = Transaction()
@@ -1199,6 +1197,13 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func removePhotoCompressionFeature() {
+        photoCompression = .none
+        photoCompressionSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
     private func cancelPhotoCompressionFeatureSession() {
         guard let snapshot = photoCompressionSessionSnapshot else { return }
 
@@ -1221,6 +1226,13 @@ struct ContentView: View {
 
     @MainActor
     private func confirmY2KCCDFilterFeatureSession() {
+        y2kCCDFilterSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func removeY2KCCDFilterFeature() {
+        y2kCCDFilterSettings = .default
         y2kCCDFilterSessionSnapshot = nil
         scheduleCanvasDraftSave()
     }
@@ -1253,6 +1265,13 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func removeASCIIArtFeature() {
+        asciiArtSettings = .default
+        asciiArtSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
     private func cancelASCIIArtFeatureSession() {
         guard let snapshot = asciiArtSessionSnapshot else { return }
 
@@ -1272,6 +1291,7 @@ struct ContentView: View {
 
         pendingTraceDotSyncTask?.cancel()
         pendingTraceDotSyncTask = nil
+        needsTraceDotSync = false
         invalidateSubjectOutlineDetection()
         tracePoints = []
         disableSubjectOutline()

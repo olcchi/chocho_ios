@@ -70,7 +70,7 @@ Xcode Canvas normally shows previews from the current file. To inspect the whole
 - add `#Preview("App") { ContentView() }` in the current component file, or
 - pin the root preview in Xcode Canvas.
 
-Use Simulator runs for final checks involving animation, safe areas, gestures, keyboard behavior, and device-specific layout. Preview is a fast layout tool, not the final authority.
+Use Simulator runs for final checks involving animation, safe areas, gestures, keyboard behavior, and device-specific layout only when the user explicitly asks for a Simulator run. Preview is a fast layout tool, not the final authority.
 
 ## Build Commands
 
@@ -89,9 +89,17 @@ Use project-local derived data under `.build/DerivedData` so build output stays 
 
 If `xcodebuild` reports that the active developer directory is `/Library/Developer/CommandLineTools`, rerun with the `DEVELOPER_DIR` prefix above.
 
+## Build And Visual Verification Boundaries
+
+After modifying code, agents may run the project build command above to verify compilation.
+
+Do not build and run the app on a Simulator as part of the default verification flow. Do not boot, start, or change a Simulator for visual inspection unless the user explicitly asks for that action.
+
+When a change needs visual acceptance, stop after implementation and available non-Simulator verification, summarize what changed, explain what was and was not verified, and hand the result to the user for acceptance.
+
 ## Debugging With Build iOS Apps
 
-When asked to run, inspect, or debug the app on a simulator, prefer the Build iOS Apps debugger workflow:
+When explicitly asked to run, inspect, or debug the app on a simulator, prefer the Build iOS Apps debugger workflow:
 
 1. Discover the booted simulator.
 2. Set session defaults with:
@@ -99,7 +107,7 @@ When asked to run, inspect, or debug the app on a simulator, prefer the Build iO
    - scheme: `chocho`
    - configuration: `Debug`
    - latest available iOS runtime
-3. Build and run the app.
+3. Build and run the app only for that explicit simulator request.
 4. Verify launch with a UI description or screenshot before interacting.
 5. Use UI description before taps, typing, or gestures.
 6. Capture logs when diagnosing runtime behavior.
@@ -115,7 +123,7 @@ When something breaks, use this order:
 3. Check state ownership: `@State`, `@Binding`, environment, initializer inputs.
 4. Check whether the issue only happens in Preview or also in Simulator.
 5. Build with `xcodebuild` to separate Canvas problems from compiler problems.
-6. If it is a runtime issue, run on Simulator and inspect UI/logs.
+6. If it is a runtime issue and the user has explicitly approved Simulator use, run on Simulator and inspect UI/logs.
 7. Fix the smallest cause and rebuild.
 
 Do not guess from screenshots alone when logs, compiler output, or UI hierarchy are available.
@@ -205,7 +213,7 @@ Preview can use SwiftUI `.opacity()`. Export uses `CanvasRasterExporter` and Cor
 4. If motion should export as Live Photo, no change needed if `exportsAsLivePhoto` remains `self != .none`; otherwise override that property.
 5. Wire nothing extra in `LivePanelControls` — `PanelValueMenu(..., options: LiveDotAnimation.allCases, ...)` picks up new cases automatically.
 6. Add tests: export format selection in `CanvasExportWriterTests`; optional raster regression in `CanvasRasterExporterTests` if opacity/geometry is easy to assert.
-7. Verify in Simulator: preview, then 实况 → download → save Live Photo → long-press in Photos (photo area and extension dots both move if applicable).
+7. For Simulator acceptance, hand off to the user with a summary unless the user explicitly asks the agent to run it: preview, then 实况 → download → save Live Photo → long-press in Photos (photo area and extension dots both move if applicable).
 
 ### File map
 
@@ -234,4 +242,3 @@ Before saying a change is complete:
 - For Swift source changes, run the project build command above.
 - For documentation-only changes, verify the file exists and read the changed content.
 - Report any command that could not run and why.
-

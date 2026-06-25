@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct BottomSheetDotControls {
     var dotCount: Binding<Double>
@@ -8,6 +9,7 @@ struct BottomSheetDotControls {
     var selectedDotShapeCategory: Binding<DotShapeCategory>
     var dotCharacterText: Binding<String>
     var isTraceVisible: Binding<Bool>
+    var isTraceDrawingEnabled: Binding<Bool>
     var isSubjectOutlineEnabled: Binding<Bool>
     var photoCompression: Binding<MainPhotoCompression>
     var y2kCCDFilterSettings: Binding<Y2KCCDFilterSettings>
@@ -31,4 +33,5 @@ struct BottomSheetBackgroundControls {
     var backgroundStyle: Binding<PuzzleBackgroundStyle>
     var backgroundColors: Binding<PuzzleBackgroundColors>
     var backgroundPatternSpacing: Binding<Double>
+    var previewImage: UIImage?
 }

@@ -1,7 +1,11 @@
 import SwiftUI
 
 private enum AboutViewStyle {
-    static let sectionBodyFont = Font.system(size: 12, weight: .medium)
+    static let sectionLabelFont = Font.system(size: 11, weight: .semibold)
+    static let rowTitleFont = Font.system(size: 14, weight: .medium)
+    static let rowDetailFont = Font.system(size: 13, weight: .regular)
+    static let cardCornerRadius: CGFloat = 14
+    static let horizontalPadding: CGFloat = RecentPhotoPickerLayout.horizontalInset
 }
 
 struct AboutView: View {
@@ -10,17 +14,22 @@ struct AboutView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                appInfoSection
-                aboutSeparator
-                developerSection
-                aboutSeparator
-                contactSection
-                aboutSeparator
-                legalSection
+            VStack(alignment: .leading, spacing: 28) {
+                appHeroSection
+                    .padding(.top, 8)
+
+                developerCard
+
+                aboutGroupSection(title: "联系方式") {
+                    contactCard
+                }
+
+                aboutGroupSection(title: "法律信息") {
+                    legalCard
+                }
             }
-            .padding(.horizontal, RecentPhotoPickerLayout.horizontalInset)
-            .padding(.bottom, 32)
+            .padding(.horizontal, AboutViewStyle.horizontalPadding)
+            .padding(.bottom, 48)
         }
         .background(Color.background)
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -29,6 +38,8 @@ struct AboutView: View {
         .navigationBarHidden(true)
         .environment(\.colorScheme, .light)
     }
+
+    // MARK: - Top Bar
 
     private var aboutTopBar: some View {
         ZStack {
@@ -51,7 +62,7 @@ struct AboutView: View {
                 Spacer()
             }
         }
-        .padding(.horizontal, RecentPhotoPickerLayout.horizontalInset)
+        .padding(.horizontal, AboutViewStyle.horizontalPadding)
         .frame(height: 54)
         .frame(maxWidth: .infinity)
         .background {
@@ -60,152 +71,235 @@ struct AboutView: View {
         }
     }
 
-    private var appInfoSection: some View {
-        VStack(spacing: 6) {
-            Image("SplashAppIcon")
-                .resizable()
-                .interpolation(.none)
-                .scaledToFit()
-                .frame(width: 72, height: 72)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .accessibilityHidden(true)
-                .padding(.bottom, 4)
+    // MARK: - Hero Section
 
-            Text("用 chocho 给照片加点古早味 (o^^o)")
+    private var appHeroSection: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Circle()
+                    .fill(Color.brandPrimary.opacity(0.18))
+                    .frame(width: 112, height: 112)
+                    .blur(radius: 16)
+
+                Image("SplashAppIcon")
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+                    .frame(width: 88, height: 88)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 4)
+            }
+            .accessibilityHidden(true)
+            .padding(.bottom, 16)
+
+            Text("chocho")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Color.foreground)
+                .padding(.bottom, 6)
+
+            Text("给照片加点古早味")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(Color.mutedForeground)
-                .padding(.top, 2)
+                .padding(.bottom, 14)
 
-            Text("在社交媒体带上 **#chocho需要更多波点**\n让更多人认识 chocho ♡")
-                .font(.system(size: 13, weight: .regular))
+            Text("在社交媒体带上 **#chocho需要更多波点**\n让更多人认识 chocho")
+                .font(.system(size: 13))
                 .foregroundStyle(Color.mutedForeground)
                 .multilineTextAlignment(.center)
-                .lineSpacing(3)
-                .padding(.top, 6)
+                .lineSpacing(4)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        .padding(.vertical, 32)
+        .background {
+            RoundedRectangle(cornerRadius: AboutViewStyle.cardCornerRadius, style: .continuous)
+                .fill(Color.card)
+        }
     }
 
-    private var developerSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("chocho的开发者 (^^)")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.foreground)
+    // MARK: - Developer Card
 
-                HStack(spacing: 0) {
-                    Text("小红书：")
-                        .font(AboutViewStyle.sectionBodyFont)
-                        .foregroundStyle(Color.mutedForeground)
-                    Button {
-                        openURL(AboutContent.xiaohongshuURL)
-                    } label: {
+    private var developerCard: some View {
+        Button {
+            openURL(AboutContent.xiaohongshuURL)
+        } label: {
+            HStack(spacing: 14) {
+                AboutIconBadge(systemName: "person")
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("chocho 的开发者")
+                        .font(AboutViewStyle.rowTitleFont)
+                        .foregroundStyle(Color.foreground)
+
+                    HStack(spacing: 4) {
+                        Text("小红书")
+                            .font(AboutViewStyle.rowDetailFont)
+                            .foregroundStyle(Color.mutedForeground)
+
+                        Text("·")
+                            .font(AboutViewStyle.rowDetailFont)
+                            .foregroundStyle(Color.mutedForeground)
+
                         Text(AboutContent.xiaohongshuHandle)
-                            .font(AboutViewStyle.sectionBodyFont)
+                            .font(AboutViewStyle.rowDetailFont)
                             .foregroundStyle(Color.mutedForeground)
                     }
-                    .buttonStyle(.plain)
                 }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.mutedForeground.opacity(0.6))
             }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 60)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 20)
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: AboutViewStyle.cardCornerRadius, style: .continuous)
+                .fill(Color.card)
+        }
     }
 
-    private var contactSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("联系方式")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.foreground)
+    // MARK: - Contact Card
 
-            VStack(spacing: 0) {
+    private var contactCard: some View {
+        VStack(spacing: 0) {
+            Button {
+                openURL(AboutContent.supportURL)
+            } label: {
+                AboutCardRow(
+                    icon: AboutIconBadge(systemName: "message"),
+                    title: "支持",
+                    detail: nil
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("支持")
+
+            AboutCardDivider()
+
+            Button {
+                openURL(AboutContent.contactEmailURL)
+            } label: {
+                AboutCardRow(
+                    icon: AboutIconBadge(systemName: "envelope"),
+                    title: "邮箱",
+                    detail: AboutContent.contactEmail
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("邮箱 \(AboutContent.contactEmail)")
+        }
+        .background {
+            RoundedRectangle(cornerRadius: AboutViewStyle.cardCornerRadius, style: .continuous)
+                .fill(Color.card)
+        }
+    }
+
+    // MARK: - Legal Card
+
+    private var legalCard: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(AboutLegalDocument.allCases.enumerated()), id: \.element.id) { index, document in
                 Button {
-                    openURL(AboutContent.supportURL)
+                    openURL(document.externalURL)
                 } label: {
-                    AboutLegalLinkRow(title: "支持")
+                    AboutCardRow(
+                        icon: AboutIconBadge(systemName: legalIconName(for: document)),
+                        title: document.title,
+                        detail: nil
+                    )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("支持")
 
-                aboutSeparator
-
-                Button {
-                    openURL(AboutContent.contactEmailURL)
-                } label: {
-                    HStack(spacing: 12) {
-                        Text("邮箱")
-                            .font(AboutViewStyle.sectionBodyFont)
-                            .foregroundStyle(Color.mutedForeground)
-
-                        Spacer(minLength: 0)
-
-                        Text(AboutContent.contactEmail)
-                            .font(AboutViewStyle.sectionBodyFont)
-                            .foregroundStyle(Color.mutedForeground)
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.mutedForeground)
-                    }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("邮箱 \(AboutContent.contactEmail)")
-            }
-        }
-        .padding(.top, 20)
-        .padding(.bottom, 12)
-    }
-
-    private var legalSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("法律信息")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.foreground)
-                .padding(.top, 8)
-
-            VStack(spacing: 0) {
-                ForEach(Array(AboutLegalDocument.allCases.enumerated()), id: \.element.id) { index, document in
-                    Button {
-                        openURL(document.externalURL)
-                    } label: {
-                        AboutLegalLinkRow(title: document.title)
-                    }
-                    .buttonStyle(.plain)
-
-                    if index < AboutLegalDocument.allCases.count - 1 {
-                        aboutSeparator
-                    }
+                if index < AboutLegalDocument.allCases.count - 1 {
+                    AboutCardDivider()
                 }
             }
         }
-        .padding(.vertical, 20)
+        .background {
+            RoundedRectangle(cornerRadius: AboutViewStyle.cardCornerRadius, style: .continuous)
+                .fill(Color.card)
+        }
     }
 
-    private var aboutSeparator: some View {
-        Divider()
-            .overlay(Color.border)
+    private func legalIconName(for document: AboutLegalDocument) -> String {
+        switch document {
+        case .privacyPolicy: "lock"
+        case .termsOfService: "doc.text"
+        }
+    }
+
+    // MARK: - Section Group Helper
+
+    private func aboutGroupSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(AboutViewStyle.sectionLabelFont)
+                .foregroundStyle(Color.mutedForeground)
+                .padding(.horizontal, 4)
+
+            content()
+        }
     }
 }
 
-private struct AboutLegalLinkRow: View {
-    let title: String
+// MARK: - Subviews
+
+private struct AboutIconBadge: View {
+    let systemName: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        Image(systemName: systemName)
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(Color.mutedForeground)
+            .frame(width: 32, height: 32)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct AboutCardRow<Icon: View>: View {
+    let icon: Icon
+    let title: String
+    let detail: String?
+
+    var body: some View {
+        HStack(spacing: 14) {
+            icon
+
             Text(title)
-                .font(AboutViewStyle.sectionBodyFont)
-                .foregroundStyle(Color.mutedForeground)
+                .font(AboutViewStyle.rowTitleFont)
+                .foregroundStyle(Color.foreground)
 
             Spacer(minLength: 0)
 
+            if let detail {
+                Text(detail)
+                    .font(AboutViewStyle.rowDetailFont)
+                    .foregroundStyle(Color.mutedForeground)
+                    .lineLimit(1)
+            }
+
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.mutedForeground)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.mutedForeground.opacity(0.45))
         }
-        .frame(minHeight: 44)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
         .contentShape(Rectangle())
+    }
+}
+
+private struct AboutCardDivider: View {
+    var body: some View {
+        Divider()
+            .overlay(Color.border)
+            .padding(.leading, 62)
     }
 }
 

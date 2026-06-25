@@ -13,6 +13,8 @@ nonisolated enum CanvasStyledPhotoRenderer {
         photoCompression: MainPhotoCompression = .none
     ) async -> UIImage {
         var result = image
+        let originalSourcePixelSize = CanvasImageLoader.pixelSize(for: image)
+        let asciiSourcePixelSize = photoCompression.compressedSize(for: originalSourcePixelSize)
 
         if y2kCCDFilterSettings.enabled {
             if let filtered = Y2KCCDFilterRenderer.render(
@@ -26,6 +28,10 @@ nonisolated enum CanvasStyledPhotoRenderer {
             }
         }
 
+        let asciiSourceKey = asciiSourceKey(
+            baseSourceKey: sourceKey,
+            y2kCCDFilterSettings: y2kCCDFilterSettings
+        )
         if asciiArtSettings.enabled {
             if let mask = asciiArtMask,
                let art = renderASCII(
@@ -33,16 +39,20 @@ nonisolated enum CanvasStyledPhotoRenderer {
                    mask: mask,
                    settings: asciiArtSettings,
                    targetPixelSize: targetPixelSize,
-                   sourceKey: sourceKey,
+                   sourcePixelSize: asciiSourcePixelSize,
+                   sourceKey: asciiSourceKey,
+                   maskSourceKey: sourceKey,
                    photoCompression: photoCompression,
                    cache: asciiArtCache,
-                   render: { image, mask, size, key in
+                   render: { image, mask, size, sourceSize, key, maskKey in
                        ASCIIArtRenderer.render(
                            image: image,
                            mask: mask,
                            settings: asciiArtSettings,
                            targetPixelSize: size,
+                           sourcePixelSize: sourceSize,
                            sourceKey: key,
+                           maskSourceKey: maskKey,
                            cache: asciiArtCache
                        )
                    }
@@ -53,7 +63,9 @@ nonisolated enum CanvasStyledPhotoRenderer {
                 mask: asciiArtMask,
                 settings: asciiArtSettings,
                 targetPixelSize: targetPixelSize,
-                sourceKey: sourceKey,
+                sourcePixelSize: asciiSourcePixelSize,
+                sourceKey: asciiSourceKey,
+                maskSourceKey: sourceKey,
                 photoCompression: photoCompression,
                 cache: asciiArtCache
             ) {
@@ -76,6 +88,8 @@ nonisolated enum CanvasStyledPhotoRenderer {
         photoCompression: MainPhotoCompression = .none
     ) -> UIImage {
         var result = image
+        let originalSourcePixelSize = CanvasImageLoader.pixelSize(for: image)
+        let asciiSourcePixelSize = photoCompression.compressedSize(for: originalSourcePixelSize)
 
         if y2kCCDFilterSettings.enabled {
             if let filtered = Y2KCCDFilterRenderer.render(
@@ -89,22 +103,30 @@ nonisolated enum CanvasStyledPhotoRenderer {
             }
         }
 
+        let asciiSourceKey = asciiSourceKey(
+            baseSourceKey: sourceKey,
+            y2kCCDFilterSettings: y2kCCDFilterSettings
+        )
         if asciiArtSettings.enabled,
            let art = renderASCII(
                on: result,
                mask: asciiArtMask,
                settings: asciiArtSettings,
                targetPixelSize: targetPixelSize,
-               sourceKey: sourceKey,
+               sourcePixelSize: asciiSourcePixelSize,
+               sourceKey: asciiSourceKey,
+               maskSourceKey: sourceKey,
                photoCompression: photoCompression,
                cache: asciiArtCache,
-               render: { image, mask, size, key in
+               render: { image, mask, size, sourceSize, key, maskKey in
                    ASCIIArtRenderer.render(
                        image: image,
                        mask: mask,
                        settings: asciiArtSettings,
                        targetPixelSize: size,
+                       sourcePixelSize: sourceSize,
                        sourceKey: key,
+                       maskSourceKey: maskKey,
                        cache: asciiArtCache
                    )
                }
@@ -142,10 +164,12 @@ nonisolated enum CanvasStyledPhotoRenderer {
         mask: SubjectMask?,
         settings: ASCIIArtSettings,
         targetPixelSize: CGSize?,
+        sourcePixelSize: CGSize,
         sourceKey: String,
+        maskSourceKey: String,
         photoCompression: MainPhotoCompression,
         cache: ASCIIArtCache?,
-        render: (UIImage, SubjectMask?, CGSize?, String) -> UIImage?
+        render: (UIImage, SubjectMask?, CGSize?, CGSize, String, String) -> UIImage?
     ) -> UIImage? {
         guard let prepared = asciiInput(
             for: image,
@@ -159,7 +183,9 @@ nonisolated enum CanvasStyledPhotoRenderer {
             prepared.image,
             mask,
             prepared.targetPixelSize,
-            "\(sourceKey)-ascii-\(photoCompression.rawValue)"
+            sourcePixelSize,
+            "\(sourceKey)-ascii-\(photoCompression.rawValue)",
+            "\(maskSourceKey)-ascii-\(photoCompression.rawValue)"
         )
     }
 
@@ -168,7 +194,9 @@ nonisolated enum CanvasStyledPhotoRenderer {
         mask: SubjectMask?,
         settings: ASCIIArtSettings,
         targetPixelSize: CGSize?,
+        sourcePixelSize: CGSize,
         sourceKey: String,
+        maskSourceKey: String,
         photoCompression: MainPhotoCompression,
         cache: ASCIIArtCache?
     ) async -> UIImage? {
@@ -186,7 +214,9 @@ nonisolated enum CanvasStyledPhotoRenderer {
                mask: mask,
                settings: settings,
                targetPixelSize: prepared.targetPixelSize,
+               sourcePixelSize: sourcePixelSize,
                sourceKey: "\(sourceKey)-ascii-\(photoCompression.rawValue)",
+               maskSourceKey: "\(maskSourceKey)-ascii-\(photoCompression.rawValue)",
                cache: cache
            ) {
             return art
@@ -196,9 +226,19 @@ nonisolated enum CanvasStyledPhotoRenderer {
             image: prepared.image,
             settings: settings,
             targetPixelSize: prepared.targetPixelSize,
+            sourcePixelSize: sourcePixelSize,
             sourceKey: "\(sourceKey)-ascii-\(photoCompression.rawValue)",
+            maskSourceKey: "\(maskSourceKey)-ascii-\(photoCompression.rawValue)",
             cache: cache
         )
+    }
+
+    private nonisolated static func asciiSourceKey(
+        baseSourceKey: String,
+        y2kCCDFilterSettings: Y2KCCDFilterSettings
+    ) -> String {
+        guard y2kCCDFilterSettings.enabled else { return baseSourceKey }
+        return "\(baseSourceKey)-ccd-\(y2kCCDFilterSettings.cacheKey)"
     }
 
     nonisolated static func styledPreviewEnabled(

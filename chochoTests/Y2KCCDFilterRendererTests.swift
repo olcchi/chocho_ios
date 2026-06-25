@@ -35,10 +35,10 @@ struct Y2KCCDFilterRendererTests {
         #expect(!settings.enabled)
         #expect(settings.preset == .classic)
         #expect(settings.intensity == 1)
-        #expect(settings.downsample == 0.2)
-        #expect(settings.exposure == 0.18)
-        #expect(settings.temperature == -0.65)
-        #expect(settings.jpegArtifacts == 0.2)
+        #expect(settings.downsample == 0.32)
+        #expect(settings.exposure == 0.14)
+        #expect(settings.temperature == -0.2)
+        #expect(settings.jpegArtifacts == 0.36)
     }
 
     @Test func presetsExposeChineseTitlesAndResolvedLooks() {
@@ -170,6 +170,49 @@ struct Y2KCCDFilterRendererTests {
         #expect(containsDifferentPixels(in: baseImage, and: classicImage, rect: sampleRect))
         #expect(containsDifferentPixels(in: coolImage, and: warmImage, rect: sampleRect))
     }
+
+    @Test func renderedNeutralGraysDoNotGainGreenCast() throws {
+        for level: UInt8 in [60, 128, 200] {
+            let source = try #require(makeSolidGrayImage(level: level, width: 96, height: 96))
+
+            for preset in Y2KCCDPreset.allCases {
+                for intensity in [0.15, 0.5, 1.0] {
+                    var settings = Y2KCCDFilterSettings.default
+                    settings.enabled = true
+                    settings.preset = preset
+                    settings.intensity = intensity
+
+                    let output = try #require(Y2KCCDFilterRenderer.render(image: source, settings: settings))
+                    let mean = averageRGB(in: output)
+                    let greenCast = mean.green - (mean.red + mean.blue) / 2
+
+                    #expect(abs(greenCast) <= 1.25)
+                }
+            }
+        }
+    }
+}
+
+private func makeSolidGrayImage(level: UInt8, width: Int, height: Int) -> UIImage? {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    guard let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        return nil
+    }
+
+    let value = CGFloat(level) / 255
+    context.setFillColor(CGColor(red: value, green: value, blue: value, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+    guard let cgImage = context.makeImage() else { return nil }
+    return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
 }
 
 private func makeY2KGradientImage(width: Int, height: Int) -> UIImage? {
@@ -198,6 +241,32 @@ private func makeY2KGradientImage(width: Int, height: Int) -> UIImage? {
 
     guard let cgImage = context.makeImage() else { return nil }
     return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+}
+
+private func averageRGB(in image: UIImage) -> (red: Double, green: Double, blue: Double) {
+    guard let cgImage = image.cgImage,
+          let data = cgImage.dataProvider?.data,
+          let bytes = CFDataGetBytePtr(data) else {
+        return (0, 0, 0)
+    }
+
+    var red = 0.0
+    var green = 0.0
+    var blue = 0.0
+    var count = 0.0
+
+    for y in 0..<cgImage.height {
+        for x in 0..<cgImage.width {
+            let index = y * cgImage.bytesPerRow + x * 4
+            red += Double(bytes[index])
+            green += Double(bytes[index + 1])
+            blue += Double(bytes[index + 2])
+            count += 1
+        }
+    }
+
+    guard count > 0 else { return (0, 0, 0) }
+    return (red / count, green / count, blue / count)
 }
 
 private func containsDifferentPixels(

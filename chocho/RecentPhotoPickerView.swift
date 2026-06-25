@@ -81,7 +81,7 @@ struct RecentPhotoPickerView: View {
                     isAboutPresented = true
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.circle")
+                        Image(systemName: "info.circle")
                             .font(.system(size: 13, weight: .regular))
                         Text("关于")
                             .font(.system(size: 13, weight: .regular))

@@ -120,6 +120,14 @@ nonisolated enum CanvasLivePhotoExporter {
         let assetIdentifier = CanvasLivePhotoMetadata.makeAssetIdentifier()
         let imageURL = temporaryURL(extension: "jpg")
         let videoURL = temporaryURL(extension: "mov")
+        let styledBaseImage = CanvasStyledPhotoRenderer.renderSync(
+            image: snapshot.image,
+            y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
+            sourceKey: "export-base",
+            asciiArtSettings: snapshot.asciiArtSettings,
+            asciiArtMask: asciiArtMask,
+            photoCompression: snapshot.photoCompression
+        )
 
         guard
             let keyPhoto = renderFrame(
@@ -129,7 +137,8 @@ nonisolated enum CanvasLivePhotoExporter {
                 sourceLiveVideo: sourceLiveVideo,
                 exportDuration: exportDuration,
                 asciiArtMask: asciiArtMask,
-                applySourceLivePhotoFrame: false
+                applySourceLivePhotoFrame: false,
+                styledBaseImage: styledBaseImage
             ),
             CanvasLivePhotoMetadata.writeJPEG(
                 keyPhoto,
@@ -148,7 +157,8 @@ nonisolated enum CanvasLivePhotoExporter {
             outputURL: videoURL,
             sourceLiveVideo: sourceLiveVideo,
             exportDuration: exportDuration,
-            asciiArtMask: asciiArtMask
+            asciiArtMask: asciiArtMask,
+            styledBaseImage: styledBaseImage
         ) else {
             try? FileManager.default.removeItem(at: imageURL)
             return nil
@@ -178,7 +188,8 @@ nonisolated enum CanvasLivePhotoExporter {
         sourceLiveVideo: CanvasSourceLiveVideo?,
         exportDuration: TimeInterval,
         asciiArtMask: SubjectMask? = nil,
-        applySourceLivePhotoFrame: Bool = true
+        applySourceLivePhotoFrame: Bool = true,
+        styledBaseImage: UIImage? = nil
     ) -> UIImage? {
         let photoFrameImage: UIImage?
         if applySourceLivePhotoFrame,
@@ -211,7 +222,8 @@ nonisolated enum CanvasLivePhotoExporter {
             y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
             asciiArtSettings: snapshot.asciiArtSettings,
             asciiArtMask: asciiArtMask,
-            photoFrameImage: photoFrameImage
+            photoFrameImage: photoFrameImage,
+            styledBaseImage: styledBaseImage
         )
     }
 
@@ -222,7 +234,8 @@ nonisolated enum CanvasLivePhotoExporter {
         outputURL: URL,
         sourceLiveVideo: CanvasSourceLiveVideo?,
         exportDuration: TimeInterval,
-        asciiArtMask: SubjectMask? = nil
+        asciiArtMask: SubjectMask? = nil,
+        styledBaseImage: UIImage? = nil
     ) async -> Bool {
         try? FileManager.default.removeItem(at: outputURL)
 
@@ -287,7 +300,8 @@ nonisolated enum CanvasLivePhotoExporter {
                     blinkTime: blinkTime,
                     sourceLiveVideo: sourceLiveVideo,
                     exportDuration: exportDuration,
-                    asciiArtMask: asciiArtMask
+                    asciiArtMask: asciiArtMask,
+                    styledBaseImage: styledBaseImage
                 )
             }
             guard let frameImage else {

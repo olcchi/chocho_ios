@@ -114,6 +114,7 @@ final class ASCIIArtRendererTests: XCTestCase {
     func test_previewPolicy_downscalesLargeImage() {
         let large = CGSize(width: 3000, height: 4000)
         let result = ASCIIArtPreviewRenderPolicy.pixelSize(for: large)
+        XCTAssertEqual(result, CGSize(width: 1080, height: 1440))
         XCTAssertLessThanOrEqual(max(result.width, result.height), ASCIIArtPreviewRenderPolicy.maxLongEdge)
     }
 
@@ -222,6 +223,135 @@ final class ASCIIArtRendererTests: XCTestCase {
         XCTAssertFalse(enabled)
     }
 
+    func test_styledRendererRecomputesASCIIWhenUpstreamCCDChanges() throws {
+        let source = try XCTUnwrap(makeGradientImage(width: 96, height: 64))
+        let asciiCache = ASCIIArtCache()
+        let sourceKey = "style-pipeline-test"
+        var asciiSettings = ASCIIArtSettings.default
+        asciiSettings.enabled = true
+        asciiSettings.showSubject = true
+        asciiSettings.showOutline = false
+
+        let asciiOnly = CanvasStyledPhotoRenderer.renderSync(
+            image: source,
+            y2kCCDFilterSettings: .default,
+            targetPixelSize: CGSize(width: 96, height: 64),
+            sourceKey: sourceKey,
+            asciiArtSettings: asciiSettings,
+            asciiArtCache: asciiCache
+        )
+
+        var ccdSettings = Y2KCCDFilterSettings.default
+        ccdSettings.enabled = true
+        ccdSettings.preset = .warm
+        ccdSettings.intensity = 1
+
+        let asciiAfterCCD = CanvasStyledPhotoRenderer.renderSync(
+            image: source,
+            y2kCCDFilterSettings: ccdSettings,
+            targetPixelSize: CGSize(width: 96, height: 64),
+            sourceKey: sourceKey,
+            asciiArtSettings: asciiSettings,
+            asciiArtCache: asciiCache
+        )
+
+        XCTAssertNotEqual(asciiOnly.pngData(), asciiAfterCCD.pngData())
+    }
+
+    func test_asciiGridKeepsOriginalSourceScaleWhenCCDIsEnabled() throws {
+        let source = try XCTUnwrap(makeSolidImage(width: 192, height: 128, color: .white))
+        var asciiSettings = ASCIIArtSettings.default
+        asciiSettings.enabled = true
+        asciiSettings.showSubject = false
+        asciiSettings.showOutline = false
+        asciiSettings.characterColor = CanvasDraftColorComponents(red: 0, green: 0, blue: 0)
+
+        var ccdSettings = Y2KCCDFilterSettings.default
+        ccdSettings.enabled = true
+        ccdSettings.intensity = 1
+
+        let styledImage = CanvasStyledPhotoRenderer.renderSync(
+            image: source,
+            y2kCCDFilterSettings: ccdSettings,
+            targetPixelSize: CGSize(width: 96, height: 64),
+            sourceKey: "ascii-grid-scale-test",
+            asciiArtSettings: asciiSettings
+        )
+        let ccdImage = try XCTUnwrap(Y2KCCDFilterRenderer.render(
+            image: source,
+            settings: ccdSettings,
+            targetPixelSize: CGSize(width: 96, height: 64)
+        ))
+        let expectedImage = try XCTUnwrap(ASCIIArtRenderer.render(
+            image: ccdImage,
+            mask: nil,
+            settings: asciiSettings,
+            targetPixelSize: CGSize(width: 96, height: 64),
+            sourcePixelSize: CGSize(width: 192, height: 128),
+            sourceKey: "ascii-grid-scale-test-ccd-\(ccdSettings.cacheKey)-ascii-none"
+        ))
+        let wrongScaleImage = try XCTUnwrap(ASCIIArtRenderer.render(
+            image: ccdImage,
+            mask: nil,
+            settings: asciiSettings,
+            targetPixelSize: CGSize(width: 96, height: 64),
+            sourceKey: "ascii-grid-scale-wrong"
+        ))
+
+        XCTAssertEqual(styledImage.pngData(), expectedImage.pngData())
+        XCTAssertNotEqual(expectedImage.pngData(), wrongScaleImage.pngData())
+    }
+
+    func test_asciiGridUsesCompressedSourceScaleWhenPhotoCompressionIsEnabled() throws {
+        let source = try XCTUnwrap(makeSolidImage(width: 192, height: 128, color: .white))
+        var asciiSettings = ASCIIArtSettings.default
+        asciiSettings.enabled = true
+        asciiSettings.showSubject = false
+        asciiSettings.showOutline = false
+        asciiSettings.characterColor = CanvasDraftColorComponents(red: 0, green: 0, blue: 0)
+
+        var ccdSettings = Y2KCCDFilterSettings.default
+        ccdSettings.enabled = true
+        ccdSettings.intensity = 1
+
+        let styledImage = CanvasStyledPhotoRenderer.renderSync(
+            image: source,
+            y2kCCDFilterSettings: ccdSettings,
+            targetPixelSize: CGSize(width: 96, height: 64),
+            sourceKey: "ascii-compressed-grid-scale-test",
+            asciiArtSettings: asciiSettings,
+            photoCompression: .narrowed
+        )
+        let ccdImage = try XCTUnwrap(Y2KCCDFilterRenderer.render(
+            image: source,
+            settings: ccdSettings,
+            targetPixelSize: CGSize(width: 96, height: 64)
+        ))
+        let compressedCCDImage = try XCTUnwrap(CanvasImageLoader.resampledImage(
+            ccdImage,
+            to: CGSize(width: 60, height: 64)
+        ))
+        let expectedImage = try XCTUnwrap(ASCIIArtRenderer.render(
+            image: compressedCCDImage,
+            mask: nil,
+            settings: asciiSettings,
+            targetPixelSize: CGSize(width: 60, height: 64),
+            sourcePixelSize: CGSize(width: 120, height: 128),
+            sourceKey: "ascii-compressed-grid-scale-test-ccd-\(ccdSettings.cacheKey)-ascii-narrowed"
+        ))
+        let uncompressedScaleImage = try XCTUnwrap(ASCIIArtRenderer.render(
+            image: compressedCCDImage,
+            mask: nil,
+            settings: asciiSettings,
+            targetPixelSize: CGSize(width: 60, height: 64),
+            sourcePixelSize: CGSize(width: 192, height: 128),
+            sourceKey: "ascii-compressed-grid-scale-wrong"
+        ))
+
+        XCTAssertEqual(styledImage.pngData(), expectedImage.pngData())
+        XCTAssertNotEqual(expectedImage.pngData(), uncompressedScaleImage.pngData())
+    }
+
     private func makeSolidImage(width: Int, height: Int, color: UIColor) -> UIImage? {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -231,4 +361,24 @@ final class ASCIIArtRendererTests: XCTestCase {
                 context.fill(CGRect(x: 0, y: 0, width: width, height: height))
             }
     }
+
+    private func makeGradientImage(width: Int, height: Int) -> UIImage? {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format)
+            .image { context in
+                for y in 0..<height {
+                    for x in 0..<width {
+                        UIColor(
+                            red: CGFloat((x * 29 + y * 11) % 256) / 255,
+                            green: CGFloat((x * 7 + y * 31) % 256) / 255,
+                            blue: CGFloat((x * 17 + y * 13) % 256) / 255,
+                            alpha: 1
+                        ).setFill()
+                        context.fill(CGRect(x: x, y: y, width: 1, height: 1))
+                    }
+                }
+            }
+    }
+
 }

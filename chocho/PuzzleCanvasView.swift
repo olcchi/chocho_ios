@@ -26,6 +26,7 @@ struct PuzzleCanvasView: View {
     var subjectOutlinePoints: [PuzzleCanvasTracePoint] = []
     var isTraceDrawingEnabled = false
     var isTraceVisible = true
+    var isTraceFeatureSessionActive = false
     var isSubjectOutlineEnabled = false
     var liveDotAnimation: LiveDotAnimation = .none
     var livePreviewPlaybackStart: Date?
@@ -242,7 +243,7 @@ struct PuzzleCanvasView: View {
                 x: referenceFrame.width / 2,
                 y: referenceFrame.height / 2
             )
-            .opacity(isTraceDrawingEnabled && isTraceVisible && !tracePoints.isEmpty ? 1 : 0)
+            .opacity(showsManualTrace ? 1 : 0)
 
             PuzzleTraceCanvas(
                 tracePoints: subjectOutlinePoints,
@@ -256,7 +257,7 @@ struct PuzzleCanvasView: View {
                 x: referenceFrame.width / 2,
                 y: referenceFrame.height / 2
             )
-            .opacity(isTraceDrawingEnabled && isTraceVisible && isSubjectOutlineEnabled && !subjectOutlinePoints.isEmpty ? 1 : 0)
+            .opacity(showsSubjectOutlineTrace ? 1 : 0)
 
             PuzzleDotsCanvas(
                 image: image,
@@ -718,6 +719,18 @@ struct PuzzleCanvasView: View {
         let deltaY = point.point.y - previousPoint.point.y
 
         return hypot(deltaX, deltaY) > 0.006
+    }
+
+    private var showsTraceOverlay: Bool {
+        isTraceVisible && (isTraceDrawingEnabled || isTraceFeatureSessionActive)
+    }
+
+    private var showsManualTrace: Bool {
+        showsTraceOverlay && !tracePoints.isEmpty
+    }
+
+    private var showsSubjectOutlineTrace: Bool {
+        showsTraceOverlay && isSubjectOutlineEnabled && !subjectOutlinePoints.isEmpty
     }
 }
 

@@ -6,8 +6,9 @@
 //
 
 import SwiftUI
+import UIKit
 
-/// 底部面板 Tab：波点 / 风格 / 布局 / 实况（控制 `LiveDotAnimation` 与预览播放）。
+/// 底部面板 Tab：波点 / 风格 / 背景 / 实况（控制 `LiveDotAnimation` 与预览播放）。
 enum PanelTab: String, CaseIterable, Identifiable {
     case dots
     case style
@@ -23,7 +24,7 @@ enum PanelTab: String, CaseIterable, Identifiable {
         case .style:
             "风格"
         case .background:
-            "布局"
+            "背景"
         case .livePhoto:
             "实况"
         }
@@ -118,7 +119,6 @@ struct BottomSheetPanel: View {
     var bottomSafeAreaInset: CGFloat = 0
     var isPanelEnabled: Bool = true
     var canClearTrace: Bool = false
-    let onDrawDots: () -> Void
     let onToggleSubjectOutline: () -> Void
     var onClearTrace: () -> Void = {}
     var onBeginTraceFeature: () -> Void = {}
@@ -127,14 +127,18 @@ struct BottomSheetPanel: View {
     var onBeginPhotoCompressionFeature: () -> Void = {}
     var onConfirmPhotoCompressionFeature: () -> Void = {}
     var onCancelPhotoCompressionFeature: () -> Void = {}
+    var onRemovePhotoCompressionFeature: () -> Void = {}
     var onBeginY2KCCDFilterFeature: () -> Void = {}
     var onConfirmY2KCCDFilterFeature: () -> Void = {}
     var onCancelY2KCCDFilterFeature: () -> Void = {}
+    var onRemoveY2KCCDFilterFeature: () -> Void = {}
     var onBeginASCIIArtFeature: () -> Void = {}
     var onConfirmASCIIArtFeature: () -> Void = {}
     var onCancelASCIIArtFeature: () -> Void = {}
+    var onRemoveASCIIArtFeature: () -> Void = {}
     @State private var selectedStyleFeature: StylePanelFeature?
     @State private var selectedDotFeature: DotPanelFeature?
+    @State private var isBackgroundStyleDetailPresented = false
 
     var body: some View {
         Group {
@@ -160,16 +164,19 @@ struct BottomSheetPanel: View {
         .animation(Self.panelMotion, value: selectedTab)
         .animation(Self.panelMotion, value: selectedStyleFeature)
         .animation(Self.panelMotion, value: selectedDotFeature)
+        .animation(Self.panelMotion, value: isBackgroundStyleDetailPresented)
         .onChange(of: selectedTab) { _, _ in
             cancelActiveFeatureSessionIfNeeded()
             selectedStyleFeature = nil
             selectedDotFeature = nil
+            isBackgroundStyleDetailPresented = false
         }
         .onChange(of: isExpanded) { _, isExpanded in
             if !isExpanded {
                 cancelActiveFeatureSessionIfNeeded()
                 selectedStyleFeature = nil
                 selectedDotFeature = nil
+                isBackgroundStyleDetailPresented = false
             }
         }
         .onChange(of: selectedStyleFeature) { _, feature in
@@ -218,9 +225,6 @@ struct BottomSheetPanel: View {
     }
 
     private var showsPanelFeatureActionRow: Bool {
-        if selectedTab == .dots {
-            return selectedDotFeature == .generate
-        }
         if selectedTab == .style, let selectedStyleFeature {
             return selectedStyleFeature == .photoCompression
                 || selectedStyleFeature == .ccd
@@ -239,17 +243,20 @@ struct BottomSheetPanel: View {
             canClearTrace: canClearTrace,
             selectedStyleFeature: $selectedStyleFeature,
             selectedDotFeature: $selectedDotFeature,
-            onDrawDots: onDrawDots,
+            isBackgroundStyleDetailPresented: $isBackgroundStyleDetailPresented,
             onToggleSubjectOutline: onToggleSubjectOutline,
             onClearTrace: onClearTrace,
             onConfirmTraceFeature: confirmTraceFeature,
             onCancelTraceFeature: cancelTraceFeature,
             onConfirmPhotoCompressionFeature: confirmPhotoCompressionFeature,
             onCancelPhotoCompressionFeature: cancelPhotoCompressionFeature,
+            onRemovePhotoCompressionFeature: removePhotoCompressionFeature,
             onConfirmY2KCCDFilterFeature: confirmY2KCCDFilterFeature,
             onCancelY2KCCDFilterFeature: cancelY2KCCDFilterFeature,
+            onRemoveY2KCCDFilterFeature: removeY2KCCDFilterFeature,
             onConfirmASCIIArtFeature: confirmASCIIArtFeature,
-            onCancelASCIIArtFeature: cancelASCIIArtFeature
+            onCancelASCIIArtFeature: cancelASCIIArtFeature,
+            onRemoveASCIIArtFeature: removeASCIIArtFeature
         )
         .id(selectedTab)
         .fixedSize(horizontal: false, vertical: true)
@@ -261,6 +268,9 @@ struct BottomSheetPanel: View {
         }
         if selectedTab == .style, let selectedStyleFeature {
             return selectedStyleFeature.title
+        }
+        if selectedTab == .background, isBackgroundStyleDetailPresented {
+            return backgroundControls.backgroundStyle.wrappedValue.title
         }
         return selectedTab.title
     }
@@ -283,14 +293,18 @@ struct BottomSheetPanel: View {
     }
 
     private func closeDetailOrSubmenu() {
-        if selectedTab == .dots, selectedDotFeature == .generate {
-            cancelTraceFeature()
-            return
-        }
-        if selectedTab == .dots, selectedDotFeature != nil {
-            withAnimation(Self.panelMotion) {
-                selectedDotFeature = nil
+        if selectedTab == .dots {
+            if selectedDotFeature == .generate {
+                confirmTraceFeature()
+                return
             }
+            if selectedDotFeature != nil {
+                withAnimation(Self.panelMotion) {
+                    selectedDotFeature = nil
+                }
+                return
+            }
+            closeDetail()
             return
         }
         if selectedTab == .style, selectedStyleFeature == .photoCompression {
@@ -309,9 +323,15 @@ struct BottomSheetPanel: View {
             withAnimation(Self.panelMotion) {
                 selectedStyleFeature = nil
             }
-        } else {
-            closeDetail()
+            return
         }
+        if selectedTab == .background, isBackgroundStyleDetailPresented {
+            withAnimation(Self.panelMotion) {
+                isBackgroundStyleDetailPresented = false
+            }
+            return
+        }
+        closeDetail()
     }
 
     private func cancelActiveFeatureSessionIfNeeded() {
@@ -358,6 +378,13 @@ struct BottomSheetPanel: View {
         }
     }
 
+    private func removePhotoCompressionFeature() {
+        onRemovePhotoCompressionFeature()
+        withAnimation(Self.panelMotion) {
+            selectedStyleFeature = nil
+        }
+    }
+
     private func cancelY2KCCDFilterFeature() {
         onCancelY2KCCDFilterFeature()
         withAnimation(Self.panelMotion) {
@@ -372,6 +399,13 @@ struct BottomSheetPanel: View {
         }
     }
 
+    private func removeY2KCCDFilterFeature() {
+        onRemoveY2KCCDFilterFeature()
+        withAnimation(Self.panelMotion) {
+            selectedStyleFeature = nil
+        }
+    }
+
     private func cancelASCIIArtFeature() {
         onCancelASCIIArtFeature()
         withAnimation(Self.panelMotion) {
@@ -381,6 +415,13 @@ struct BottomSheetPanel: View {
 
     private func confirmASCIIArtFeature() {
         onConfirmASCIIArtFeature()
+        withAnimation(Self.panelMotion) {
+            selectedStyleFeature = nil
+        }
+    }
+
+    private func removeASCIIArtFeature() {
+        onRemoveASCIIArtFeature()
         withAnimation(Self.panelMotion) {
             selectedStyleFeature = nil
         }
@@ -591,17 +632,20 @@ private struct PanelContentCard: View {
     let canClearTrace: Bool
     @Binding var selectedStyleFeature: StylePanelFeature?
     @Binding var selectedDotFeature: DotPanelFeature?
-    let onDrawDots: () -> Void
+    @Binding var isBackgroundStyleDetailPresented: Bool
     let onToggleSubjectOutline: () -> Void
     let onClearTrace: () -> Void
     let onConfirmTraceFeature: () -> Void
     let onCancelTraceFeature: () -> Void
     let onConfirmPhotoCompressionFeature: () -> Void
     let onCancelPhotoCompressionFeature: () -> Void
+    let onRemovePhotoCompressionFeature: () -> Void
     let onConfirmY2KCCDFilterFeature: () -> Void
     let onCancelY2KCCDFilterFeature: () -> Void
+    let onRemoveY2KCCDFilterFeature: () -> Void
     let onConfirmASCIIArtFeature: () -> Void
     let onCancelASCIIArtFeature: () -> Void
+    let onRemoveASCIIArtFeature: () -> Void
 
     var body: some View {
         Group {
@@ -614,16 +658,13 @@ private struct PanelContentCard: View {
                     dotScale: dotControls.dotScale,
                     selectedDotColor: dotControls.selectedDotColor,
                     dotCharacterText: dotControls.dotCharacterText,
-                    isTraceVisible: dotControls.isTraceVisible,
+                    isTraceDrawingEnabled: dotControls.isTraceDrawingEnabled,
                     isSubjectOutlineEnabled: dotControls.isSubjectOutlineEnabled,
                     dotCount: dotControls.dotCount,
                     canClearTrace: canClearTrace,
                     isDetectingSubjectOutline: dotControls.isDetectingSubjectOutline,
-                    onDrawDots: onDrawDots,
                     onToggleSubjectOutline: onToggleSubjectOutline,
-                    onClearTrace: onClearTrace,
-                    onConfirmTraceFeature: onConfirmTraceFeature,
-                    onCancelTraceFeature: onCancelTraceFeature
+                    onClearTrace: onClearTrace
                 )
             case .style:
                 StylePanelControls(
@@ -633,18 +674,23 @@ private struct PanelContentCard: View {
                     asciiArtSettings: dotControls.asciiArtSettings,
                     onConfirmPhotoCompressionFeature: onConfirmPhotoCompressionFeature,
                     onCancelPhotoCompressionFeature: onCancelPhotoCompressionFeature,
+                    onRemovePhotoCompressionFeature: onRemovePhotoCompressionFeature,
                     onConfirmY2KCCDFilterFeature: onConfirmY2KCCDFilterFeature,
                     onCancelY2KCCDFilterFeature: onCancelY2KCCDFilterFeature,
+                    onRemoveY2KCCDFilterFeature: onRemoveY2KCCDFilterFeature,
                     onConfirmASCIIArtFeature: onConfirmASCIIArtFeature,
-                    onCancelASCIIArtFeature: onCancelASCIIArtFeature
+                    onCancelASCIIArtFeature: onCancelASCIIArtFeature,
+                    onRemoveASCIIArtFeature: onRemoveASCIIArtFeature
                 )
             case .background:
                 BackgroundPanelControls(
+                    isStyleDetailPresented: $isBackgroundStyleDetailPresented,
                     backgroundStyle: backgroundControls.backgroundStyle,
                     backgroundColors: backgroundControls.backgroundColors,
                     extensionRatio: backgroundControls.extensionRatio,
                     extensionSide: backgroundControls.extensionSide,
-                    backgroundPatternSpacing: backgroundControls.backgroundPatternSpacing
+                    backgroundPatternSpacing: backgroundControls.backgroundPatternSpacing,
+                    previewImage: backgroundControls.previewImage
                 )
             case .livePhoto:
                 LivePanelControls(
@@ -946,6 +992,296 @@ private struct SplitColorSwatchBall: View {
 }
 
 private struct BackgroundPanelControls: View {
+    @Binding var isStyleDetailPresented: Bool
+    @Binding var backgroundStyle: PuzzleBackgroundStyle
+    @Binding var backgroundColors: PuzzleBackgroundColors
+    @Binding var extensionRatio: CGFloat
+    @Binding var extensionSide: PuzzleCanvasExtensionSide
+    @Binding var backgroundPatternSpacing: Double
+    var previewImage: UIImage?
+
+    var body: some View {
+        Group {
+            if isStyleDetailPresented {
+                BackgroundStyleControlsPanel(
+                    backgroundStyle: $backgroundStyle,
+                    backgroundColors: $backgroundColors,
+                    extensionRatio: $extensionRatio,
+                    extensionSide: $extensionSide,
+                    backgroundPatternSpacing: $backgroundPatternSpacing
+                )
+            } else {
+                BackgroundStylePickerPanel(
+                    selectedStyle: $backgroundStyle,
+                    backgroundColors: backgroundColors,
+                    backgroundPatternSpacing: backgroundPatternSpacing,
+                    extensionRatio: extensionRatio,
+                    extensionSide: extensionSide,
+                    previewImage: previewImage
+                ) {
+                    withAnimation(BottomSheetPanel.panelMotion) {
+                        isStyleDetailPresented = true
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .animation(BottomSheetPanel.panelMotion, value: isStyleDetailPresented)
+    }
+}
+
+private struct BackgroundStylePickerPanel: View {
+    @Binding var selectedStyle: PuzzleBackgroundStyle
+    var backgroundColors: PuzzleBackgroundColors
+    var backgroundPatternSpacing: Double
+    var extensionRatio: CGFloat
+    var extensionSide: PuzzleCanvasExtensionSide
+    var previewImage: UIImage?
+    let onOpenStyleControls: () -> Void
+
+    private let tileWidth: CGFloat = 96
+    private let tileHeight: CGFloat = 62
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 10) {
+                ForEach(PuzzleBackgroundStyle.allCases) { style in
+                    BackgroundStyleTile(
+                        style: style,
+                        isSelected: style == selectedStyle,
+                        colors: backgroundColors,
+                        patternSpacing: backgroundPatternSpacing,
+                        extensionRatio: extensionRatio,
+                        extensionSide: extensionSide,
+                        previewImage: previewImage
+                    ) {
+                        selectedStyle = style
+                        onOpenStyleControls()
+                    }
+                    .frame(width: tileWidth)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .scrollIndicators(.hidden)
+        .frame(height: tileHeight + 18)
+    }
+}
+
+private struct BackgroundStyleTile: View {
+    let style: PuzzleBackgroundStyle
+    let isSelected: Bool
+    let colors: PuzzleBackgroundColors
+    let patternSpacing: Double
+    let extensionRatio: CGFloat
+    let extensionSide: PuzzleCanvasExtensionSide
+    var previewImage: UIImage?
+    let action: () -> Void
+
+    private let cornerRadius: CGFloat = 10
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                BackgroundStylePreviewSurface(
+                    style: style,
+                    colors: colors,
+                    patternSpacing: patternSpacing,
+                    extensionRatio: extensionRatio,
+                    extensionSide: extensionSide,
+                    previewImage: previewImage
+                )
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(isSelected ? Color.primary : Color.border, lineWidth: isSelected ? 2 : 1)
+                }
+
+                Text(style.title)
+                    .font(.caption2)
+                    .foregroundStyle(Color.foreground)
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(style.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct BackgroundStylePreviewSurface: View {
+    let style: PuzzleBackgroundStyle
+    let colors: PuzzleBackgroundColors
+    let patternSpacing: Double
+    let extensionRatio: CGFloat
+    let extensionSide: PuzzleCanvasExtensionSide
+    var previewImage: UIImage?
+
+    private let photoFrameHeight: CGFloat = 240
+
+    var body: some View {
+        GeometryReader { proxy in
+            preview(in: proxy.size)
+        }
+        .aspectRatio(1.45, contentMode: .fit)
+        .background(Color.input)
+    }
+
+    @ViewBuilder
+    private func preview(in size: CGSize) -> some View {
+        switch style {
+        case .solid:
+            Color(colors.fillColor)
+        case .grid:
+            Canvas { context, canvasSize in
+                BackgroundStylePreviewDrawing.fillBase(
+                    in: &context,
+                    size: canvasSize,
+                    fillColor: colors.fillColor
+                )
+                BackgroundStylePreviewDrawing.strokeGrid(
+                    in: &context,
+                    size: canvasSize,
+                    photoFrameHeight: photoFrameHeight,
+                    patternSpacing: patternSpacing,
+                    lineColor: colors.lineColor
+                )
+            }
+        case .stripes:
+            Canvas { context, canvasSize in
+                BackgroundStylePreviewDrawing.fillStripes(
+                    in: &context,
+                    size: canvasSize,
+                    photoFrameHeight: photoFrameHeight,
+                    patternSpacing: patternSpacing,
+                    colors: colors
+                )
+            }
+        case .polkaDots:
+            Canvas { context, canvasSize in
+                BackgroundStylePreviewDrawing.fillPolkaDots(
+                    in: &context,
+                    size: canvasSize,
+                    photoFrameHeight: photoFrameHeight,
+                    dotSize: patternSpacing,
+                    colors: colors
+                )
+            }
+        case .halftone:
+            if let previewImage {
+                PuzzleHalftoneBackgroundView(
+                    sourceImage: previewImage,
+                    extensionRatio: extensionRatio,
+                    extensionSide: extensionSide,
+                    displaySize: size,
+                    backgroundColor: colors.fillColor,
+                    dotColor: colors.lineColor
+                )
+            } else {
+                Canvas { context, canvasSize in
+                    BackgroundStylePreviewDrawing.fillPolkaDots(
+                        in: &context,
+                        size: canvasSize,
+                        photoFrameHeight: photoFrameHeight,
+                        dotSize: patternSpacing,
+                        colors: colors
+                    )
+                }
+            }
+        }
+    }
+}
+
+private enum BackgroundStylePreviewDrawing {
+    static func fillBase(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        fillColor: Color
+    ) {
+        context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(fillColor))
+    }
+
+    static func strokeGrid(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        photoFrameHeight: CGFloat,
+        patternSpacing: Double,
+        lineColor: Color
+    ) {
+        let spacing = PuzzleBackgroundGridMetrics.spacing(
+            controlValue: patternSpacing,
+            photoFrameHeight: photoFrameHeight
+        )
+        var path = Path()
+
+        var x: CGFloat = 0
+        while x <= size.width {
+            path.move(to: CGPoint(x: x, y: 0))
+            path.addLine(to: CGPoint(x: x, y: size.height))
+            x += spacing
+        }
+
+        var y: CGFloat = 0
+        while y <= size.height {
+            path.move(to: CGPoint(x: 0, y: y))
+            path.addLine(to: CGPoint(x: size.width, y: y))
+            y += spacing
+        }
+
+        context.stroke(
+            path,
+            with: .color(lineColor),
+            lineWidth: PuzzleBackgroundGridMetrics.lineWidth(photoFrameHeight: photoFrameHeight)
+        )
+    }
+
+    static func fillStripes(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        photoFrameHeight: CGFloat,
+        patternSpacing: Double,
+        colors: PuzzleBackgroundColors
+    ) {
+        let spacing = PuzzleBackgroundGridMetrics.spacing(
+            controlValue: patternSpacing,
+            photoFrameHeight: photoFrameHeight
+        )
+        var y: CGFloat = 0
+        var usesPrimaryStripe = true
+
+        while y < size.height {
+            let bandHeight = min(spacing, size.height - y)
+            context.fill(
+                Path(CGRect(x: 0, y: y, width: size.width, height: bandHeight)),
+                with: .color(usesPrimaryStripe ? colors.fillColor : colors.alternateColor)
+            )
+            y += spacing
+            usesPrimaryStripe.toggle()
+        }
+    }
+
+    static func fillPolkaDots(
+        in context: inout GraphicsContext,
+        size: CGSize,
+        photoFrameHeight: CGFloat,
+        dotSize: Double,
+        colors: PuzzleBackgroundColors
+    ) {
+        fillBase(in: &context, size: size, fillColor: colors.fillColor)
+
+        let dotRects = PuzzleBackgroundPolkaDotMetrics.dotRects(
+            in: size,
+            controlValue: dotSize,
+            photoFrameHeight: photoFrameHeight
+        )
+
+        for rect in dotRects {
+            context.fill(Path(ellipseIn: rect), with: .color(colors.lineColor))
+        }
+    }
+}
+
+private struct BackgroundStyleControlsPanel: View {
     @Binding var backgroundStyle: PuzzleBackgroundStyle
     @Binding var backgroundColors: PuzzleBackgroundColors
     @Binding var extensionRatio: CGFloat
@@ -953,16 +1289,9 @@ private struct BackgroundPanelControls: View {
     @Binding var backgroundPatternSpacing: Double
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                backgroundStyleControl
-                PanelSeparator(orientation: .vertical)
-                backgroundPositionControl
-            }
-            .padding(.horizontal, 2)
-
+        VStack(alignment: .leading, spacing: 6) {
+            backgroundPositionControl
             backgroundColorPickers
-                .padding(.horizontal, 2)
 
             Y2KBackgroundColorPairRow(
                 backgroundStyle: backgroundStyle,
@@ -976,7 +1305,6 @@ private struct BackgroundPanelControls: View {
                     range: PuzzleBackgroundPatternSpacing.minControlValue...PuzzleBackgroundPatternSpacing.maxControlValue,
                     step: PuzzleBackgroundPatternSpacing.step
                 )
-                .padding(.horizontal, 2)
             }
 
             StyledSlider(
@@ -986,32 +1314,28 @@ private struct BackgroundPanelControls: View {
                 step: 1,
                 valueText: { "\(Int($0.rounded()))%" }
             )
-            .padding(.horizontal, 2)
         }
-        .frame(maxWidth: .infinity, alignment: .top)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 4)
     }
 
     private var controlLabelFont: Font {
         .system(size: 13, weight: .regular)
     }
 
-    private var backgroundStyleControl: some View {
-        HStack(spacing: 6) {
-            Text("背景样式")
-                .font(controlLabelFont)
-                .foregroundStyle(Color.foreground)
-
-            Spacer(minLength: 0)
-
-            PanelValueMenu(
-                accessibilityTitle: "背景样式",
-                selection: $backgroundStyle,
-                options: PuzzleBackgroundStyle.allCases,
-                title: { $0.title },
-                font: controlLabelFont
-            )
+    private var backgroundPatternSpacingTitle: String {
+        switch backgroundStyle {
+        case .solid:
+            return "图案间距"
+        case .grid:
+            return "方格大小"
+        case .stripes:
+            return "条纹粗细"
+        case .polkaDots:
+            return "圆点大小"
+        case .halftone:
+            return "图案间距"
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var backgroundColorPickers: some View {
@@ -1077,21 +1401,6 @@ private struct BackgroundPanelControls: View {
         }
 
         return extensionSide.isHorizontal ? "背景宽度" : "背景高度"
-    }
-
-    private var backgroundPatternSpacingTitle: String {
-        switch backgroundStyle {
-        case .solid:
-            return "图案间距"
-        case .grid:
-            return "方格大小"
-        case .stripes:
-            return "条纹粗细"
-        case .polkaDots:
-            return "圆点大小"
-        case .halftone:
-            return "图案间距"
-        }
     }
 
     private var extensionRatioPercent: Binding<Double> {
@@ -1171,7 +1480,7 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
         case .ccd:
             Image("public/ccd")
         case .ascii:
-            Image(systemName: "textformat.size")
+            Image("public/LucideLabGridLines")
         }
     }
 
@@ -1181,7 +1490,6 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
 /// 波点 Tab 子功能入口。
 enum DotPanelFeature: String, CaseIterable, Identifiable {
     case style
-    case adjust
     case generate
 
     var id: Self { self }
@@ -1190,8 +1498,6 @@ enum DotPanelFeature: String, CaseIterable, Identifiable {
         switch self {
         case .style:
             "样式"
-        case .adjust:
-            "调整"
         case .generate:
             "生成"
         }
@@ -1200,9 +1506,7 @@ enum DotPanelFeature: String, CaseIterable, Identifiable {
     var menuIcon: Image {
         switch self {
         case .style:
-            Image("public/CarbonChartVennDiagram")
-        case .adjust:
-            Image("public/scale")
+            Image("public/CarbonDewPoint")
         case .generate:
             Image("public/LucideTriangleDashed")
         }
@@ -1215,49 +1519,6 @@ enum DotPanelFeature: String, CaseIterable, Identifiable {
         default:
             1
         }
-    }
-}
-
-private struct PanelStyleFeatureMenuGrid: View {
-    let onSelect: (StylePanelFeature) -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(StylePanelFeature.allCases) { feature in
-                PanelStyleFeatureMenuItem(feature: feature) {
-                    onSelect(feature)
-                }
-            }
-        }
-    }
-}
-
-private struct PanelStyleFeatureMenuItem: View {
-    let feature: StylePanelFeature
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                feature.menuIcon
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 22, height: 22)
-                    .scaleEffect(feature.menuIconScale)
-
-                Text(feature.title)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .foregroundStyle(Color.foreground)
-            .frame(maxWidth: .infinity)
-            .frame(height: BottomSheetPanel.menuSectionHeight())
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(feature.title)
     }
 }
 
@@ -1304,6 +1565,49 @@ private struct PanelDotFeatureMenuItem: View {
     }
 }
 
+private struct PanelStyleFeatureMenuGrid: View {
+    let onSelect: (StylePanelFeature) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(StylePanelFeature.allCases) { feature in
+                PanelStyleFeatureMenuItem(feature: feature) {
+                    onSelect(feature)
+                }
+            }
+        }
+    }
+}
+
+private struct PanelStyleFeatureMenuItem: View {
+    let feature: StylePanelFeature
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                feature.menuIcon
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 22, height: 22)
+                    .scaleEffect(feature.menuIconScale)
+
+                Text(feature.title)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(Color.foreground)
+            .frame(maxWidth: .infinity)
+            .frame(height: BottomSheetPanel.menuSectionHeight())
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(feature.title)
+    }
+}
+
 private struct DotPanelControls: View {
     @Binding var selectedFeature: DotPanelFeature?
     @Binding var selectedCategory: DotShapeCategory
@@ -1311,20 +1615,13 @@ private struct DotPanelControls: View {
     @Binding var dotScale: Double
     @Binding var selectedDotColor: Color
     @Binding var dotCharacterText: String
-    @Binding var isTraceVisible: Bool
+    @Binding var isTraceDrawingEnabled: Bool
     @Binding var isSubjectOutlineEnabled: Bool
     @Binding var dotCount: Double
     let canClearTrace: Bool
     let isDetectingSubjectOutline: Bool
-    let onDrawDots: () -> Void
     let onToggleSubjectOutline: () -> Void
     let onClearTrace: () -> Void
-    let onConfirmTraceFeature: () -> Void
-    let onCancelTraceFeature: () -> Void
-
-    private var controlLabelFont: Font {
-        .system(size: 13, weight: .regular)
-    }
 
     var body: some View {
         Group {
@@ -1335,6 +1632,7 @@ private struct DotPanelControls: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
+        .animation(BottomSheetPanel.panelMotion, value: selectedFeature)
     }
 
     private var dotFeatureMenu: some View {
@@ -1350,29 +1648,22 @@ private struct DotPanelControls: View {
     private func dotFeatureDetail(for feature: DotPanelFeature) -> some View {
         switch feature {
         case .style:
-            DotShapeStylePanel(
+            DotStylePanel(
                 selectedCategory: $selectedCategory,
                 selectedShape: $selectedShape,
-                dotCharacterText: $dotCharacterText
-            )
-        case .adjust:
-            DotAdjustPanel(
                 dotScale: $dotScale,
                 selectedDotColor: $selectedDotColor,
-                onDrawDots: onDrawDots
+                dotCharacterText: $dotCharacterText
             )
         case .generate:
             DotGeneratePanel(
-                isTraceVisible: $isTraceVisible,
+                isTraceDrawingEnabled: $isTraceDrawingEnabled,
                 isSubjectOutlineEnabled: $isSubjectOutlineEnabled,
                 dotCount: $dotCount,
                 canClearTrace: canClearTrace,
                 isDetectingSubjectOutline: isDetectingSubjectOutline,
-                controlLabelFont: controlLabelFont,
                 onToggleSubjectOutline: onToggleSubjectOutline,
-                onClearTrace: onClearTrace,
-                onConfirmTraceFeature: onConfirmTraceFeature,
-                onCancelTraceFeature: onCancelTraceFeature
+                onClearTrace: onClearTrace
             )
         }
     }
@@ -1385,10 +1676,13 @@ private struct StylePanelControls: View {
     @Binding var asciiArtSettings: ASCIIArtSettings
     let onConfirmPhotoCompressionFeature: () -> Void
     let onCancelPhotoCompressionFeature: () -> Void
+    let onRemovePhotoCompressionFeature: () -> Void
     let onConfirmY2KCCDFilterFeature: () -> Void
     let onCancelY2KCCDFilterFeature: () -> Void
+    let onRemoveY2KCCDFilterFeature: () -> Void
     let onConfirmASCIIArtFeature: () -> Void
     let onCancelASCIIArtFeature: () -> Void
+    let onRemoveASCIIArtFeature: () -> Void
 
     var body: some View {
         Group {
@@ -1421,6 +1715,7 @@ private struct StylePanelControls: View {
             ASCIIArtControlsPanel(
                 settings: $asciiArtSettings,
                 onCancel: onCancelASCIIArtFeature,
+                onRemove: onRemoveASCIIArtFeature,
                 onConfirm: onConfirmASCIIArtFeature
             )
             .padding(.horizontal, 2)
@@ -1444,7 +1739,7 @@ private struct StylePanelControls: View {
 
             PanelFeatureActionRow(
                 title: StylePanelFeature.photoCompression.title,
-                onCancel: onCancelPhotoCompressionFeature,
+                onRemove: onRemovePhotoCompressionFeature,
                 onConfirm: onConfirmPhotoCompressionFeature
             )
         }
@@ -1456,6 +1751,7 @@ private struct StylePanelControls: View {
         Y2KCCDFilterControlsPanel(
             settings: $y2kCCDFilterSettings,
             onCancel: onCancelY2KCCDFilterFeature,
+            onRemove: onRemoveY2KCCDFilterFeature,
             onConfirm: onConfirmY2KCCDFilterFeature
         )
         .padding(.horizontal, 2)
@@ -1464,49 +1760,77 @@ private struct StylePanelControls: View {
 
 }
 
+private struct DotStylePanel: View {
+    @Binding var selectedCategory: DotShapeCategory
+    @Binding var selectedShape: DotShapeAsset
+    @Binding var dotScale: Double
+    @Binding var selectedDotColor: Color
+    @Binding var dotCharacterText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DotShapeStylePanel(
+                selectedCategory: $selectedCategory,
+                selectedShape: $selectedShape,
+                dotCharacterText: $dotCharacterText,
+                selectedDotColor: selectedDotColor
+            )
+
+            DotAdjustPanel(
+                dotScale: $dotScale,
+                selectedDotColor: $selectedDotColor
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+}
+
 private struct DotGeneratePanel: View {
-    @Binding var isTraceVisible: Bool
+    @Binding var isTraceDrawingEnabled: Bool
     @Binding var isSubjectOutlineEnabled: Bool
     @Binding var dotCount: Double
     let canClearTrace: Bool
     let isDetectingSubjectOutline: Bool
-    let controlLabelFont: Font
     let onToggleSubjectOutline: () -> Void
     let onClearTrace: () -> Void
-    let onConfirmTraceFeature: () -> Void
-    let onCancelTraceFeature: () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
-                Text("波点轨迹")
-                    .font(controlLabelFont)
+                Text("生成方式")
+                    .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(Color.foreground)
 
                 Spacer(minLength: 0)
 
-                PanelCompactToggleButton(
-                    title: "主体识别",
-                    isOn: isSubjectOutlineEnabled,
-                    isEnabled: !isDetectingSubjectOutline
-                ) {
-                    onToggleSubjectOutline()
-                }
-                .frame(width: 92)
+                HStack(spacing: 8) {
+                    PanelCompactToggleButton(
+                        title: "手绘",
+                        iconName: "public/LucideTriangleDashed",
+                        isOn: isTraceDrawingEnabled,
+                        accessibilityLabel: "手绘轨迹"
+                    ) {
+                        isTraceDrawingEnabled.toggle()
+                    }
+                    .frame(width: 72)
 
-                PanelTraceVisibilityButton(isVisible: $isTraceVisible)
+                    PanelCompactToggleButton(
+                        title: "主体",
+                        iconName: "public/LucideLabCrosshairSquare",
+                        isOn: isSubjectOutlineEnabled,
+                        isEnabled: !isDetectingSubjectOutline,
+                        accessibilityLabel: "主体识别"
+                    ) {
+                        onToggleSubjectOutline()
+                    }
+                    .frame(width: 72)
+
+                    clearTraceButton
+                }
             }
             .frame(height: 30)
 
             DotCountSlider(dotCount: $dotCount)
-
-            clearTraceButton
-
-            PanelFeatureActionRow(
-                title: DotPanelFeature.generate.title,
-                onCancel: onCancelTraceFeature,
-                onConfirm: onConfirmTraceFeature
-            )
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 4)
@@ -1514,11 +1838,13 @@ private struct DotGeneratePanel: View {
 
     private var clearTraceButton: some View {
         Button(action: onClearTrace) {
-            Text("删除轨迹")
-                .font(.system(size: 13, weight: .regular))
+            Image("public/LucideBrushCleaning")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
                 .foregroundStyle(Color.foreground)
-                .frame(maxWidth: .infinity)
-                .frame(height: 30)
+                .frame(width: 18, height: 18)
+                .frame(width: 30, height: 30)
                 .background(Color.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -1535,7 +1861,6 @@ private struct DotGeneratePanel: View {
 private struct DotAdjustPanel: View {
     @Binding var dotScale: Double
     @Binding var selectedDotColor: Color
-    let onDrawDots: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1545,39 +1870,15 @@ private struct DotAdjustPanel: View {
             DotColorPicker(selectedDotColor: $selectedDotColor)
                 .padding(.horizontal, 2)
                 .padding(.vertical, 3)
-
-            drawDotsButton
-                .padding(.horizontal, 2)
-                .padding(.top, 3)
         }
         .frame(maxWidth: .infinity, alignment: .top)
-    }
-
-    private var drawDotsButton: some View {
-        Button(action: onDrawDots) {
-            HStack(spacing: 6) {
-                Image("public/sparkles")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 15, height: 15)
-
-                Text("随机一下")
-                    .font(.system(size: 13, weight: .regular))
-            }
-            .foregroundStyle(Color.primaryForeground)
-            .frame(maxWidth: .infinity)
-            .frame(height: 30)
-            .background(Color.primary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("随机一下")
     }
 }
 
 private struct Y2KCCDFilterControlsPanel: View {
     @Binding var settings: Y2KCCDFilterSettings
     let onCancel: () -> Void
+    let onRemove: () -> Void
     let onConfirm: () -> Void
 
     var body: some View {
@@ -1594,7 +1895,7 @@ private struct Y2KCCDFilterControlsPanel: View {
 
             PanelFeatureActionRow(
                 title: StylePanelFeature.ccd.title,
-                onCancel: onCancel,
+                onRemove: onRemove,
                 onConfirm: onConfirm
             )
         }
@@ -1645,58 +1946,36 @@ private struct Y2KCCDFilterControlsPanel: View {
     }
 }
 
-private struct PanelTraceVisibilityButton: View {
-    @Binding var isVisible: Bool
-
-    var body: some View {
-        Button {
-            isVisible.toggle()
-        } label: {
-            (isVisible ? Image("public/LucideEye") : Image("public/LucideEyeClosed"))
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 18, height: 18)
-                .foregroundStyle(Color.foreground)
-                .frame(width: 30, height: 30)
-                .background(Color.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(Color.border, lineWidth: 1)
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("轨迹可见性")
-        .accessibilityValue(isVisible ? "可视" : "不可视")
-    }
-}
-
 private struct PanelFeatureActionRow: View {
     let title: String
-    let onCancel: () -> Void
+    let onRemove: () -> Void
     let onConfirm: () -> Void
 
     private static let rowHeight: CGFloat = 36
-    private static let actionIconSize: CGFloat = 14
+    private static let removeIconSize: CGFloat = 16
+    private static let confirmIconSize: CGFloat = 14
 
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                Button(action: onCancel) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: Self.actionIconSize, weight: .semibold))
+                Button(action: onRemove) {
+                    Image("public/trash")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
                         .foregroundStyle(Color.foreground)
+                        .frame(width: Self.removeIconSize, height: Self.removeIconSize)
                         .frame(width: Self.rowHeight, height: Self.rowHeight)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("取消")
+                .accessibilityLabel("删除\(title)")
 
                 Spacer(minLength: 0)
 
                 Button(action: onConfirm) {
                     Image(systemName: "checkmark")
-                        .font(.system(size: Self.actionIconSize, weight: .semibold))
+                        .font(.system(size: Self.confirmIconSize, weight: .semibold))
                         .foregroundStyle(Color.foreground)
                         .frame(width: Self.rowHeight, height: Self.rowHeight)
                         .contentShape(Rectangle())
@@ -1717,8 +1996,10 @@ private struct PanelFeatureActionRow: View {
 /// 风格 / 实况等面板共用的胶囊开关：按钮即开关，选中时主色底。
 private struct PanelCompactToggleButton: View {
     let title: String
+    var iconName: String? = nil
     let isOn: Bool
     var isEnabled: Bool = true
+    var accessibilityLabel: String? = nil
     let action: () -> Void
 
     private var activeColor: Color { Color.primary }
@@ -1726,7 +2007,7 @@ private struct PanelCompactToggleButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            label
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(isOn ? Color.primaryForeground : Color.foreground)
                 .frame(maxWidth: .infinity)
@@ -1744,8 +2025,24 @@ private struct PanelCompactToggleButton: View {
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.42)
         .accessibilityAddTraits(isOn ? .isSelected : [])
-        .accessibilityLabel(title)
+        .accessibilityLabel(accessibilityLabel ?? title)
         .accessibilityValue(isOn ? "已开启" : "已关闭")
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        if let iconName {
+            HStack(spacing: 4) {
+                Image(iconName)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
+                Text(title)
+            }
+        } else {
+            Text(title)
+        }
     }
 }
 
@@ -1753,6 +2050,7 @@ private struct DotShapeStylePanel: View {
     @Binding var selectedCategory: DotShapeCategory
     @Binding var selectedShape: DotShapeAsset
     @Binding var dotCharacterText: String
+    let selectedDotColor: Color
     @AppStorage("chocho.dotShape.recentNames") private var recentShapeNamesStore = DotShapeAsset.defaultSelection.name
 
     var body: some View {
@@ -1762,7 +2060,8 @@ private struct DotShapeStylePanel: View {
 
             DotShapeGrid(
                 shapes: shapes,
-                selectedShape: $selectedShape
+                selectedShape: $selectedShape,
+                selectedDotColor: selectedDotColor
             ) { shape in
                 selectedShape = shape
                 let recentShapeNames = DotShapeRecentList.selecting(
@@ -1876,7 +2175,7 @@ private struct DotColorPicker: View {
             Button {
                 selectedDotColor = .clear
             } label: {
-                Text("透明")
+                Text("拼贴")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(usesCollageTint ? Color.primaryForeground : Color.foreground)
                     .frame(width: 48, height: 28)
@@ -1893,7 +2192,7 @@ private struct DotColorPicker: View {
                     }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("透明波点")
+            .accessibilityLabel("拼贴波点")
             .accessibilityHint("恢复主图与背景的互相拼贴")
             .accessibilityAddTraits(usesCollageTint ? .isSelected : [])
         }
@@ -1969,6 +2268,7 @@ private struct DotShapeCategoryTabs: View {
 private struct DotShapeGrid: View {
     let shapes: [DotShapeAsset]
     @Binding var selectedShape: DotShapeAsset
+    let selectedDotColor: Color
     let onSelect: (DotShapeAsset) -> Void
     @State private var availableWidth: CGFloat = 361
 
@@ -1993,7 +2293,8 @@ private struct DotShapeGrid: View {
                 ForEach(shapes) { shape in
                     DotShapeTile(
                         shape: shape,
-                        isSelected: shape == selectedShape
+                        isSelected: shape == selectedShape,
+                        selectedDotColor: selectedDotColor
                     ) {
                         onSelect(shape)
                     }
@@ -2032,6 +2333,8 @@ private struct DotShapeGridWidthKey: PreferenceKey {
 private struct DotShapeTile: View {
     let shape: DotShapeAsset
     let isSelected: Bool
+    /// The currently selected dot color; used to tint template-rendered shapes.
+    let selectedDotColor: Color
     let onSelect: () -> Void
 
     var body: some View {
@@ -2064,7 +2367,7 @@ private struct DotShapeTile: View {
         } else if let builtInShape = shape.builtInShape {
             DotShapeDrawing(
                 shape: builtInShape,
-                color: isSelected ? Color.primaryForeground : Color.foreground
+                color: isSelected ? Color.primaryForeground : dotPreviewColor
             )
         } else {
             DotShapeAssetImageView(
@@ -2076,8 +2379,15 @@ private struct DotShapeTile: View {
         }
     }
 
+    /// Resolved color for template/drawing shapes in normal (unselected) state.
+    /// When the dot color is the collage-transparent sentinel, fall back to black.
+    private var dotPreviewColor: Color {
+        let isCollage = PuzzleDotCollageColor.usesCollageTint(selectedDotColor: selectedDotColor)
+        return isCollage ? Color.black : selectedDotColor
+    }
+
     private var previewColor: Color {
-        isSelected ? Color.primaryForeground : Color.foreground
+        isSelected ? Color.primaryForeground : dotPreviewColor
     }
 
     private var tileBackground: Color {
@@ -2090,6 +2400,7 @@ private struct DotShapeTile: View {
 private struct ASCIIArtControlsPanel: View {
     @Binding var settings: ASCIIArtSettings
     let onCancel: () -> Void
+    let onRemove: () -> Void
     let onConfirm: () -> Void
 
     private var controlFont: Font { .system(size: 13, weight: .regular) }
@@ -2141,7 +2452,7 @@ private struct ASCIIArtControlsPanel: View {
 
             PanelFeatureActionRow(
                 title: StylePanelFeature.ascii.title,
-                onCancel: onCancel,
+                onRemove: onRemove,
                 onConfirm: onConfirm
             )
         }
