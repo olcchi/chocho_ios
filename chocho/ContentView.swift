@@ -52,6 +52,8 @@ struct ContentView: View {
     @State private var asciiArtSettings: ASCIIArtSettings = .default
     @State private var asciiArtSessionSnapshot: ASCIIArtSettings?
     @State private var asciiArtCache = ASCIIArtCache()
+    @State private var textBubbleSettings: TextBubbleSettings = .default
+    @State private var textBubbleSessionSnapshot: TextBubbleSettings?
     @State private var filteredCanvasPreviewImage: UIImage?
     @State private var filteredCanvasPreviewKey: String?
     @State private var filteredCanvasPreviewTask: Task<Void, Never>?
@@ -149,6 +151,7 @@ struct ContentView: View {
                 CanvasToastOverlay(message: $toastMessage)
             }
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     @ViewBuilder
@@ -208,6 +211,7 @@ struct ContentView: View {
             .onChange(of: usesRandomDotColors) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: selectedDotShape) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: dotCharacterText) { _, _ in scheduleCanvasDraftSave() }
+            .onChange(of: textBubbleSettings) { _, _ in scheduleCanvasDraftSave() }
             .onChange(of: isTraceDrawingEnabled) { _, isEnabled in
                 if isEnabled, isDotEditingEnabled {
                     withoutAnimation {
@@ -307,6 +311,7 @@ struct ContentView: View {
                 photoCompression: $photoCompression,
                 y2kCCDFilterSettings: $y2kCCDFilterSettings,
                 asciiArtSettings: $asciiArtSettings,
+                textBubbleSettings: $textBubbleSettings,
                 isDetectingSubjectOutline: isDetectingSubjectOutline
             ),
             liveControls: BottomSheetLiveControls(
@@ -345,7 +350,11 @@ struct ContentView: View {
             onBeginASCIIArtFeature: beginASCIIArtFeatureSession,
             onConfirmASCIIArtFeature: confirmASCIIArtFeatureSession,
             onCancelASCIIArtFeature: cancelASCIIArtFeatureSession,
-            onRemoveASCIIArtFeature: removeASCIIArtFeature
+            onRemoveASCIIArtFeature: removeASCIIArtFeature,
+            onBeginTextBubbleFeature: beginTextBubbleFeatureSession,
+            onConfirmTextBubbleFeature: confirmTextBubbleFeatureSession,
+            onCancelTextBubbleFeature: cancelTextBubbleFeatureSession,
+            onRemoveTextBubbleFeature: removeTextBubbleFeature
         )
         .id(panelResetID)
         // 面板视觉上延伸进底部安全区，由根视图统一处理，组件内不写 ignoresSafeArea
@@ -375,9 +384,9 @@ struct ContentView: View {
     @ViewBuilder
     private var canvasArea: some View {
         if let canvasImage {
-            GeometryReader { canvasProxy in
+            GeometryReader { _ in
                 let previewImage = filteredCanvasPreviewImage ?? canvasImage
-                let canvas = PuzzleCanvasView(
+                PuzzleCanvasView(
                     image: previewImage,
                     layoutImageSize: CanvasImageLoader.pixelSize(for: canvasImage),
                     extensionRatio: extensionRatio,
@@ -393,6 +402,8 @@ struct ContentView: View {
                     dotColor: selectedDotColor,
                     usesRandomDotColors: usesRandomDotColors,
                     dotCharacterText: dotCharacterText,
+                    textBubbleSettings: textBubbleSettings,
+                    isTextBubbleEditingEnabled: textBubbleSessionSnapshot != nil,
                     viewportScale: viewportScale,
                     viewportOffset: viewportOffset,
                     tracePoints: tracePoints,
@@ -415,6 +426,8 @@ struct ContentView: View {
                     onPanViewport: panCanvasViewport(by:),
                     onDoubleTapBackground: applyCanvasViewportReset,
                     onViewportReset: applyCanvasViewportResetWithoutAnimation,
+                    onMagnifyViewport: magnifyCanvasViewport,
+                    onEndMagnifyViewport: endCanvasViewportMagnification,
                     onTraceChanged: updateTracePoints,
                     onTraceStrokeEnded: commitTraceStrokeDots,
                     onSelectDot: selectDot,
@@ -422,16 +435,10 @@ struct ContentView: View {
                     onScaleSelectedDot: previewScaleSelectedDot(by:),
                     onRotateSelectedDot: previewRotateSelectedDot(by:),
                     onCommitSelectedDotEdit: commitSelectedDotEdit,
-                    onDeleteSelectedDot: deleteSelectedDot
+                    onDeleteSelectedDot: deleteSelectedDot,
+                    onUpdateTextBubble: updateTextBubble,
+                    onDeleteTextBubble: deleteTextBubble
                 )
-
-                canvas
-                    .simultaneousGesture(
-                        canvasMagnifyGesture(
-                            availableSize: canvasProxy.size,
-                            isEnabled: !isTraceDrawingEnabled && selectedDotID == nil
-                        )
-                    )
             }
         } else {
             Color.clear
@@ -690,6 +697,7 @@ struct ContentView: View {
         photoCompressionSessionSnapshot = nil
         y2kCCDFilterSessionSnapshot = nil
         asciiArtSessionSnapshot = nil
+        textBubbleSessionSnapshot = nil
 
         selectedTab = .dots
         isPanelExpanded = false
@@ -707,6 +715,7 @@ struct ContentView: View {
         photoCompression = .none
         y2kCCDFilterSettings = .default
         asciiArtSettings = .default
+        textBubbleSettings = .default
 
         extensionRatio = PuzzleCanvasDefaults.defaultExtensionRatio
         extensionSide = .right
@@ -1106,7 +1115,6 @@ struct ContentView: View {
         var editedDots = puzzleDots
         editedDots[selectedDotIndex] = transform(editedDots[selectedDotIndex])
         puzzleDots = editedDots
-        scheduleCanvasDraftSave()
     }
 
     @MainActor
@@ -1286,6 +1294,52 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func beginTextBubbleFeatureSession() {
+        guard textBubbleSessionSnapshot == nil else { return }
+        textBubbleSessionSnapshot = textBubbleSettings
+        textBubbleSettings = textBubbleSettings.enabledForPanelEditing
+    }
+
+    @MainActor
+    private func confirmTextBubbleFeatureSession() {
+        textBubbleSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func removeTextBubbleFeature() {
+        textBubbleSettings = .default
+        textBubbleSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func updateTextBubble(_ bubble: TextBubbleItem) {
+        textBubbleSettings.updateBubble(bubble)
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func deleteTextBubble(id: UUID) {
+        textBubbleSettings.deleteBubble(id: id)
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func cancelTextBubbleFeatureSession() {
+        guard let snapshot = textBubbleSessionSnapshot else { return }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            textBubbleSettings = snapshot
+        }
+
+        textBubbleSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
     private func clearTracePoints() {
         guard hasClearableTrace else { return }
 
@@ -1318,6 +1372,7 @@ struct ContentView: View {
         }
         selectedDotID = nil
         dismissToast()
+        scheduleCanvasDraftSave()
     }
 
     @MainActor
@@ -1330,6 +1385,7 @@ struct ContentView: View {
             self.selectedDotID = nil
         }
         dismissToast()
+        scheduleCanvasDraftSave()
     }
 
     @MainActor
@@ -1342,6 +1398,7 @@ struct ContentView: View {
             self.selectedDotID = nil
         }
         dismissToast()
+        scheduleCanvasDraftSave()
     }
 
     @MainActor
@@ -1373,6 +1430,7 @@ struct ContentView: View {
         canvasImage = restored.image
         y2kCCDFilterSettings = restored.y2kCCDFilterSettings
         asciiArtSettings = restored.asciiArtSettings
+        textBubbleSettings = restored.textBubbleSettings
         invalidateStyledPreviewImage()
         refreshStyledPreviewImageIfNeeded()
         liveDotAnimation = restored.liveDotAnimation
@@ -1459,6 +1517,7 @@ struct ContentView: View {
             liveDotAnimation: liveDotAnimation,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             asciiArtSettings: asciiArtSettings,
+            textBubbleSettings: textBubbleSettings,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
         )
@@ -1474,6 +1533,7 @@ struct ContentView: View {
             viewportScale = scale
             viewportOffset = offset
         }
+        scheduleCanvasDraftSave()
     }
 
     @MainActor
@@ -1484,6 +1544,7 @@ struct ContentView: View {
             viewportScale = scale
             viewportOffset = offset
         }
+        scheduleCanvasDraftSave()
     }
 
     /// 下载入口：按 `LiveDotAnimation` 选静态 JPEG 或 Live Photo（关键帧 + 配对视频）。
@@ -1511,6 +1572,7 @@ struct ContentView: View {
             dotColor: selectedDotColor,
             usesRandomDotColors: usesRandomDotColors,
             dotCharacterText: dotCharacterText,
+            textBubbleSettings: textBubbleSettings,
             liveDotAnimation: liveDotAnimation,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             asciiArtSettings: asciiArtSettings,
@@ -1534,28 +1596,8 @@ struct ContentView: View {
             let product: CanvasExportProduct? = await Task.detached(priority: .userInitiated) {
                 switch exportFormat {
                 case .livePhoto:
-                    let liveSnapshot = CanvasLivePhotoExporter.Snapshot(
-                        image: snapshot.image,
-                        extensionRatio: snapshot.extensionRatio,
-                        extensionSide: snapshot.extensionSide,
-                        photoCompression: snapshot.photoCompression,
-                        backgroundStyle: snapshot.backgroundStyle,
-                        backgroundColors: snapshot.backgroundColors,
-                        backgroundPatternSpacing: snapshot.backgroundPatternSpacing,
-                        dots: snapshot.dots,
-                        dotScale: snapshot.dotScale,
-                        dotColor: snapshot.dotColor,
-                        usesRandomDotColors: snapshot.usesRandomDotColors,
-                        dotCharacterText: snapshot.dotCharacterText,
-                        liveDotAnimation: snapshot.liveDotAnimation,
-                        y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
-                        asciiArtSettings: snapshot.asciiArtSettings,
-                        isSourceLiveMotionEnabled: snapshot.isSourceLiveMotionEnabled,
-                        hasSourceLiveVideo: snapshot.hasSourceLiveVideo,
-                        sourcePhotoAssetLocalIdentifier: snapshot.sourcePhotoAssetLocalIdentifier
-                    )
                     guard let bundle = await CanvasLivePhotoExporter.export(
-                        snapshot: liveSnapshot,
+                        snapshot: snapshot,
                         keyPhotoSize: exportSize,
                         preloadedSourceLiveVideo: preloadedSourceLiveVideo
                     ) else {
@@ -1583,6 +1625,7 @@ struct ContentView: View {
                         dotColor: snapshot.dotColor,
                         usesRandomDotColors: snapshot.usesRandomDotColors,
                         dotCharacterText: snapshot.dotCharacterText,
+                        textBubbleSettings: snapshot.textBubbleSettings,
                         y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
                         asciiArtSettings: snapshot.asciiArtSettings,
                         asciiArtMask: asciiArtMask
@@ -1679,38 +1722,38 @@ struct ContentView: View {
     @MainActor
     private func panCanvasViewport(by translation: CGSize) {
         viewportOffset = viewportOffset + translation
+        scheduleCanvasDraftSave()
     }
 
-    private func canvasMagnifyGesture(
-        availableSize: CGSize,
-        isEnabled: Bool
-    ) -> some Gesture {
-        MagnifyGesture()
-            .onChanged { value in
-                guard isEnabled else { return }
+    @MainActor
+    private func magnifyCanvasViewport(
+        magnification: CGFloat,
+        anchor: CGPoint,
+        availableSize: CGSize
+    ) {
+        let magnificationDelta = magnification / lastMagnification
+        guard magnificationDelta.isFinite, magnificationDelta > 0 else { return }
 
-                let magnificationDelta = value.magnification / lastMagnification
-                guard magnificationDelta.isFinite, magnificationDelta > 0 else { return }
+        let nextScale = PuzzleCanvasViewport.clampedScale(
+            viewportScale * magnificationDelta
+        )
+        let appliedMultiplier = nextScale / viewportScale
+        guard appliedMultiplier.isFinite, appliedMultiplier > 0 else { return }
 
-                let anchor = value.startLocation
-                let nextScale = PuzzleCanvasViewport.clampedScale(
-                    viewportScale * magnificationDelta
-                )
-                let appliedMultiplier = nextScale / viewportScale
-                guard appliedMultiplier.isFinite, appliedMultiplier > 0 else { return }
+        viewportOffset = PuzzleCanvasViewport.adjustedOffset(
+            anchor: anchor,
+            availableSize: availableSize,
+            scaleMultiplier: appliedMultiplier,
+            baseOffset: viewportOffset
+        )
+        viewportScale = nextScale
+        lastMagnification = magnification
+    }
 
-                viewportOffset = PuzzleCanvasViewport.adjustedOffset(
-                    anchor: anchor,
-                    availableSize: availableSize,
-                    scaleMultiplier: appliedMultiplier,
-                    baseOffset: viewportOffset
-                )
-                viewportScale = nextScale
-                lastMagnification = value.magnification
-            }
-            .onEnded { _ in
-                lastMagnification = 1
-            }
+    @MainActor
+    private func endCanvasViewportMagnification() {
+        lastMagnification = 1
+        scheduleCanvasDraftSave()
     }
 
     @MainActor

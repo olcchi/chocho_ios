@@ -20,6 +20,8 @@ struct PuzzleCanvasView: View {
     var dotColor: Color = .primary
     var usesRandomDotColors = false
     var dotCharacterText = CharacterDotText.defaultText
+    var textBubbleSettings = TextBubbleSettings.default
+    var isTextBubbleEditingEnabled = false
     var viewportScale: CGFloat = 1
     var viewportOffset: CGSize = .zero
     var tracePoints: [PuzzleCanvasTracePoint] = []
@@ -39,6 +41,8 @@ struct PuzzleCanvasView: View {
     var onPanViewport: ((CGSize) -> Void)?
     var onDoubleTapBackground: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
     var onViewportReset: ((_ scale: CGFloat, _ offset: CGSize) -> Void)?
+    var onMagnifyViewport: ((_ magnification: CGFloat, _ anchor: CGPoint, _ availableSize: CGSize) -> Void)?
+    var onEndMagnifyViewport: (() -> Void)?
     var onTraceChanged: (([PuzzleCanvasTracePoint]) -> Void)?
     var onTraceStrokeEnded: (() -> Void)?
     var onSelectDot: ((UUID?) -> Void)?
@@ -47,12 +51,18 @@ struct PuzzleCanvasView: View {
     var onRotateSelectedDot: ((CGFloat) -> Void)?
     var onCommitSelectedDotEdit: (() -> Void)?
     var onDeleteSelectedDot: (() -> Void)?
+    var onUpdateTextBubble: ((TextBubbleItem) -> Void)?
+    var onDeleteTextBubble: ((UUID) -> Void)?
+    var onTextBubbleInteractionChanged: ((Bool) -> Void)?
     /// 屏幕预览用较轻插值；导出走 `CanvasRasterExporter` 全质量。
     var photoInterpolation: Image.Interpolation = .medium
 
     @State private var isTracingCurrentStroke = false
     @State private var activeTracePoints: [PuzzleCanvasTracePoint] = []
     @State private var activeCanvasDragMode: PuzzleCanvasActiveDragMode?
+    @State private var activeCanvasMagnifyStartsOnTextBubble: Bool?
+    @State private var selectedTextBubbleID: UUID?
+    @State private var textBubbleMagnifyStartScale: Double?
     @State private var viewportDragTranslation: CGSize = .zero
     @State private var lastEditMagnification: CGFloat = 1
     @State private var lastEditRotation: Angle = .zero
@@ -136,6 +146,12 @@ struct PuzzleCanvasView: View {
             )
             .simultaneousGesture(
                 canvasDragGesture(
+                    availableSize: proxy.size,
+                    layout: layout
+                )
+            )
+            .simultaneousGesture(
+                canvasMagnifyGesture(
                     availableSize: proxy.size,
                     layout: layout
                 )
@@ -281,6 +297,13 @@ struct PuzzleCanvasView: View {
                 height: referenceFrame.height
             )
 
+            textBubbleOverlay(referenceFrame: referenceFrame)
+                .frame(
+                    width: referenceFrame.width,
+                    height: referenceFrame.height,
+                    alignment: .topLeading
+                )
+
             DotEditingSelectionOverlay(
                 dots: dots,
                 selectedDotID: selectedDotID,
@@ -309,6 +332,63 @@ struct PuzzleCanvasView: View {
             x: layout.visibleComposedClipPosition.x,
             y: layout.visibleComposedClipPosition.y
         )
+    }
+
+    @ViewBuilder
+    private func textBubbleOverlay(referenceFrame: CGRect) -> some View {
+        if textBubbleSettings.enabled {
+            let canvasRect = CGRect(origin: .zero, size: referenceFrame.size)
+            ForEach(textBubbleSettings.visibleBubbles) { bubble in
+                let bubbleFrame = TextBubbleCanvasLayout.frame(for: bubble, in: canvasRect)
+                if isTextBubbleEditingEnabled {
+                    EditableTextBubbleView(
+                        bubble: bubble,
+                        isSelected: selectedTextBubbleID == bubble.id,
+                        text: Binding(
+                            get: { bubble.text },
+                            set: { newText in
+                                selectedTextBubbleID = bubble.id
+                                onUpdateTextBubble?(bubble.updating(text: newText))
+                            }
+                        ),
+                        canvasSize: referenceFrame.size,
+                        bubbleColor: Color(uiColor: .systemGray5),
+                        baseSize: TextBubbleCanvasLayout.baseSize(for: bubble, in: referenceFrame.size),
+                        onSelect: {
+                            selectedTextBubbleID = bubble.id
+                        },
+                        onCommitMove: { movedBubble in
+                            selectedTextBubbleID = movedBubble.id
+                            onUpdateTextBubble?(movedBubble)
+                        },
+                        onDelete: {
+                            if selectedTextBubbleID == bubble.id {
+                                selectedTextBubbleID = nil
+                            }
+                            onDeleteTextBubble?(bubble.id)
+                        },
+                        onInteractionChanged: { isActive in
+                            onTextBubbleInteractionChanged?(isActive)
+                        }
+                    )
+                    .frame(
+                        width: bubbleFrame.width + EditableTextBubbleView.controlOutset * 2,
+                        height: bubbleFrame.height + EditableTextBubbleView.controlOutset * 2
+                    )
+                    .position(x: bubbleFrame.midX, y: bubbleFrame.midY)
+                } else {
+                    TextBubbleView(
+                        text: bubble.displayText,
+                        bubbleColor: Color(uiColor: .systemGray5),
+                        baseSize: TextBubbleCanvasLayout.baseSize(for: bubble, in: referenceFrame.size),
+                        maximumTextWidth: TextBubbleCanvasLayout.maximumTextWidth(in: referenceFrame.size)
+                    )
+                    .frame(width: bubbleFrame.width, height: bubbleFrame.height)
+                    .position(x: bubbleFrame.midX, y: bubbleFrame.midY)
+                    .allowsHitTesting(false)
+                }
+            }
+        }
     }
 
     private func photoImage(for blinkTime: TimeInterval?) -> UIImage {
@@ -433,6 +513,19 @@ struct PuzzleCanvasView: View {
             .onEnded { value in
                 guard !isTraceDrawingEnabled else { return }
 
+                if isTextBubbleEditingEnabled,
+                   let tappedTextBubbleID = textBubbleID(
+                    at: value.location,
+                    availableSize: availableSize,
+                    layout: layout
+                ) {
+                    selectedTextBubbleID = tappedTextBubbleID
+                    return
+                }
+                if isTextBubbleEditingEnabled {
+                    selectedTextBubbleID = nil
+                }
+
                 if isDotEditingEnabled {
                     let tappedDotID = dotID(
                         at: value.location,
@@ -514,17 +607,20 @@ struct PuzzleCanvasView: View {
     ) -> some Gesture {
         DragGesture(minimumDistance: DotEditingGestureMetrics.minimumDragDistance, coordinateSpace: .local)
             .onChanged { value in
-                guard PuzzleCanvasViewportPanPolicy.isEnabled(
-                    isTraceDrawingEnabled: isTraceDrawingEnabled,
-                    isDotEditingEnabled: isDotEditingEnabled,
-                    isSelectedDotDragActive: activeCanvasDragMode == .selectedDot
-                ) || activeCanvasDragMode == .selectedDot else { return }
-
-                switch resolvedCanvasDragMode(
+                let dragMode = resolvedCanvasDragMode(
                     for: value,
                     availableSize: availableSize,
                     layout: layout
-                ) {
+                )
+                guard dragMode != .textBubble else { return }
+
+                guard PuzzleCanvasViewportPanPolicy.isEnabled(
+                    isTraceDrawingEnabled: isTraceDrawingEnabled,
+                    isDotEditingEnabled: isDotEditingEnabled,
+                    isSelectedDotDragActive: dragMode == .selectedDot
+                ) || dragMode == .selectedDot else { return }
+
+                switch dragMode {
                 case .viewport:
                     viewportDragTranslation = value.translation
 
@@ -534,6 +630,9 @@ struct PuzzleCanvasView: View {
                         availableSize: availableSize,
                         layout: layout
                     )
+
+                case .textBubble:
+                    break
                 }
             }
             .onEnded { value in
@@ -548,6 +647,8 @@ struct PuzzleCanvasView: View {
                     onPanViewport?(value.translation)
                 case .selectedDot:
                     onCommitSelectedDotEdit?()
+                case .textBubble:
+                    break
                 case nil:
                     break
                 }
@@ -561,6 +662,15 @@ struct PuzzleCanvasView: View {
     ) -> PuzzleCanvasActiveDragMode {
         if let activeCanvasDragMode {
             return activeCanvasDragMode
+        }
+
+        if textBubbleID(
+            at: value.startLocation,
+            availableSize: availableSize,
+            layout: layout
+        ) != nil {
+            activeCanvasDragMode = .textBubble
+            return .textBubble
         }
 
         let startedDotID = dotID(
@@ -599,6 +709,65 @@ struct PuzzleCanvasView: View {
                 extensionSide: extensionSide
             )
         )
+    }
+
+    private func canvasMagnifyGesture(
+        availableSize: CGSize,
+        layout: PuzzleCanvasLayoutResult
+    ) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                if isTextBubbleEditingEnabled,
+                   let selectedTextBubble = selectedTextBubble {
+                    onTextBubbleInteractionChanged?(true)
+                    let startScale = textBubbleMagnifyStartScale ?? selectedTextBubble.scale
+                    if textBubbleMagnifyStartScale == nil {
+                        textBubbleMagnifyStartScale = startScale
+                    }
+                    onUpdateTextBubble?(selectedTextBubble.updating(
+                        scale: startScale * Double(value.magnification)
+                    ))
+                    return
+                }
+
+                if activeCanvasMagnifyStartsOnTextBubble == nil {
+                    activeCanvasMagnifyStartsOnTextBubble = textBubbleID(
+                        at: value.startLocation,
+                        availableSize: availableSize,
+                        layout: layout
+                    ) != nil
+                }
+
+                guard activeCanvasMagnifyStartsOnTextBubble == false else {
+                    onTextBubbleInteractionChanged?(true)
+                    return
+                }
+                guard !isTraceDrawingEnabled, selectedDotID == nil else { return }
+
+                onMagnifyViewport?(value.magnification, value.startLocation, availableSize)
+            }
+            .onEnded { _ in
+                if textBubbleMagnifyStartScale != nil {
+                    textBubbleMagnifyStartScale = nil
+                    onTextBubbleInteractionChanged?(false)
+                    return
+                }
+
+                let startedOnTextBubble = activeCanvasMagnifyStartsOnTextBubble
+                activeCanvasMagnifyStartsOnTextBubble = nil
+
+                if startedOnTextBubble == true {
+                    onTextBubbleInteractionChanged?(false)
+                    return
+                }
+
+                onEndMagnifyViewport?()
+            }
+    }
+
+    private var selectedTextBubble: TextBubbleItem? {
+        guard let selectedTextBubbleID else { return nil }
+        return textBubbleSettings.visibleBubbles.first { $0.id == selectedTextBubbleID }
     }
 
     private var selectedDotMagnifyGesture: some Gesture {
@@ -659,6 +828,38 @@ struct PuzzleCanvasView: View {
                 )
                 return hypot(referenceLocation.x - center.x, referenceLocation.y - center.y) <= max(displaySize / 2, 22)
             }
+        }?.id
+    }
+
+    private func textBubbleID(
+        at location: CGPoint,
+        availableSize: CGSize,
+        layout: PuzzleCanvasLayoutResult
+    ) -> UUID? {
+        guard isTextBubbleEditingEnabled,
+              textBubbleSettings.enabled,
+              let unscaledLocation = PuzzleCanvasCoordinate.unscaledLocation(
+                for: location,
+                availableSize: availableSize,
+                scale: viewportScale,
+                offset: displayViewportOffset(
+                    layout: layout,
+                    availableSize: availableSize
+                )
+              ) else {
+            return nil
+        }
+
+        let referenceLocation = CGPoint(
+            x: unscaledLocation.x - layout.referenceComposedFrame.minX,
+            y: unscaledLocation.y - layout.referenceComposedFrame.minY
+        )
+        let canvasRect = CGRect(origin: .zero, size: layout.referenceComposedFrame.size)
+
+        return textBubbleSettings.visibleBubbles.reversed().first { bubble in
+            TextBubbleCanvasLayout.frame(for: bubble, in: canvasRect)
+                .insetBy(dx: -EditableTextBubbleView.controlOutset, dy: -EditableTextBubbleView.controlOutset)
+                .contains(referenceLocation)
         }?.id
     }
 
@@ -804,9 +1005,163 @@ private struct TraceGestureModifier<Trace: Gesture>: ViewModifier {
     }
 }
 
+private struct EditableTextBubbleView: View {
+    static let controlOutset: CGFloat = 28
+
+    let bubble: TextBubbleItem
+    let isSelected: Bool
+    @Binding var text: String
+    let canvasSize: CGSize
+    let bubbleColor: Color
+    let baseSize: CGFloat
+    let onSelect: () -> Void
+    let onCommitMove: (TextBubbleItem) -> Void
+    let onDelete: () -> Void
+    let onInteractionChanged: (Bool) -> Void
+    @FocusState private var isTextFieldFocused: Bool
+    @State private var dragStartCenter: CGPoint?
+    @State private var dragTranslation: CGSize = .zero
+    @State private var isDraggingBubble = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let resolvedBubbleColor = UIColor(bubbleColor)
+            let foregroundColor = Color(resolvedBubbleColor.readableTextColor)
+            let layout = TextBubbleLayout.layout(
+                for: bubble.displayText,
+                baseSize: baseSize,
+                maximumTextWidth: TextBubbleCanvasLayout.maximumTextWidth(in: canvasSize)
+            )
+            let deleteButtonSize = max(20, min(28, layout.fontSize * 1.35))
+            let bubbleOrigin = CGPoint(
+                x: (proxy.size.width - layout.renderSize.width) / 2,
+                y: (proxy.size.height - layout.renderSize.height) / 2
+            )
+
+            ZStack(alignment: .topLeading) {
+                TextBubbleShape()
+                    .fill(bubbleColor)
+                    .frame(width: layout.renderSize.width, height: layout.renderSize.height)
+                    .position(
+                        x: bubbleOrigin.x + layout.renderSize.width / 2,
+                        y: bubbleOrigin.y + layout.renderSize.height / 2
+                    )
+
+                if isSelected {
+                    TextBubbleShape()
+                        .stroke(Color.primary.opacity(0.9), lineWidth: 1.5)
+                        .frame(width: layout.renderSize.width, height: layout.renderSize.height)
+                        .position(
+                            x: bubbleOrigin.x + layout.renderSize.width / 2,
+                            y: bubbleOrigin.y + layout.renderSize.height / 2
+                        )
+                }
+
+                TextField("输入文字", text: $text, axis: .vertical)
+                    .font(.system(size: layout.fontSize, weight: .regular))
+                    .foregroundStyle(foregroundColor)
+                    .textFieldStyle(.plain)
+                    .focused($isTextFieldFocused)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit {
+                        isTextFieldFocused = false
+                    }
+                    .lineLimit(1...TextBubbleLayout.maximumLineCount)
+                    .minimumScaleFactor(0.72)
+                    .frame(
+                        width: max(1, layout.textRect.width),
+                        height: max(1, layout.textRect.height),
+                        alignment: .leading
+                    )
+                    .position(
+                        x: bubbleOrigin.x + layout.textRect.midX,
+                        y: bubbleOrigin.y + layout.textRect.midY
+                    )
+                    .toolbar {
+                        if isTextFieldFocused {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("完成") {
+                                    isTextFieldFocused = false
+                                }
+                            }
+                        }
+                    }
+
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: deleteButtonSize * 0.48, weight: .bold))
+                        .foregroundStyle(Color.primaryForeground)
+                        .frame(width: deleteButtonSize, height: deleteButtonSize)
+                        .background(Color.primary.opacity(0.88), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .contentShape(Circle())
+                .position(
+                    x: bubbleOrigin.x + layout.renderSize.width + deleteButtonSize * 0.42,
+                    y: bubbleOrigin.y - deleteButtonSize * 0.42
+                )
+                .accessibilityLabel("删除气泡")
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .offset(dragTranslation)
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    onSelect()
+                }
+            )
+            .highPriorityGesture(dragGesture(bubbleSize: layout.renderSize))
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func dragGesture(bubbleSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .local)
+            .onChanged { value in
+                if !isDraggingBubble {
+                    isDraggingBubble = true
+                    onSelect()
+                    onInteractionChanged(true)
+                }
+
+                dragTranslation = value.translation
+            }
+            .onEnded { value in
+                let canvasRect = CGRect(origin: .zero, size: canvasSize)
+                let currentFrame = TextBubbleCanvasLayout.frame(for: bubble, in: canvasRect)
+                let startCenter = dragStartCenter ?? CGPoint(
+                    x: currentFrame.midX,
+                    y: currentFrame.midY
+                )
+                let nextCenter = CGPoint(
+                    x: startCenter.x + value.translation.width,
+                    y: startCenter.y + value.translation.height
+                )
+                let normalizedCenter = TextBubbleCanvasLayout.normalizedCenter(
+                    for: nextCenter,
+                    bubbleSize: bubbleSize,
+                    in: canvasRect
+                )
+                let movedBubble = bubble.updating(
+                    centerX: normalizedCenter.x,
+                    centerY: normalizedCenter.y
+                )
+                dragStartCenter = nil
+                dragTranslation = .zero
+                isDraggingBubble = false
+                onCommitMove(movedBubble)
+                onInteractionChanged(false)
+            }
+    }
+}
+
 private enum PuzzleCanvasActiveDragMode {
     case viewport
     case selectedDot
+    case textBubble
 }
 
 private struct DotEditingGestureModifier<Magnify: Gesture, Rotate: Gesture>: ViewModifier {

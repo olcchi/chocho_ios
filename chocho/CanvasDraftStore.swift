@@ -24,6 +24,7 @@ struct CanvasDraftCapture: Sendable {
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
     let asciiArtSettings: ASCIIArtSettings
+    let textBubbleSettings: TextBubbleSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
 }
@@ -50,6 +51,7 @@ struct CanvasDraftRestore: Sendable {
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
     let asciiArtSettings: ASCIIArtSettings
+    let textBubbleSettings: TextBubbleSettings
     let isSourceLiveMotionEnabled: Bool
     let sourcePhotoAssetLocalIdentifier: String?
 }
@@ -75,8 +77,8 @@ nonisolated struct CanvasDraftStoredBackgroundColors: Codable, Equatable, Sendab
 }
 
 nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
-    static let currentVersion = 10
-    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    static let currentVersion = 12
+    static let supportedVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     var version: Int
     var savedAt: Date
@@ -109,6 +111,8 @@ nonisolated struct CanvasDraftManifest: Codable, Equatable, Sendable {
     var subjectGlowSettings: LegacySubjectGlowSettings?
     /// v10+：ASCII 字符纹理设置（旧草稿缺省为 nil → 恢复为 .default，即关闭）
     var asciiArtSettings: ASCIIArtSettings?
+    /// v11+：风格气泡设置（旧草稿缺省为 nil → 恢复为 .default，即关闭；v12+ 支持多个气泡）
+    var textBubbleSettings: TextBubbleSettings?
     /// v3+：原图实况开关（旧草稿缺省为 nil → 恢复为 false）
     var isSourceLiveMotionEnabled: Bool?
     /// v3+：相册 PHAsset local identifier（旧草稿缺省为 nil）
@@ -287,38 +291,28 @@ nonisolated enum CanvasDraftStore {
             liveDotAnimationRawValue: capture.liveDotAnimation.rawValue,
             y2kCCDFilterSettings: capture.y2kCCDFilterSettings,
             asciiArtSettings: capture.asciiArtSettings,
+            textBubbleSettings: capture.textBubbleSettings,
             isSourceLiveMotionEnabled: capture.isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: capture.sourcePhotoAssetLocalIdentifier
         )
 
-        return await Task.detached(priority: .utility) {
-            do {
-                try writeDraft(
-                    manifest: manifest,
-                    photoData: photoData,
-                    to: directory
-                )
-                return true
-            } catch {
-                return false
-            }
-        }.value
+        return await CanvasDraftStoreIO.shared.save(
+            manifest: manifest,
+            photoData: photoData,
+            to: directory
+        )
     }
 
     static func load(directoryURL: URL? = nil) async -> CanvasDraftRestore? {
         let directory = directoryURL ?? defaultDirectoryURL()
 
-        return await Task.detached(priority: .utility) {
-            readDraft(from: directory)
-        }.value
+        return await CanvasDraftStoreIO.shared.load(from: directory)
     }
 
     static func clear(directoryURL: URL? = nil) async {
         let directory = directoryURL ?? defaultDirectoryURL()
 
-        await Task.detached(priority: .utility) {
-            try? FileManager.default.removeItem(at: directory)
-        }.value
+        await CanvasDraftStoreIO.shared.clear(directory)
     }
 
     nonisolated static func writeDraft(
@@ -408,11 +402,41 @@ nonisolated enum CanvasDraftStore {
                 liveDotAnimation: liveDotAnimation,
                 y2kCCDFilterSettings: manifest.y2kCCDFilterSettings ?? .default,
                 asciiArtSettings: manifest.asciiArtSettings ?? .default,
+                textBubbleSettings: manifest.textBubbleSettings ?? .default,
                 isSourceLiveMotionEnabled: manifest.isSourceLiveMotionEnabled ?? false,
                 sourcePhotoAssetLocalIdentifier: manifest.sourcePhotoAssetLocalIdentifier
             )
         } catch {
             return nil
         }
+    }
+}
+
+private actor CanvasDraftStoreIO {
+    static let shared = CanvasDraftStoreIO()
+
+    func save(
+        manifest: CanvasDraftManifest,
+        photoData: Data,
+        to directory: URL
+    ) -> Bool {
+        do {
+            try CanvasDraftStore.writeDraft(
+                manifest: manifest,
+                photoData: photoData,
+                to: directory
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func load(from directory: URL) -> CanvasDraftRestore? {
+        CanvasDraftStore.readDraft(from: directory)
+    }
+
+    func clear(_ directory: URL) {
+        try? FileManager.default.removeItem(at: directory)
     }
 }

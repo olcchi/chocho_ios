@@ -292,6 +292,41 @@ struct CanvasRasterExporterTests {
         )
     }
 
+    @Test func textBubbleStyleRendersOnRasterExport() throws {
+        let source = try #require(makeSolidImage(width: 400, height: 300))
+        let exported = try #require(
+            CanvasRasterExporter.render(
+                image: source,
+                exportSize: CGSize(width: 480, height: 300),
+                extensionRatio: 0.2,
+                extensionSide: .right,
+                backgroundStyle: .grid,
+                dots: [],
+                dotScale: 8,
+                dotColor: Color(red: 0, green: 0, blue: 0),
+                usesRandomDotColors: false,
+                textBubbleSettings: TextBubbleSettings(
+                    enabled: true,
+                    bubbles: [
+                        TextBubbleItem(
+                            text: "雀巢咖啡自营店",
+                            centerX: 0.28,
+                            centerY: 0.2
+                        )
+                    ]
+                )
+            )
+        )
+
+        #expect(
+            containsDifferentColor(
+                in: exported,
+                rect: CGRect(x: 34, y: 24, width: 170, height: 60),
+                from: .sourceBlue
+            )
+        )
+    }
+
     @Test func characterDotUsesCollageTintWhenDotColorIsClear() throws {
         let source = try #require(makeSolidImage(width: 400, height: 300))
         let exportSize = CGSize(width: 480, height: 300)

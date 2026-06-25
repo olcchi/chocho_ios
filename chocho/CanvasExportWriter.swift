@@ -16,8 +16,7 @@ enum CanvasExportWriter {
     nonisolated static func format(
         liveDotAnimation: LiveDotAnimation,
         isSourceLiveMotionEnabled: Bool = false,
-        hasSourceLiveVideo: Bool = false,
-        source: CanvasPhotoSource? = nil
+        hasSourceLiveVideo: Bool = false
     ) -> CanvasExportFormat {
         if exportsAsLivePhoto(
             liveDotAnimation: liveDotAnimation,
@@ -25,10 +24,6 @@ enum CanvasExportWriter {
             hasSourceLiveVideo: hasSourceLiveVideo
         ) {
             return .livePhoto
-        }
-
-        guard let source, source.isLivePhoto else {
-            return .staticJPEG
         }
 
         return .staticJPEG

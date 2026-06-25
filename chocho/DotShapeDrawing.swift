@@ -322,6 +322,45 @@ struct CharacterDotGlyphView: View {
     }
 }
 
+struct TextBubbleView: View {
+    let text: String
+    let bubbleColor: Color
+    var baseSize: CGFloat? = nil
+    var maximumTextWidth: CGFloat? = nil
+
+    var body: some View {
+        GeometryReader { proxy in
+            let resolvedBubbleColor = UIColor(bubbleColor)
+            let foregroundColor = Color(resolvedBubbleColor.readableTextColor)
+            let layout = TextBubbleLayout.layout(
+                for: CharacterDotText.bubbleDisplayText(for: text),
+                baseSize: baseSize ?? proxy.size.height,
+                maximumTextWidth: maximumTextWidth
+            )
+
+            ZStack(alignment: .topLeading) {
+                TextBubbleShape()
+                    .fill(bubbleColor)
+
+                Text(CharacterDotText.bubbleDisplayText(for: text))
+                    .font(.system(size: layout.fontSize, weight: .regular))
+                    .foregroundStyle(foregroundColor)
+                    .lineLimit(TextBubbleLayout.maximumLineCount)
+                    .multilineTextAlignment(.leading)
+                    .minimumScaleFactor(0.72)
+                    .frame(
+                        width: max(1, layout.textRect.width),
+                        height: max(1, layout.textRect.height),
+                        alignment: .leading
+                    )
+                    .position(x: layout.textRect.midX, y: layout.textRect.midY)
+            }
+            .frame(width: layout.renderSize.width, height: layout.renderSize.height, alignment: .topLeading)
+            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+    }
+}
+
 @MainActor
 private final class CharacterDotGlyphImageCache {
     static let shared = CharacterDotGlyphImageCache()
@@ -389,8 +428,8 @@ private final class CharacterDotGlyphImageCache {
     }
 }
 
-private extension UIColor {
-    var cacheKey: String {
+extension UIColor {
+    nonisolated var cacheKey: String {
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -410,6 +449,21 @@ private extension UIColor {
         }
 
         return description
+    }
+
+    nonisolated var readableTextColor: UIColor {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        let resolved = resolvedColor(with: UITraitCollection.current)
+        guard resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return .label
+        }
+
+        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        return luminance < 0.56 ? .white : .black
     }
 }
 
@@ -432,6 +486,211 @@ nonisolated enum CharacterDotGlyphRasterLayout {
         }
 
         return low
+    }
+}
+
+nonisolated enum TextBubbleLayout {
+    static let maximumLineCount = 4
+
+    struct Result: Equatable {
+        let renderSize: CGSize
+        let textRect: CGRect
+        let fontSize: CGFloat
+    }
+
+    static func layout(
+        for text: String,
+        baseSize: CGFloat,
+        maximumTextWidth: CGFloat? = nil
+    ) -> Result {
+        let safeBaseSize = max(baseSize, 1)
+        let displayText = CharacterDotText.bubbleDisplayText(for: text) as NSString
+        let fontSize = max(9, safeBaseSize * 0.3)
+        let horizontalPadding = max(9, safeBaseSize * 0.24)
+        let verticalPadding = max(6, safeBaseSize * 0.16)
+        let tailDrop = max(5, safeBaseSize * 0.11)
+        let resolvedMaximumTextWidth = maximumTextWidth ?? max(safeBaseSize * 1.7, safeBaseSize * 4.8)
+        let minimumBubbleWidth = safeBaseSize * 1.15
+        let minimumBubbleHeight = safeBaseSize * 0.76
+        let maximumTextHeight = fontSize * 1.24 * CGFloat(maximumLineCount)
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .regular),
+            .paragraphStyle: paragraphStyle,
+        ]
+        let measuredSize = displayText.boundingRect(
+            with: CGSize(width: resolvedMaximumTextWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes,
+            context: nil
+        ).integral.size
+        let textWidth = min(max(1, measuredSize.width), resolvedMaximumTextWidth)
+        let textHeight = min(max(fontSize * 1.22, measuredSize.height), maximumTextHeight)
+        let bodyWidth = max(minimumBubbleWidth, textWidth + horizontalPadding * 2)
+        let bubbleHeight = max(minimumBubbleHeight, textHeight + verticalPadding * 2)
+        let renderSize = CGSize(width: bodyWidth, height: bubbleHeight + tailDrop)
+        let textRect = CGRect(
+            x: horizontalPadding,
+            y: (bubbleHeight - textHeight) / 2,
+            width: max(1, bodyWidth - horizontalPadding * 2),
+            height: textHeight
+        )
+
+        return Result(renderSize: renderSize, textRect: textRect, fontSize: fontSize)
+    }
+}
+
+nonisolated enum TextBubbleCanvasLayout {
+    static func baseSize(in canvasSize: CGSize) -> CGFloat {
+        min(max(min(canvasSize.width, canvasSize.height) * 0.14, 36), 88)
+    }
+
+    static func baseSize(for bubble: TextBubbleItem, in canvasSize: CGSize) -> CGFloat {
+        baseSize(in: canvasSize) * CGFloat(TextBubbleScale.clamped(bubble.scale))
+    }
+
+    static func maximumTextWidth(in canvasSize: CGSize) -> CGFloat {
+        max(1, canvasSize.width * 0.68)
+    }
+
+    static func frame(for bubble: TextBubbleItem, in canvasRect: CGRect) -> CGRect {
+        let baseSize = baseSize(for: bubble, in: canvasRect.size)
+        let layout = TextBubbleLayout.layout(
+            for: bubble.displayText,
+            baseSize: baseSize,
+            maximumTextWidth: maximumTextWidth(in: canvasRect.size)
+        )
+        let halfWidth = layout.renderSize.width / 2
+        let halfHeight = layout.renderSize.height / 2
+        let center = clampedCenter(
+            for: bubble,
+            bubbleSize: layout.renderSize,
+            in: canvasRect
+        )
+        let origin = CGPoint(
+            x: center.x - halfWidth,
+            y: center.y - halfHeight
+        )
+
+        return CGRect(origin: origin, size: layout.renderSize)
+    }
+
+    static func clampedCenter(
+        for bubble: TextBubbleItem,
+        bubbleSize: CGSize,
+        in canvasRect: CGRect
+    ) -> CGPoint {
+        let halfWidth = bubbleSize.width / 2
+        let halfHeight = bubbleSize.height / 2
+        let rawCenter = CGPoint(
+            x: canvasRect.minX + canvasRect.width * CGFloat(bubble.centerX),
+            y: canvasRect.minY + canvasRect.height * CGFloat(bubble.centerY)
+        )
+        let minX = canvasRect.minX + min(halfWidth, canvasRect.width / 2)
+        let maxX = canvasRect.maxX - min(halfWidth, canvasRect.width / 2)
+        let minY = canvasRect.minY + min(halfHeight, canvasRect.height / 2)
+        let maxY = canvasRect.maxY - min(halfHeight, canvasRect.height / 2)
+
+        return CGPoint(
+            x: min(max(rawCenter.x, minX), maxX),
+            y: min(max(rawCenter.y, minY), maxY)
+        )
+    }
+
+    static func normalizedCenter(
+        for center: CGPoint,
+        bubbleSize: CGSize,
+        in canvasRect: CGRect
+    ) -> (x: Double, y: Double) {
+        let clampedCenter = clampedPoint(center, bubbleSize: bubbleSize, in: canvasRect)
+        return (
+            x: Double((clampedCenter.x - canvasRect.minX) / max(canvasRect.width, 1)),
+            y: Double((clampedCenter.y - canvasRect.minY) / max(canvasRect.height, 1))
+        )
+    }
+
+    private static func clampedPoint(
+        _ point: CGPoint,
+        bubbleSize: CGSize,
+        in canvasRect: CGRect
+    ) -> CGPoint {
+        let halfWidth = bubbleSize.width / 2
+        let halfHeight = bubbleSize.height / 2
+        let minX = canvasRect.minX + min(halfWidth, canvasRect.width / 2)
+        let maxX = canvasRect.maxX - min(halfWidth, canvasRect.width / 2)
+        let minY = canvasRect.minY + min(halfHeight, canvasRect.height / 2)
+        let maxY = canvasRect.maxY - min(halfHeight, canvasRect.height / 2)
+
+        return CGPoint(
+            x: min(max(point.x, minX), maxX),
+            y: min(max(point.y, minY), maxY)
+        )
+    }
+}
+
+struct TextBubbleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path(TextBubblePath.bezierPath(in: rect).cgPath)
+    }
+}
+
+nonisolated enum TextBubblePath {
+    static func bezierPath(in rect: CGRect) -> UIBezierPath {
+        let safeRect = rect.standardized
+        guard safeRect.width > 0, safeRect.height > 0 else { return UIBezierPath() }
+
+        let tailDrop = min(max(5, safeRect.height * 0.1), safeRect.height * 0.2)
+        let bodyRect = CGRect(
+            x: safeRect.minX,
+            y: safeRect.minY,
+            width: max(1, safeRect.width),
+            height: max(1, safeRect.height - tailDrop)
+        )
+        let radius = min(bodyRect.height * 0.46, max(10, bodyRect.height * 0.34))
+        let tailTip = CGPoint(
+            x: bodyRect.minX + radius * 0.42,
+            y: safeRect.maxY - tailDrop * 0.04
+        )
+        let tailUpperJoin = CGPoint(
+            x: bodyRect.minX + radius * 0.78,
+            y: bodyRect.maxY - radius * 0.18
+        )
+        let tailLowerJoin = CGPoint(
+            x: bodyRect.minX + radius * 1.66,
+            y: bodyRect.maxY
+        )
+
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: bodyRect.minX + radius, y: bodyRect.minY))
+        path.addLine(to: CGPoint(x: bodyRect.maxX - radius, y: bodyRect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: bodyRect.maxX, y: bodyRect.minY + radius),
+            controlPoint: CGPoint(x: bodyRect.maxX, y: bodyRect.minY)
+        )
+        path.addLine(to: CGPoint(x: bodyRect.maxX, y: bodyRect.maxY - radius))
+        path.addQuadCurve(
+            to: CGPoint(x: bodyRect.maxX - radius, y: bodyRect.maxY),
+            controlPoint: CGPoint(x: bodyRect.maxX, y: bodyRect.maxY)
+        )
+        path.addLine(to: tailLowerJoin)
+        path.addCurve(
+            to: tailTip,
+            controlPoint1: CGPoint(x: bodyRect.minX + radius * 1.18, y: bodyRect.maxY + tailDrop * 0.06),
+            controlPoint2: CGPoint(x: bodyRect.minX + radius * 0.7, y: safeRect.maxY - tailDrop * 0.04)
+        )
+        path.addCurve(
+            to: tailUpperJoin,
+            controlPoint1: CGPoint(x: bodyRect.minX + radius * 0.28, y: bodyRect.maxY - radius * 0.02),
+            controlPoint2: CGPoint(x: bodyRect.minX + radius * 0.52, y: bodyRect.maxY - radius * 0.14)
+        )
+        path.addLine(to: CGPoint(x: bodyRect.minX, y: bodyRect.minY + radius))
+        path.addQuadCurve(
+            to: CGPoint(x: bodyRect.minX + radius, y: bodyRect.minY),
+            controlPoint: CGPoint(x: bodyRect.minX, y: bodyRect.minY)
+        )
+        path.close()
+        return path
     }
 }
 

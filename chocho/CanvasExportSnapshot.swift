@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-struct CanvasExportSnapshot {
+nonisolated struct CanvasExportSnapshot {
     let image: UIImage
     let extensionRatio: CGFloat
     let extensionSide: PuzzleCanvasExtensionSide
@@ -14,6 +14,7 @@ struct CanvasExportSnapshot {
     let dotColor: Color
     let usesRandomDotColors: Bool
     let dotCharacterText: String
+    let textBubbleSettings: TextBubbleSettings
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
     let asciiArtSettings: ASCIIArtSettings
@@ -35,6 +36,14 @@ struct CanvasExportSnapshot {
             liveDotAnimation: liveDotAnimation,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             hasSourceLiveVideo: hasSourceLiveVideo
+        )
+    }
+
+    func exportDuration(sourceLiveVideo: CanvasSourceLiveVideo?) -> TimeInterval {
+        CanvasLiveMotionTiming.exportDuration(
+            liveDotAnimation: liveDotAnimation,
+            isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
+            sourceLiveVideoDuration: sourceLiveVideo?.duration
         )
     }
 }

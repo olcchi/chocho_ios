@@ -707,10 +707,173 @@ struct CanvasViewportResetKey: Equatable {
 nonisolated enum CharacterDotText {
     static let shapeName = "字符"
     static let defaultText = "字"
+    static let defaultBubbleText = "你好"
 
     static func displayText(for text: String) -> String {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedText.isEmpty ? defaultText : trimmedText
+    }
+
+    static func bubbleDisplayText(for text: String) -> String {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedText.isEmpty ? defaultBubbleText : trimmedText
+    }
+}
+
+nonisolated struct TextBubbleItem: Codable, Equatable, Hashable, Identifiable, Sendable {
+    var id: UUID
+    var text: String
+    var centerX: Double
+    var centerY: Double
+    var scale: Double
+
+    init(
+        id: UUID = UUID(),
+        text: String = CharacterDotText.defaultBubbleText,
+        centerX: Double = 0.28,
+        centerY: Double = 0.18,
+        scale: Double = TextBubbleScale.defaultValue
+    ) {
+        self.id = id
+        self.text = text
+        self.centerX = centerX
+        self.centerY = centerY
+        self.scale = TextBubbleScale.clamped(scale)
+    }
+
+    var displayText: String {
+        CharacterDotText.bubbleDisplayText(for: text)
+    }
+
+    func updating(text: String) -> TextBubbleItem {
+        var item = self
+        item.text = text
+        return item
+    }
+
+    func updating(centerX: Double, centerY: Double) -> TextBubbleItem {
+        var item = self
+        item.centerX = centerX
+        item.centerY = centerY
+        return item
+    }
+
+    func updating(scale: Double) -> TextBubbleItem {
+        var item = self
+        item.scale = TextBubbleScale.clamped(scale)
+        return item
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case text
+        case centerX
+        case centerY
+        case scale
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        text = try container.decode(String.self, forKey: .text)
+        centerX = try container.decode(Double.self, forKey: .centerX)
+        centerY = try container.decode(Double.self, forKey: .centerY)
+        scale = TextBubbleScale.clamped(
+            try container.decodeIfPresent(Double.self, forKey: .scale) ?? TextBubbleScale.defaultValue
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(text, forKey: .text)
+        try container.encode(centerX, forKey: .centerX)
+        try container.encode(centerY, forKey: .centerY)
+        try container.encode(scale, forKey: .scale)
+    }
+}
+
+nonisolated enum TextBubbleScale {
+    static let defaultValue = 1.0
+    static let minimum = 0.58
+    static let maximum = 2.15
+
+    static func clamped(_ scale: Double) -> Double {
+        guard scale.isFinite else { return defaultValue }
+        return min(max(scale, minimum), maximum)
+    }
+}
+
+nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
+    var enabled: Bool
+    var bubbles: [TextBubbleItem]
+
+    init(enabled: Bool, bubbles: [TextBubbleItem] = []) {
+        self.enabled = enabled
+        self.bubbles = bubbles
+    }
+
+    static let `default` = TextBubbleSettings(enabled: false)
+
+    var enabledForPanelEditing: TextBubbleSettings {
+        var settings = self
+        settings.enabled = true
+        if settings.bubbles.isEmpty {
+            settings.bubbles = [TextBubbleItem()]
+        }
+        return settings
+    }
+
+    var visibleBubbles: [TextBubbleItem] {
+        enabled ? bubbles : []
+    }
+
+    mutating func addBubble() {
+        enabled = true
+        let count = bubbles.count
+        let offset = Double(min(count, 4)) * 0.07
+        bubbles.append(TextBubbleItem(centerX: min(0.78, 0.28 + offset), centerY: min(0.62, 0.18 + offset)))
+    }
+
+    mutating func updateBubble(_ bubble: TextBubbleItem) {
+        guard let index = bubbles.firstIndex(where: { $0.id == bubble.id }) else { return }
+        bubbles[index] = bubble
+        enabled = true
+    }
+
+    mutating func deleteBubble(id: UUID) {
+        bubbles.removeAll { $0.id == id }
+        if bubbles.isEmpty {
+            enabled = false
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case bubbles
+        case text
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedEnabled = try container.decode(Bool.self, forKey: .enabled)
+        let decodedBubbles = try container.decodeIfPresent([TextBubbleItem].self, forKey: .bubbles)
+
+        if let decodedBubbles {
+            enabled = decodedEnabled
+            bubbles = decodedBubbles
+            return
+        }
+
+        let legacyText = try container.decodeIfPresent(String.self, forKey: .text) ?? CharacterDotText.defaultBubbleText
+        enabled = decodedEnabled
+        bubbles = decodedEnabled ? [TextBubbleItem(text: legacyText)] : []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(enabled, forKey: .enabled)
+        try container.encode(bubbles, forKey: .bubbles)
     }
 }
 

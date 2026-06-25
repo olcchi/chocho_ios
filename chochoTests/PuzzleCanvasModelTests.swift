@@ -917,6 +917,23 @@ struct PuzzleCanvasModelTests {
         #expect(CharacterDotText.displayText(for: "   ") == CharacterDotText.defaultText)
     }
 
+    @Test func textBubbleLivesInStyleMenuAndScalesWithContent() {
+        let basicShapeNames = DotShapeAsset.shapes(for: .basic, recentNames: []).map(\.name)
+        let settings = TextBubbleSettings.default.enabledForPanelEditing
+        let shortLayout = TextBubbleLayout.layout(for: "Hi", baseSize: 42)
+        let longLayout = TextBubbleLayout.layout(
+            for: "这是一条会让气泡变宽的消息",
+            baseSize: 42
+        )
+
+        #expect(StylePanelFeature.allCases.contains(.textBubble))
+        #expect(!basicShapeNames.contains("气泡"))
+        #expect(settings.enabled)
+        #expect(settings.visibleBubbles.count == 1)
+        #expect(settings.visibleBubbles.first?.displayText == CharacterDotText.defaultBubbleText)
+        #expect(longLayout.renderSize.width > shortLayout.renderSize.width)
+    }
+
     @Test func categorizedAssetDotsRenderLargerThanBasicDots() {
         let basicDot = PuzzleDotFactory.makeDot(
             position: .zero,

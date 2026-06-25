@@ -136,6 +136,10 @@ struct BottomSheetPanel: View {
     var onConfirmASCIIArtFeature: () -> Void = {}
     var onCancelASCIIArtFeature: () -> Void = {}
     var onRemoveASCIIArtFeature: () -> Void = {}
+    var onBeginTextBubbleFeature: () -> Void = {}
+    var onConfirmTextBubbleFeature: () -> Void = {}
+    var onCancelTextBubbleFeature: () -> Void = {}
+    var onRemoveTextBubbleFeature: () -> Void = {}
     @State private var selectedStyleFeature: StylePanelFeature?
     @State private var selectedDotFeature: DotPanelFeature?
     @State private var isBackgroundStyleDetailPresented = false
@@ -187,6 +191,8 @@ struct BottomSheetPanel: View {
                 onBeginY2KCCDFilterFeature()
             case .ascii:
                 onBeginASCIIArtFeature()
+            case .textBubble:
+                onBeginTextBubbleFeature()
             default:
                 break
             }
@@ -229,6 +235,7 @@ struct BottomSheetPanel: View {
             return selectedStyleFeature == .photoCompression
                 || selectedStyleFeature == .ccd
                 || selectedStyleFeature == .ascii
+                || selectedStyleFeature == .textBubble
         }
         return false
     }
@@ -256,7 +263,10 @@ struct BottomSheetPanel: View {
             onRemoveY2KCCDFilterFeature: removeY2KCCDFilterFeature,
             onConfirmASCIIArtFeature: confirmASCIIArtFeature,
             onCancelASCIIArtFeature: cancelASCIIArtFeature,
-            onRemoveASCIIArtFeature: removeASCIIArtFeature
+            onRemoveASCIIArtFeature: removeASCIIArtFeature,
+            onConfirmTextBubbleFeature: confirmTextBubbleFeature,
+            onCancelTextBubbleFeature: cancelTextBubbleFeature,
+            onRemoveTextBubbleFeature: removeTextBubbleFeature
         )
         .id(selectedTab)
         .fixedSize(horizontal: false, vertical: true)
@@ -319,6 +329,10 @@ struct BottomSheetPanel: View {
             cancelASCIIArtFeature()
             return
         }
+        if selectedTab == .style, selectedStyleFeature == .textBubble {
+            cancelTextBubbleFeature()
+            return
+        }
         if selectedTab == .style, selectedStyleFeature != nil {
             withAnimation(Self.panelMotion) {
                 selectedStyleFeature = nil
@@ -345,6 +359,8 @@ struct BottomSheetPanel: View {
             onCancelY2KCCDFilterFeature()
         case .ascii:
             onCancelASCIIArtFeature()
+        case .textBubble:
+            onCancelTextBubbleFeature()
         default:
             break
         }
@@ -422,6 +438,27 @@ struct BottomSheetPanel: View {
 
     private func removeASCIIArtFeature() {
         onRemoveASCIIArtFeature()
+        withAnimation(Self.panelMotion) {
+            selectedStyleFeature = nil
+        }
+    }
+
+    private func cancelTextBubbleFeature() {
+        onCancelTextBubbleFeature()
+        withAnimation(Self.panelMotion) {
+            selectedStyleFeature = nil
+        }
+    }
+
+    private func confirmTextBubbleFeature() {
+        onConfirmTextBubbleFeature()
+        withAnimation(Self.panelMotion) {
+            selectedStyleFeature = nil
+        }
+    }
+
+    private func removeTextBubbleFeature() {
+        onRemoveTextBubbleFeature()
         withAnimation(Self.panelMotion) {
             selectedStyleFeature = nil
         }
@@ -646,6 +683,9 @@ private struct PanelContentCard: View {
     let onConfirmASCIIArtFeature: () -> Void
     let onCancelASCIIArtFeature: () -> Void
     let onRemoveASCIIArtFeature: () -> Void
+    let onConfirmTextBubbleFeature: () -> Void
+    let onCancelTextBubbleFeature: () -> Void
+    let onRemoveTextBubbleFeature: () -> Void
 
     var body: some View {
         Group {
@@ -672,6 +712,7 @@ private struct PanelContentCard: View {
                     photoCompression: dotControls.photoCompression,
                     y2kCCDFilterSettings: dotControls.y2kCCDFilterSettings,
                     asciiArtSettings: dotControls.asciiArtSettings,
+                    textBubbleSettings: dotControls.textBubbleSettings,
                     onConfirmPhotoCompressionFeature: onConfirmPhotoCompressionFeature,
                     onCancelPhotoCompressionFeature: onCancelPhotoCompressionFeature,
                     onRemovePhotoCompressionFeature: onRemovePhotoCompressionFeature,
@@ -680,7 +721,10 @@ private struct PanelContentCard: View {
                     onRemoveY2KCCDFilterFeature: onRemoveY2KCCDFilterFeature,
                     onConfirmASCIIArtFeature: onConfirmASCIIArtFeature,
                     onCancelASCIIArtFeature: onCancelASCIIArtFeature,
-                    onRemoveASCIIArtFeature: onRemoveASCIIArtFeature
+                    onRemoveASCIIArtFeature: onRemoveASCIIArtFeature,
+                    onConfirmTextBubbleFeature: onConfirmTextBubbleFeature,
+                    onCancelTextBubbleFeature: onCancelTextBubbleFeature,
+                    onRemoveTextBubbleFeature: onRemoveTextBubbleFeature
                 )
             case .background:
                 BackgroundPanelControls(
@@ -1459,6 +1503,7 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
     case photoCompression
     case ccd
     case ascii
+    case textBubble
 
     var id: Self { self }
 
@@ -1470,6 +1515,8 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
             "CCD"
         case .ascii:
             "ASCII"
+        case .textBubble:
+            "气泡"
         }
     }
 
@@ -1481,6 +1528,8 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
             Image("public/ccd")
         case .ascii:
             Image("public/LucideLabGridLines")
+        case .textBubble:
+            Image(systemName: "message.fill")
         }
     }
 
@@ -1674,6 +1723,7 @@ private struct StylePanelControls: View {
     @Binding var photoCompression: MainPhotoCompression
     @Binding var y2kCCDFilterSettings: Y2KCCDFilterSettings
     @Binding var asciiArtSettings: ASCIIArtSettings
+    @Binding var textBubbleSettings: TextBubbleSettings
     let onConfirmPhotoCompressionFeature: () -> Void
     let onCancelPhotoCompressionFeature: () -> Void
     let onRemovePhotoCompressionFeature: () -> Void
@@ -1683,6 +1733,9 @@ private struct StylePanelControls: View {
     let onConfirmASCIIArtFeature: () -> Void
     let onCancelASCIIArtFeature: () -> Void
     let onRemoveASCIIArtFeature: () -> Void
+    let onConfirmTextBubbleFeature: () -> Void
+    let onCancelTextBubbleFeature: () -> Void
+    let onRemoveTextBubbleFeature: () -> Void
 
     var body: some View {
         Group {
@@ -1717,6 +1770,14 @@ private struct StylePanelControls: View {
                 onCancel: onCancelASCIIArtFeature,
                 onRemove: onRemoveASCIIArtFeature,
                 onConfirm: onConfirmASCIIArtFeature
+            )
+            .padding(.horizontal, 2)
+            .padding(.vertical, 4)
+        case .textBubble:
+            TextBubbleControlsPanel(
+                settings: $textBubbleSettings,
+                onRemove: onRemoveTextBubbleFeature,
+                onConfirm: onConfirmTextBubbleFeature
             )
             .padding(.horizontal, 2)
             .padding(.vertical, 4)
@@ -2394,6 +2455,45 @@ private struct DotShapeTile: View {
         isSelected
             ? Color.primary
             : Color.card
+    }
+}
+
+private struct TextBubbleControlsPanel: View {
+    @Binding var settings: TextBubbleSettings
+    let onRemove: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Button {
+                var nextSettings = settings
+                nextSettings.addBubble()
+                settings = nextSettings
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("添加气泡")
+                        .font(.system(size: 13, weight: .regular))
+                }
+                .foregroundStyle(Color.foreground)
+                .frame(maxWidth: .infinity)
+                .frame(height: 32)
+                .background(Color.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.border, lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("添加气泡")
+
+            PanelFeatureActionRow(
+                title: StylePanelFeature.textBubble.title,
+                onRemove: onRemove,
+                onConfirm: onConfirm
+            )
+        }
     }
 }
 

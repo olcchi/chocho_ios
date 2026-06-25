@@ -19,6 +19,7 @@ nonisolated enum CanvasRasterExporter {
         dotColor: Color,
         usesRandomDotColors: Bool,
         dotCharacterText: String = CharacterDotText.defaultText,
+        textBubbleSettings: TextBubbleSettings = .default,
         liveDotAnimation: LiveDotAnimation = .none,
         blinkTime: TimeInterval? = nil,
         y2kCCDFilterSettings: Y2KCCDFilterSettings = .default,
@@ -126,6 +127,12 @@ nonisolated enum CanvasRasterExporter {
                 liveDotAnimation: liveDotAnimation,
                 blinkTime: blinkTime,
                 centerIndexFilter: layout.extensionSide == .center ? .photo : .all
+            )
+
+            drawTextBubbleOverlay(
+                settings: textBubbleSettings,
+                in: context,
+                canvasRect: visibleFrame
             )
 
             context.restoreGState()
@@ -763,6 +770,60 @@ nonisolated enum CanvasRasterExporter {
 
         context.saveGState()
         displayText.draw(in: drawRect, withAttributes: attributes)
+        context.restoreGState()
+    }
+
+    private nonisolated static func drawTextBubbleOverlay(
+        settings: TextBubbleSettings,
+        in context: CGContext,
+        canvasRect: CGRect
+    ) {
+        guard settings.enabled else { return }
+
+        for bubble in settings.visibleBubbles {
+            let bubbleFrame = TextBubbleCanvasLayout.frame(for: bubble, in: canvasRect)
+            drawTextBubble(
+                text: bubble.displayText,
+                in: context,
+                rect: bubbleFrame,
+                bubbleColor: .systemGray5,
+                baseSize: TextBubbleCanvasLayout.baseSize(for: bubble, in: canvasRect.size),
+                maximumTextWidth: TextBubbleCanvasLayout.maximumTextWidth(in: canvasRect.size)
+            )
+        }
+    }
+
+    private nonisolated static func drawTextBubble(
+        text: String,
+        in context: CGContext,
+        rect: CGRect,
+        bubbleColor: UIColor,
+        baseSize: CGFloat,
+        maximumTextWidth: CGFloat
+    ) {
+        let displayText = CharacterDotText.bubbleDisplayText(for: text) as NSString
+        let layout = TextBubbleLayout.layout(
+            for: text,
+            baseSize: baseSize,
+            maximumTextWidth: maximumTextWidth
+        )
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .left
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        let textColor = bubbleColor.withAlphaComponent(1).readableTextColor
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: layout.fontSize, weight: .regular),
+            .foregroundColor: textColor,
+            .paragraphStyle: paragraphStyle,
+        ]
+        let path = TextBubblePath.bezierPath(in: CGRect(origin: .zero, size: rect.size))
+
+        context.saveGState()
+        context.translateBy(x: rect.minX, y: rect.minY)
+        context.addPath(path.cgPath)
+        context.setFillColor(bubbleColor.cgColor)
+        context.fillPath()
+        displayText.draw(in: layout.textRect, withAttributes: attributes)
         context.restoreGState()
     }
 

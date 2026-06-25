@@ -5,12 +5,12 @@ import UIKit
 @testable import chocho
 
 struct CanvasDraftStoreTests {
-    @Test func manifest_currentVersion_is10() {
-        #expect(CanvasDraftManifest.currentVersion == 10)
+    @Test func manifest_currentVersion_is12() {
+        #expect(CanvasDraftManifest.currentVersion == 12)
     }
 
-    @Test func manifest_supportsVersion10() {
-        #expect(CanvasDraftManifest.supportedVersions.contains(10))
+    @Test func manifest_supportsVersion12() {
+        #expect(CanvasDraftManifest.supportedVersions.contains(12))
     }
 
     @Test func writesAndReadsDraftFilesDirectly() throws {
@@ -132,6 +132,24 @@ struct CanvasDraftStoreTests {
                 rgbShift: 0.15
             ),
             asciiArtSettings: .default,
+            textBubbleSettings: TextBubbleSettings(
+                enabled: true,
+                bubbles: [
+                    TextBubbleItem(
+                        id: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+                        text: "雀巢咖啡自营店",
+                        centerX: 0.26,
+                        centerY: 0.2,
+                        scale: 1.35
+                    ),
+                    TextBubbleItem(
+                        id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+                        text: "第二条",
+                        centerX: 0.58,
+                        centerY: 0.36
+                    ),
+                ]
+            ),
             isSourceLiveMotionEnabled: true,
             sourcePhotoAssetLocalIdentifier: "test-live-asset"
         )
@@ -156,6 +174,7 @@ struct CanvasDraftStoreTests {
         #expect(loaded.viewportOffset == capture.viewportOffset)
         #expect(loaded.liveDotAnimation == capture.liveDotAnimation)
         #expect(loaded.y2kCCDFilterSettings == capture.y2kCCDFilterSettings)
+        #expect(loaded.textBubbleSettings == capture.textBubbleSettings)
         #expect(loaded.isSourceLiveMotionEnabled == capture.isSourceLiveMotionEnabled)
         #expect(loaded.sourcePhotoAssetLocalIdentifier == capture.sourcePhotoAssetLocalIdentifier)
         #expect(loaded.puzzleDots.count == capture.puzzleDots.count)
@@ -312,6 +331,7 @@ struct CanvasDraftStoreTests {
             liveDotAnimation: .none,
             y2kCCDFilterSettings: .default,
             asciiArtSettings: .default,
+            textBubbleSettings: .default,
             isSourceLiveMotionEnabled: false,
             sourcePhotoAssetLocalIdentifier: nil
         )

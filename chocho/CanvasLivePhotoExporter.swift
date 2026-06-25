@@ -1,6 +1,5 @@
 import AVFoundation
 import Photos
-import SwiftUI
 import UIKit
 
 /// Live Photo 导出产物：可预览的 `PHLivePhoto` 及写入磁盘的 JPG/MOV 临时路径。
@@ -43,46 +42,8 @@ nonisolated enum CanvasLivePhotoSizing {
 nonisolated enum CanvasLivePhotoExporter {
     static let livePhotoRequestTimeout: Duration = .seconds(8)
 
-    /// 导出时刻的画布参数快照（在后台队列渲染，不依赖 SwiftUI 状态）。
-    struct Snapshot {
-        let image: UIImage
-        let extensionRatio: CGFloat
-        let extensionSide: PuzzleCanvasExtensionSide
-        let photoCompression: MainPhotoCompression
-        let backgroundStyle: PuzzleBackgroundStyle
-        let backgroundColors: PuzzleBackgroundColors
-        let backgroundPatternSpacing: Double
-        let dots: [PuzzleDot]
-        let dotScale: CGFloat
-        let dotColor: Color
-        let usesRandomDotColors: Bool
-        let dotCharacterText: String
-        let liveDotAnimation: LiveDotAnimation
-        let y2kCCDFilterSettings: Y2KCCDFilterSettings
-        let asciiArtSettings: ASCIIArtSettings
-        let isSourceLiveMotionEnabled: Bool
-        let hasSourceLiveVideo: Bool
-        let sourcePhotoAssetLocalIdentifier: String?
-
-        var exportsAsLivePhoto: Bool {
-            CanvasLiveMotionTiming.exportsAsLivePhoto(
-                liveDotAnimation: liveDotAnimation,
-                isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
-                hasSourceLiveVideo: hasSourceLiveVideo
-            )
-        }
-
-        func exportDuration(sourceLiveVideo: CanvasSourceLiveVideo?) -> TimeInterval {
-            CanvasLiveMotionTiming.exportDuration(
-                liveDotAnimation: liveDotAnimation,
-                isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
-                sourceLiveVideoDuration: sourceLiveVideo?.duration
-            )
-        }
-    }
-
     static func export(
-        snapshot: Snapshot,
+        snapshot: CanvasExportSnapshot,
         keyPhotoSize: CGSize,
         preloadedSourceLiveVideo: CanvasSourceLiveVideo? = nil
     ) async -> CanvasLivePhotoExportBundle? {
@@ -182,7 +143,7 @@ nonisolated enum CanvasLivePhotoExporter {
     }
 
     private static func renderFrame(
-        snapshot: Snapshot,
+        snapshot: CanvasExportSnapshot,
         exportSize: CGSize,
         blinkTime: TimeInterval,
         sourceLiveVideo: CanvasSourceLiveVideo?,
@@ -217,6 +178,7 @@ nonisolated enum CanvasLivePhotoExporter {
             dotColor: snapshot.dotColor,
             usesRandomDotColors: snapshot.usesRandomDotColors,
             dotCharacterText: snapshot.dotCharacterText,
+            textBubbleSettings: snapshot.textBubbleSettings,
             liveDotAnimation: snapshot.liveDotAnimation,
             blinkTime: blinkTime,
             y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
@@ -228,7 +190,7 @@ nonisolated enum CanvasLivePhotoExporter {
     }
 
     private static func writeVideo(
-        snapshot: Snapshot,
+        snapshot: CanvasExportSnapshot,
         videoSize: CGSize,
         assetIdentifier: String,
         outputURL: URL,
