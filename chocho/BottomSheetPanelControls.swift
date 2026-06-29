@@ -16,6 +16,7 @@ struct BottomSheetDotControls {
     var asciiArtSettings: Binding<ASCIIArtSettings>
     var textBubbleSettings: Binding<TextBubbleSettings>
     var isDetectingSubjectOutline: Bool = false
+    var onRandomizeDots: () -> Void = {}
 }
 
 struct BottomSheetLiveControls {

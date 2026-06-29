@@ -563,12 +563,15 @@ struct CanvasHistoryControls: View {
     let canUndo: Bool
     let canRedo: Bool
     let canClear: Bool
+    let canErase: Bool
+    let isEraserEnabled: Bool
     let onClear: () -> Void
+    let onToggleEraser: () -> Void
     let onUndo: () -> Void
     let onRedo: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             historyButton(
                 assetName: "public/trash",
                 isEnabled: canClear,
@@ -576,7 +579,13 @@ struct CanvasHistoryControls: View {
                 action: onClear
             )
 
-            PanelSeparator(orientation: .vertical)
+            historyButton(
+                assetName: "public/MajesticonsEraserLine",
+                isEnabled: canErase || isEraserEnabled,
+                isSelected: isEraserEnabled,
+                accessibilityLabel: "橡皮擦",
+                action: onToggleEraser
+            )
 
             historyButton(
                 assetName: "public/undo",
@@ -584,8 +593,6 @@ struct CanvasHistoryControls: View {
                 accessibilityLabel: "撤销",
                 action: onUndo
             )
-
-            PanelSeparator(orientation: .vertical)
 
             historyButton(
                 assetName: "public/redo",
@@ -599,6 +606,7 @@ struct CanvasHistoryControls: View {
     private func historyButton(
         assetName: String,
         isEnabled: Bool,
+        isSelected: Bool = false,
         accessibilityLabel: String,
         action: @escaping () -> Void
     ) -> some View {
@@ -608,8 +616,12 @@ struct CanvasHistoryControls: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 16, height: 16)
-                .foregroundStyle(Color.foreground)
+                .foregroundStyle(isSelected ? Color.primaryForeground : Color.foreground)
                 .frame(width: 32, height: 28)
+                .background(
+                    isSelected ? Color.primary : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -704,7 +716,8 @@ private struct PanelContentCard: View {
                     canClearTrace: canClearTrace,
                     isDetectingSubjectOutline: dotControls.isDetectingSubjectOutline,
                     onToggleSubjectOutline: onToggleSubjectOutline,
-                    onClearTrace: onClearTrace
+                    onClearTrace: onClearTrace,
+                    onRandomizeDots: dotControls.onRandomizeDots
                 )
             case .style:
                 StylePanelControls(
@@ -1529,7 +1542,7 @@ enum StylePanelFeature: String, CaseIterable, Identifiable {
         case .ascii:
             Image("public/LucideLabGridLines")
         case .textBubble:
-            Image(systemName: "message.fill")
+            Image("public/LucideMessageSquare")
         }
     }
 
@@ -1671,6 +1684,7 @@ private struct DotPanelControls: View {
     let isDetectingSubjectOutline: Bool
     let onToggleSubjectOutline: () -> Void
     let onClearTrace: () -> Void
+    let onRandomizeDots: () -> Void
 
     var body: some View {
         Group {
@@ -1712,7 +1726,8 @@ private struct DotPanelControls: View {
                 canClearTrace: canClearTrace,
                 isDetectingSubjectOutline: isDetectingSubjectOutline,
                 onToggleSubjectOutline: onToggleSubjectOutline,
-                onClearTrace: onClearTrace
+                onClearTrace: onClearTrace,
+                onRandomizeDots: onRandomizeDots
             )
         }
     }
@@ -1854,17 +1869,20 @@ private struct DotGeneratePanel: View {
     let isDetectingSubjectOutline: Bool
     let onToggleSubjectOutline: () -> Void
     let onClearTrace: () -> Void
+    let onRandomizeDots: () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Text("生成方式")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(Color.foreground)
+                    .lineLimit(1)
+                    .layoutPriority(1)
 
                 Spacer(minLength: 0)
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     PanelCompactToggleButton(
                         title: "手绘",
                         iconName: "public/LucideTriangleDashed",
@@ -1873,7 +1891,7 @@ private struct DotGeneratePanel: View {
                     ) {
                         isTraceDrawingEnabled.toggle()
                     }
-                    .frame(width: 72)
+                    .frame(width: 58)
 
                     PanelCompactToggleButton(
                         title: "主体",
@@ -1884,7 +1902,18 @@ private struct DotGeneratePanel: View {
                     ) {
                         onToggleSubjectOutline()
                     }
-                    .frame(width: 72)
+                    .frame(width: 58)
+
+                    PanelCompactToggleButton(
+                        title: "随机",
+                        iconName: "public/random",
+                        isOn: false,
+                        accessibilityLabel: "随机生成波点",
+                        accessibilityValue: "点击生成"
+                    ) {
+                        onRandomizeDots()
+                    }
+                    .frame(width: 58)
 
                     clearTraceButton
                 }
@@ -2061,6 +2090,7 @@ private struct PanelCompactToggleButton: View {
     let isOn: Bool
     var isEnabled: Bool = true
     var accessibilityLabel: String? = nil
+    var accessibilityValue: String? = nil
     let action: () -> Void
 
     private var activeColor: Color { Color.primary }
@@ -2087,7 +2117,7 @@ private struct PanelCompactToggleButton: View {
         .opacity(isEnabled ? 1 : 0.42)
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityLabel(accessibilityLabel ?? title)
-        .accessibilityValue(isOn ? "已开启" : "已关闭")
+        .accessibilityValue(accessibilityValue ?? (isOn ? "已开启" : "已关闭"))
     }
 
     @ViewBuilder
@@ -2465,6 +2495,12 @@ private struct TextBubbleControlsPanel: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            ColorPicker("颜色", selection: bubbleColorSelection, supportsOpacity: false)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Color.foreground)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 30)
+
             Button {
                 var nextSettings = settings
                 nextSettings.addBubble()
@@ -2494,6 +2530,19 @@ private struct TextBubbleControlsPanel: View {
                 onConfirm: onConfirm
             )
         }
+    }
+
+    private var bubbleColorSelection: Binding<Color> {
+        Binding(
+            get: {
+                settings.bubbleColor.color
+            },
+            set: { newValue in
+                var nextSettings = settings
+                nextSettings.bubbleColor = TextBubbleColorComponents(newValue)
+                settings = nextSettings
+            }
+        )
     }
 }
 

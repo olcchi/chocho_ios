@@ -25,6 +25,14 @@ struct PuzzleCanvasModelTests {
         ))
     }
 
+    @Test func viewportPanningStopsWhileTraceDrawing() {
+        #expect(!PuzzleCanvasViewportPanPolicy.isEnabled(
+            isTraceDrawingEnabled: true,
+            isDotEditingEnabled: false,
+            isSelectedDotDragActive: false
+        ))
+    }
+
     @Test func viewportPanningPausesOnlyDuringSelectedDotDrag() {
         #expect(!PuzzleCanvasViewportPanPolicy.isEnabled(
             isTraceDrawingEnabled: false,
@@ -932,6 +940,64 @@ struct PuzzleCanvasModelTests {
         #expect(settings.visibleBubbles.count == 1)
         #expect(settings.visibleBubbles.first?.displayText == CharacterDotText.defaultBubbleText)
         #expect(longLayout.renderSize.width > shortLayout.renderSize.width)
+    }
+
+    @Test func textBubbleDefaultColorDoesNotResolveWithSystemAppearance() {
+        let color = TextBubbleSettings.default.enabledForPanelEditing.bubbleColor.uiColor
+        let lightColor = color.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+        let darkColor = color.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
+
+        #expect(lightColor.cacheKey == darkColor.cacheKey)
+        #expect(TextBubbleSettings.default.enabledForPanelEditing.bubbleColor == .defaultBubble)
+    }
+
+    @Test func textBubbleSettingsDecodeLegacyDefaultColor() throws {
+        let data = try #require("""
+        {
+          "enabled": true,
+          "bubbles": [
+            {
+              "id": "99999999-9999-9999-9999-999999999999",
+              "text": "你好",
+              "centerX": 0.28,
+              "centerY": 0.2,
+              "scale": 1
+            }
+          ]
+        }
+        """.data(using: .utf8))
+
+        let settings = try JSONDecoder().decode(TextBubbleSettings.self, from: data)
+
+        #expect(settings.enabled)
+        #expect(settings.visibleBubbles.count == 1)
+        #expect(settings.bubbleColor == .defaultBubble)
+    }
+
+    @Test func textBubblePreviewLayoutUsesVisibleCanvasSize() {
+        let layout = PuzzleCanvasLayout.layout(
+            imageSize: CGSize(width: 400, height: 300),
+            availableSize: CGSize(width: 480, height: 300),
+            extensionRatio: 0.2,
+            extensionSide: .right
+        )
+        let bubble = TextBubbleItem(
+            text: "这是一条会让气泡换行并暴露画布宽度差异的长消息",
+            centerX: 0.28,
+            centerY: 0.2
+        )
+        let previewFrame = TextBubbleCanvasLayout.frame(
+            for: bubble,
+            in: layout.localVisibleComposedFrame
+        )
+        let exportFrame = TextBubbleCanvasLayout.frame(
+            for: bubble,
+            in: layout.visibleComposedFrame
+        )
+
+        #expect(layout.localVisibleComposedFrame.size == layout.visibleComposedFrame.size)
+        #expect(layout.localVisibleComposedFrame.size.width < layout.referenceComposedFrame.size.width)
+        #expect(previewFrame.size == exportFrame.size)
     }
 
     @Test func categorizedAssetDotsRenderLargerThanBasicDots() {

@@ -13,9 +13,12 @@ struct CanvasHeader: View {
     var canUndo = false
     var canRedo = false
     var canClearCanvas = false
+    var canEraseDots = false
+    var isEraserEnabled = false
     let onBack: () -> Void
     let onDownload: () -> Void
     var onClearCanvas: () -> Void = {}
+    var onToggleEraser: () -> Void = {}
     var onUndo: () -> Void = {}
     var onRedo: () -> Void = {}
 
@@ -70,7 +73,10 @@ struct CanvasHeader: View {
                 canUndo: canUndo,
                 canRedo: canRedo,
                 canClear: canClearCanvas,
+                canErase: canEraseDots,
+                isEraserEnabled: isEraserEnabled,
                 onClear: onClearCanvas,
+                onToggleEraser: onToggleEraser,
                 onUndo: onUndo,
                 onRedo: onRedo
             )

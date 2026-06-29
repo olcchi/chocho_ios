@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var dotScale: Double = DotSizeControl.defaultRenderedScale
     @State private var selectedDotColor: Color = .clear
     @State private var usesRandomDotColors = false
+    @State private var randomDotGenerationCount = 0
     @State private var selectedDotShape: DotShapeAsset = .defaultSelection
     @State private var selectedDotShapeCategory: DotShapeCategory = .basic
     @State private var dotCharacterText = CharacterDotText.defaultText
@@ -78,6 +79,8 @@ struct ContentView: View {
     @State private var canvasHistory = CanvasHistory<[PuzzleDot]>(initialValue: [])
     @State private var showsClearCanvasConfirmation = false
     @State private var isDotEditingEnabled = false
+    @State private var isDotEraserEnabled = false
+    @State private var dotEraserStrokeStartDots: [PuzzleDot]?
     @State private var selectedDotID: UUID?
 
     // MARK: 导出与分享
@@ -131,9 +134,12 @@ struct ContentView: View {
                         canUndo: canvasHistory.canUndo,
                         canRedo: canvasHistory.canRedo,
                         canClearCanvas: !puzzleDots.isEmpty,
+                        canEraseDots: !puzzleDots.isEmpty,
+                        isEraserEnabled: isDotEraserEnabled,
                         onBack: presentRecentPhotoPicker,
                         onDownload: shareCanvas,
                         onClearCanvas: presentClearCanvasConfirmation,
+                        onToggleEraser: toggleDotEraserMode,
                         onUndo: undoCanvasChange,
                         onRedo: redoCanvasChange
                     )
@@ -217,6 +223,12 @@ struct ContentView: View {
                     withoutAnimation {
                         isDotEditingEnabled = false
                         selectedDotID = nil
+                    }
+                }
+                if isEnabled, isDotEraserEnabled {
+                    withoutAnimation {
+                        isDotEraserEnabled = false
+                        dotEraserStrokeStartDots = nil
                     }
                 }
                 if isEnabled, isTraceDotSyncActive, !activeTracePoints.isEmpty {
@@ -312,7 +324,8 @@ struct ContentView: View {
                 y2kCCDFilterSettings: $y2kCCDFilterSettings,
                 asciiArtSettings: $asciiArtSettings,
                 textBubbleSettings: $textBubbleSettings,
-                isDetectingSubjectOutline: isDetectingSubjectOutline
+                isDetectingSubjectOutline: isDetectingSubjectOutline,
+                onRandomizeDots: randomizePuzzleDots
             ),
             liveControls: BottomSheetLiveControls(
                 liveDotAnimation: $liveDotAnimation,
@@ -421,6 +434,7 @@ struct ContentView: View {
                     isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
                     sourceLiveVideo: sourceLiveVideo,
                     isDotEditingEnabled: isDotEditingEnabled,
+                    isDotEraserEnabled: isDotEraserEnabled,
                     selectedDotID: selectedDotID,
                     onTapCanvas: addPuzzleDot(at:),
                     onPanViewport: panCanvasViewport(by:),
@@ -436,6 +450,9 @@ struct ContentView: View {
                     onRotateSelectedDot: previewRotateSelectedDot(by:),
                     onCommitSelectedDotEdit: commitSelectedDotEdit,
                     onDeleteSelectedDot: deleteSelectedDot,
+                    onBeginDotErasing: beginDotErasing,
+                    onEraseDot: eraseDot,
+                    onEndDotErasing: endDotErasing,
                     onUpdateTextBubble: updateTextBubble,
                     onDeleteTextBubble: deleteTextBubble
                 )
@@ -708,10 +725,13 @@ struct ContentView: View {
         selectedDotShapeCategory = .pixel
         dotScale = PuzzleCanvasUploadDefaults.dotScale
         selectedDotColor = .clear
+        randomDotGenerationCount = 0
         dotCharacterText = CharacterDotText.defaultText
 
         isTraceDrawingEnabled = false
         isTraceVisible = true
+        isDotEraserEnabled = false
+        dotEraserStrokeStartDots = nil
         photoCompression = .none
         y2kCCDFilterSettings = .default
         asciiArtSettings = .default
@@ -929,6 +949,39 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func randomizePuzzleDots() {
+        guard canvasImage != nil else {
+            showToast("请先上传图片")
+            return
+        }
+
+        pendingTraceDotSyncTask?.cancel()
+        pendingTraceDotSyncTask = nil
+        needsTraceDotSync = false
+        invalidateSubjectOutlineDetection()
+
+        randomDotGenerationCount += 1
+        usesRandomDotColors = randomDotGenerationCount.isMultiple(of: 3)
+
+        tracePoints = []
+        disableSubjectOutline()
+        isTraceDrawingEnabled = false
+        isDotEraserEnabled = false
+        dotEraserStrokeStartDots = nil
+        if isDotEditingEnabled {
+            isDotEditingEnabled = false
+            selectedDotID = nil
+        }
+
+        let dots = PuzzleDotFactory.makeDots(
+            count: Int(dotCount.rounded()),
+            shapeAssetName: selectedDotShape.name
+        )
+        applyPuzzleDots(dots)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    @MainActor
     private func addPuzzleDot(at location: PuzzleCanvasTracePoint) {
         guard !isDotEditingEnabled else { return }
         invalidateSubjectOutlineDetection()
@@ -1028,6 +1081,8 @@ struct ContentView: View {
             withoutAnimation {
                 commitTraceStrokeDots()
                 isTraceDrawingEnabled = false
+                isDotEraserEnabled = false
+                dotEraserStrokeStartDots = nil
                 isDotEditingEnabled = true
                 selectedDotID = nil
                 selectedTab = .dots
@@ -1106,6 +1161,71 @@ struct ContentView: View {
         let editedDots = puzzleDots.filter { $0.id != selectedDotID }
         self.selectedDotID = nil
         applyPuzzleDots(editedDots)
+    }
+
+    @MainActor
+    private func toggleDotEraserMode() {
+        guard canvasImage != nil else { return }
+
+        if isDotEraserEnabled {
+            endDotErasing()
+            withoutAnimation {
+                isDotEraserEnabled = false
+            }
+            return
+        }
+
+        withoutAnimation {
+            commitTraceStrokeDots()
+            isTraceDrawingEnabled = false
+            isDotEditingEnabled = false
+            selectedDotID = nil
+            isDotEraserEnabled = true
+            selectedTab = .dots
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        dismissToast()
+    }
+
+    @MainActor
+    private func beginDotErasing() {
+        guard canvasImage != nil else { return }
+        guard dotEraserStrokeStartDots == nil else { return }
+
+        dotEraserStrokeStartDots = puzzleDots
+    }
+
+    @MainActor
+    private func eraseDot(_ dotID: UUID) {
+        guard isDotEraserEnabled else { return }
+        guard let dotIndex = puzzleDots.firstIndex(where: { $0.id == dotID }) else { return }
+
+        if dotEraserStrokeStartDots == nil {
+            dotEraserStrokeStartDots = puzzleDots
+        }
+
+        invalidateSubjectOutlineDetection()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            _ = puzzleDots.remove(at: dotIndex)
+        }
+
+        if selectedDotID == dotID {
+            selectedDotID = nil
+        }
+        dismissToast()
+    }
+
+    @MainActor
+    private func endDotErasing() {
+        guard let strokeStartDots = dotEraserStrokeStartDots else { return }
+        dotEraserStrokeStartDots = nil
+        guard strokeStartDots != puzzleDots else { return }
+
+        canvasHistory.record(puzzleDots)
+        puzzleDots = canvasHistory.currentValue
+        scheduleCanvasDraftSave()
     }
 
     @MainActor
@@ -1370,6 +1490,8 @@ struct ContentView: View {
         withTransaction(transaction) {
             puzzleDots = canvasHistory.clearValue()
         }
+        isDotEraserEnabled = false
+        dotEraserStrokeStartDots = nil
         selectedDotID = nil
         dismissToast()
         scheduleCanvasDraftSave()
@@ -1469,6 +1591,8 @@ struct ContentView: View {
         canvasHistory.reset(to: restored.puzzleDots)
         puzzleDots = restored.puzzleDots
         isDotEditingEnabled = false
+        isDotEraserEnabled = false
+        dotEraserStrokeStartDots = nil
         selectedDotID = nil
         dismissToast()
     }

@@ -535,32 +535,40 @@ nonisolated enum CanvasRasterExporter {
         photoFrameHeight: CGFloat
     ) {
         guard rect.width > 0, rect.height > 0 else { return }
+        guard let clippingMask = characterClippingMask(text: text, size: rect.size) else { return }
+
+        context.saveGState()
+        context.clip(to: rect, mask: clippingMask)
+        drawMirrorCollageContent(
+            centerIndex: centerIndex,
+            dot: dot,
+            opacity: opacity,
+            in: context,
+            rect: rect,
+            image: image,
+            liveFrameImage: liveFrameImage,
+            layout: layout,
+            backgroundStyle: backgroundStyle,
+            backgroundColors: backgroundColors,
+            backgroundPatternSpacing: backgroundPatternSpacing,
+            photoFrameHeight: photoFrameHeight
+        )
+        context.restoreGState()
+    }
+
+    private nonisolated static func characterClippingMask(text: String, size: CGSize) -> CGImage? {
+        guard size.width > 0, size.height > 0 else { return nil }
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
-        let localSize = rect.size
-        let maskedContent = UIGraphicsImageRenderer(size: localSize, format: format).image { offCtx in
-            let localRect = CGRect(origin: .zero, size: localSize)
-            drawMirrorCollageContent(
-                centerIndex: centerIndex,
-                dot: dot,
-                opacity: 1,
-                in: offCtx.cgContext,
-                rect: localRect,
-                image: image,
-                liveFrameImage: liveFrameImage,
-                layout: layout,
-                backgroundStyle: backgroundStyle,
-                backgroundColors: backgroundColors,
-                backgroundPatternSpacing: backgroundPatternSpacing,
-                photoFrameHeight: photoFrameHeight
-            )
-            offCtx.cgContext.setBlendMode(.destinationIn)
-            drawCharacterDot(text: text, in: offCtx.cgContext, rect: localRect, color: .white)
-        }
 
-        maskedContent.draw(in: rect, blendMode: .normal, alpha: opacity)
+        return UIGraphicsImageRenderer(size: size, format: format)
+            .image { rendererContext in
+                let rect = CGRect(origin: .zero, size: size)
+                drawCharacterDot(text: text, in: rendererContext.cgContext, rect: rect, color: .white)
+            }
+            .cgImage
     }
 
     private nonisolated static func drawAssetDotCollage(
@@ -786,7 +794,7 @@ nonisolated enum CanvasRasterExporter {
                 text: bubble.displayText,
                 in: context,
                 rect: bubbleFrame,
-                bubbleColor: .systemGray5,
+                bubbleColor: settings.bubbleColor.uiColor,
                 baseSize: TextBubbleCanvasLayout.baseSize(for: bubble, in: canvasRect.size),
                 maximumTextWidth: TextBubbleCanvasLayout.maximumTextWidth(in: canvasRect.size)
             )

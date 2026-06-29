@@ -360,6 +360,27 @@ nonisolated struct PuzzleCanvasLayoutResult: Equatable {
         }
     }
 
+    var localVisibleComposedFrame: CGRect {
+        switch extensionSide {
+        case .right, .bottom, .center:
+            CGRect(origin: .zero, size: composedSize)
+        case .left:
+            CGRect(
+                x: referenceComposedFrame.width - composedSize.width,
+                y: 0,
+                width: composedSize.width,
+                height: composedSize.height
+            )
+        case .top:
+            CGRect(
+                x: 0,
+                y: referenceComposedFrame.height - composedSize.height,
+                width: composedSize.width,
+                height: composedSize.height
+            )
+        }
+    }
+
     var visibleComposedClipAlignment: Alignment {
         switch extensionSide {
         case .right:
@@ -804,13 +825,88 @@ nonisolated enum TextBubbleScale {
     }
 }
 
+nonisolated struct TextBubbleColorComponents: Codable, Equatable, Hashable, Sendable {
+    static let defaultBubble = TextBubbleColorComponents(
+        red: 229.0 / 255.0,
+        green: 229.0 / 255.0,
+        blue: 234.0 / 255.0
+    )
+
+    var red: Double
+    var green: Double
+    var blue: Double
+    var opacity: Double
+
+    init(red: Double, green: Double, blue: Double, opacity: Double = 1) {
+        self.red = Self.clamped(red)
+        self.green = Self.clamped(green)
+        self.blue = Self.clamped(blue)
+        self.opacity = Self.clamped(opacity)
+    }
+
+    init(_ color: Color) {
+        let uiColor = UIColor(DotColorPickerSelection.selectedColor(fromPickerColor: color))
+        var redComponent: CGFloat = 0
+        var greenComponent: CGFloat = 0
+        var blueComponent: CGFloat = 0
+        var alphaComponent: CGFloat = 0
+
+        if uiColor.getRed(
+            &redComponent,
+            green: &greenComponent,
+            blue: &blueComponent,
+            alpha: &alphaComponent
+        ) {
+            self.init(
+                red: Double(redComponent),
+                green: Double(greenComponent),
+                blue: Double(blueComponent),
+                opacity: Double(alphaComponent)
+            )
+            return
+        }
+
+        var whiteComponent: CGFloat = 0
+        if uiColor.getWhite(&whiteComponent, alpha: &alphaComponent) {
+            self.init(
+                red: Double(whiteComponent),
+                green: Double(whiteComponent),
+                blue: Double(whiteComponent),
+                opacity: Double(alphaComponent)
+            )
+            return
+        }
+
+        self = .defaultBubble
+    }
+
+    var color: Color {
+        Color(.sRGB, red: red, green: green, blue: blue, opacity: opacity)
+    }
+
+    var uiColor: UIColor {
+        UIColor(red: red, green: green, blue: blue, alpha: opacity)
+    }
+
+    private static func clamped(_ value: Double) -> Double {
+        guard value.isFinite else { return 1 }
+        return min(max(value, 0), 1)
+    }
+}
+
 nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
     var enabled: Bool
     var bubbles: [TextBubbleItem]
+    var bubbleColor: TextBubbleColorComponents
 
-    init(enabled: Bool, bubbles: [TextBubbleItem] = []) {
+    init(
+        enabled: Bool,
+        bubbles: [TextBubbleItem] = [],
+        bubbleColor: TextBubbleColorComponents = .defaultBubble
+    ) {
         self.enabled = enabled
         self.bubbles = bubbles
+        self.bubbleColor = bubbleColor
     }
 
     static let `default` = TextBubbleSettings(enabled: false)
@@ -851,6 +947,7 @@ nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case enabled
         case bubbles
+        case bubbleColor
         case text
     }
 
@@ -862,18 +959,23 @@ nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
         if let decodedBubbles {
             enabled = decodedEnabled
             bubbles = decodedBubbles
+            bubbleColor = try container.decodeIfPresent(TextBubbleColorComponents.self, forKey: .bubbleColor)
+                ?? .defaultBubble
             return
         }
 
         let legacyText = try container.decodeIfPresent(String.self, forKey: .text) ?? CharacterDotText.defaultBubbleText
         enabled = decodedEnabled
         bubbles = decodedEnabled ? [TextBubbleItem(text: legacyText)] : []
+        bubbleColor = try container.decodeIfPresent(TextBubbleColorComponents.self, forKey: .bubbleColor)
+            ?? .defaultBubble
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(enabled, forKey: .enabled)
         try container.encode(bubbles, forKey: .bubbles)
+        try container.encode(bubbleColor, forKey: .bubbleColor)
     }
 }
 

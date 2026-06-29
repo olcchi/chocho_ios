@@ -374,6 +374,7 @@ struct CanvasRasterExporterTests {
                 rect: CGRect(x: 170, y: 110, width: 60, height: 80)
             )
         )
+        #expect(sampleColor(in: collageFrame, at: CGPoint(x: 145, y: 95)).isClose(to: .sourceBlue))
     }
 
     @Test func clearColorAssetDotMasksCollageToShapeOnly() throws {

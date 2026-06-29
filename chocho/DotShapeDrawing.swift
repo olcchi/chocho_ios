@@ -506,11 +506,10 @@ nonisolated enum TextBubbleLayout {
         let safeBaseSize = max(baseSize, 1)
         let displayText = CharacterDotText.bubbleDisplayText(for: text) as NSString
         let fontSize = max(9, safeBaseSize * 0.3)
-        let horizontalPadding = max(9, safeBaseSize * 0.24)
+        let horizontalPadding = max(7, safeBaseSize * 0.14)
         let verticalPadding = max(6, safeBaseSize * 0.16)
-        let tailDrop = max(5, safeBaseSize * 0.11)
         let resolvedMaximumTextWidth = maximumTextWidth ?? max(safeBaseSize * 1.7, safeBaseSize * 4.8)
-        let minimumBubbleWidth = safeBaseSize * 1.15
+        let minimumBubbleWidth = safeBaseSize * 1.52
         let minimumBubbleHeight = safeBaseSize * 0.76
         let maximumTextHeight = fontSize * 1.24 * CGFloat(maximumLineCount)
         let paragraphStyle = NSMutableParagraphStyle()
@@ -527,17 +526,17 @@ nonisolated enum TextBubbleLayout {
         ).integral.size
         let textWidth = min(max(1, measuredSize.width), resolvedMaximumTextWidth)
         let textHeight = min(max(fontSize * 1.22, measuredSize.height), maximumTextHeight)
-        let bodyWidth = max(minimumBubbleWidth, textWidth + horizontalPadding * 2)
         let bubbleHeight = max(minimumBubbleHeight, textHeight + verticalPadding * 2)
-        let renderSize = CGSize(width: bodyWidth, height: bubbleHeight + tailDrop)
+        let textInsets = TextBubblePath.textInsets(forHeight: bubbleHeight)
+        let bubbleWidth = max(minimumBubbleWidth, textWidth + horizontalPadding * 2 + textInsets.leading + textInsets.trailing)
         let textRect = CGRect(
-            x: horizontalPadding,
+            x: textInsets.leading + horizontalPadding,
             y: (bubbleHeight - textHeight) / 2,
-            width: max(1, bodyWidth - horizontalPadding * 2),
+            width: max(1, bubbleWidth - textInsets.leading - textInsets.trailing - horizontalPadding * 2),
             height: textHeight
         )
 
-        return Result(renderSize: renderSize, textRect: textRect, fontSize: fontSize)
+        return Result(renderSize: CGSize(width: bubbleWidth, height: bubbleHeight), textRect: textRect, fontSize: fontSize)
     }
 }
 
@@ -636,58 +635,82 @@ struct TextBubbleShape: Shape {
 }
 
 nonisolated enum TextBubblePath {
+    struct CapInsets: Equatable {
+        let leading: CGFloat
+        let trailing: CGFloat
+    }
+
+    private static let sourceHeight: CGFloat = 74
+    private static let leftSeamX: CGFloat = 36.38
+    private static let rightSeamX: CGFloat = 321.336
+    private static let rightEdgeX: CGFloat = 345.724
+
+    static func horizontalCapInsets(forHeight height: CGFloat) -> CapInsets {
+        let scale = max(height, 1) / sourceHeight
+        return CapInsets(
+            leading: leftSeamX * scale,
+            trailing: (rightEdgeX - rightSeamX) * scale
+        )
+    }
+
+    static func textInsets(forHeight height: CGFloat) -> CapInsets {
+        let scale = max(height, 1) / sourceHeight
+        return CapInsets(
+            leading: 20 * scale,
+            trailing: 16 * scale
+        )
+    }
+
     static func bezierPath(in rect: CGRect) -> UIBezierPath {
         let safeRect = rect.standardized
         guard safeRect.width > 0, safeRect.height > 0 else { return UIBezierPath() }
 
-        let tailDrop = min(max(5, safeRect.height * 0.1), safeRect.height * 0.2)
-        let bodyRect = CGRect(
-            x: safeRect.minX,
-            y: safeRect.minY,
-            width: max(1, safeRect.width),
-            height: max(1, safeRect.height - tailDrop)
-        )
-        let radius = min(bodyRect.height * 0.46, max(10, bodyRect.height * 0.34))
-        let tailTip = CGPoint(
-            x: bodyRect.minX + radius * 0.42,
-            y: safeRect.maxY - tailDrop * 0.04
-        )
-        let tailUpperJoin = CGPoint(
-            x: bodyRect.minX + radius * 0.78,
-            y: bodyRect.maxY - radius * 0.18
-        )
-        let tailLowerJoin = CGPoint(
-            x: bodyRect.minX + radius * 1.66,
-            y: bodyRect.maxY
-        )
-
         let path = UIBezierPath()
-        path.move(to: CGPoint(x: bodyRect.minX + radius, y: bodyRect.minY))
-        path.addLine(to: CGPoint(x: bodyRect.maxX - radius, y: bodyRect.minY))
-        path.addQuadCurve(
-            to: CGPoint(x: bodyRect.maxX, y: bodyRect.minY + radius),
-            controlPoint: CGPoint(x: bodyRect.maxX, y: bodyRect.minY)
-        )
-        path.addLine(to: CGPoint(x: bodyRect.maxX, y: bodyRect.maxY - radius))
-        path.addQuadCurve(
-            to: CGPoint(x: bodyRect.maxX - radius, y: bodyRect.maxY),
-            controlPoint: CGPoint(x: bodyRect.maxX, y: bodyRect.maxY)
-        )
-        path.addLine(to: tailLowerJoin)
+        let scale = safeRect.height / sourceHeight
+        let leftSeam = safeRect.minX + leftSeamX * scale
+        let rightSeam = max(leftSeam, safeRect.maxX - (rightEdgeX - rightSeamX) * scale)
+        let point = { (x: CGFloat, y: CGFloat) in
+            CGPoint(x: safeRect.minX + x * scale, y: safeRect.minY + y * scale)
+        }
+        let rightPoint = { (x: CGFloat, y: CGFloat) in
+            CGPoint(x: rightSeam + (x - rightSeamX) * scale, y: safeRect.minY + y * scale)
+        }
+
+        path.move(to: point(leftSeamX, 0.5))
+        path.addLine(to: rightPoint(rightSeamX, 0.5))
         path.addCurve(
-            to: tailTip,
-            controlPoint1: CGPoint(x: bodyRect.minX + radius * 1.18, y: bodyRect.maxY + tailDrop * 0.06),
-            controlPoint2: CGPoint(x: bodyRect.minX + radius * 0.7, y: safeRect.maxY - tailDrop * 0.04)
+            to: rightPoint(345.724, 24.8874),
+            controlPoint1: rightPoint(334.805, 0.5),
+            controlPoint2: rightPoint(345.724, 11.4186)
+        )
+        path.addLine(to: rightPoint(345.724, 49.1126))
+        path.addCurve(
+            to: rightPoint(321.336, 73.5),
+            controlPoint1: rightPoint(345.724, 62.5814),
+            controlPoint2: rightPoint(334.805, 73.5)
+        )
+        path.addLine(to: point(leftSeamX, 73.5))
+        path.addCurve(
+            to: point(20.839, 67.9062),
+            controlPoint1: point(30.474, 73.5),
+            controlPoint2: point(25.0587, 71.3995)
         )
         path.addCurve(
-            to: tailUpperJoin,
-            controlPoint1: CGPoint(x: bodyRect.minX + radius * 0.28, y: bodyRect.maxY - radius * 0.02),
-            controlPoint2: CGPoint(x: bodyRect.minX + radius * 0.52, y: bodyRect.maxY - radius * 0.14)
+            to: point(1.72375, 71.8955),
+            controlPoint1: point(16.6293, 70.7109),
+            controlPoint2: point(9.87958, 73.3784)
         )
-        path.addLine(to: CGPoint(x: bodyRect.minX, y: bodyRect.minY + radius))
-        path.addQuadCurve(
-            to: CGPoint(x: bodyRect.minX + radius, y: bodyRect.minY),
-            controlPoint: CGPoint(x: bodyRect.minX, y: bodyRect.minY)
+        path.addCurve(
+            to: point(12.3126, 53.6045),
+            controlPoint1: point(3.96996, 70.9328),
+            controlPoint2: point(12.6335, 65.1564)
+        )
+        path.addLine(to: point(11.9923, 49.1123))
+        path.addLine(to: point(11.9926, 24.8874))
+        path.addCurve(
+            to: point(leftSeamX, 0.5),
+            controlPoint1: point(11.9926, 11.4186),
+            controlPoint2: point(22.9112, 0.5)
         )
         path.close()
         return path
