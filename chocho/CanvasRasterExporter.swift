@@ -24,7 +24,9 @@ nonisolated enum CanvasRasterExporter {
         blinkTime: TimeInterval? = nil,
         y2kCCDFilterSettings: Y2KCCDFilterSettings = .default,
         asciiArtSettings: ASCIIArtSettings = .default,
+        subjectMask: SubjectMask? = nil,
         asciiArtMask: SubjectMask? = nil,
+        subjectGlowSettings: SubjectGlowSettings = .default,
         photoFrameImage: UIImage? = nil,
         styledBaseImage: UIImage? = nil,
         styledLiveFrameImage: UIImage? = nil
@@ -37,8 +39,10 @@ nonisolated enum CanvasRasterExporter {
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             sourceKey: "export-base",
             asciiArtSettings: asciiArtSettings,
+            subjectMask: subjectMask,
             asciiArtMask: asciiArtMask,
-            photoCompression: photoCompression
+            photoCompression: photoCompression,
+            subjectGlowSettings: subjectGlowSettings
         )
         let renderPhotoFrameImage = styledLiveFrameImage ?? photoFrameImage.map {
             CanvasStyledPhotoRenderer.renderSync(
@@ -46,8 +50,10 @@ nonisolated enum CanvasRasterExporter {
                 y2kCCDFilterSettings: y2kCCDFilterSettings,
                 sourceKey: "export-frame-\(blinkTime ?? 0)",
                 asciiArtSettings: asciiArtSettings,
+                subjectMask: subjectMask,
                 asciiArtMask: asciiArtMask,
-                photoCompression: photoCompression
+                photoCompression: photoCompression,
+                subjectGlowSettings: subjectGlowSettings
             )
         }
 
@@ -795,6 +801,7 @@ nonisolated enum CanvasRasterExporter {
                 in: context,
                 rect: bubbleFrame,
                 bubbleColor: settings.bubbleColor.uiColor,
+                borderColor: settings.isBorderEnabled ? settings.borderColor.uiColor : nil,
                 baseSize: TextBubbleCanvasLayout.baseSize(for: bubble, in: canvasRect.size),
                 maximumTextWidth: TextBubbleCanvasLayout.maximumTextWidth(in: canvasRect.size)
             )
@@ -806,6 +813,7 @@ nonisolated enum CanvasRasterExporter {
         in context: CGContext,
         rect: CGRect,
         bubbleColor: UIColor,
+        borderColor: UIColor?,
         baseSize: CGFloat,
         maximumTextWidth: CGFloat
     ) {
@@ -815,15 +823,8 @@ nonisolated enum CanvasRasterExporter {
             baseSize: baseSize,
             maximumTextWidth: maximumTextWidth
         )
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .left
-        paragraphStyle.lineBreakMode = .byWordWrapping
         let textColor = bubbleColor.withAlphaComponent(1).readableTextColor
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: layout.fontSize, weight: .regular),
-            .foregroundColor: textColor,
-            .paragraphStyle: paragraphStyle,
-        ]
+        let attributes = TextBubbleLayout.textAttributes(fontSize: layout.fontSize, color: textColor)
         let path = TextBubblePath.bezierPath(in: CGRect(origin: .zero, size: rect.size))
 
         context.saveGState()
@@ -831,6 +832,13 @@ nonisolated enum CanvasRasterExporter {
         context.addPath(path.cgPath)
         context.setFillColor(bubbleColor.cgColor)
         context.fillPath()
+        if let borderColor {
+            context.addPath(path.cgPath)
+            context.setStrokeColor(borderColor.cgColor)
+            context.setLineWidth(TextBubbleBorderStyle.lineWidth(baseSize: baseSize))
+            context.strokePath()
+        }
+        context.clip(to: layout.textRect)
         displayText.draw(in: layout.textRect, withAttributes: attributes)
         context.restoreGState()
     }

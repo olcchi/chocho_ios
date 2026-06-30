@@ -132,6 +132,11 @@ struct CanvasDraftStoreTests {
                 rgbShift: 0.15
             ),
             asciiArtSettings: .default,
+            subjectGlowSettings: SubjectGlowSettings(
+                enabled: true,
+                color: CanvasDraftColorComponents(red: 1, green: 0.82, blue: 0.2),
+                radius: 0.18
+            ),
             textBubbleSettings: TextBubbleSettings(
                 enabled: true,
                 bubbles: [
@@ -174,6 +179,7 @@ struct CanvasDraftStoreTests {
         #expect(loaded.viewportOffset == capture.viewportOffset)
         #expect(loaded.liveDotAnimation == capture.liveDotAnimation)
         #expect(loaded.y2kCCDFilterSettings == capture.y2kCCDFilterSettings)
+        #expect(loaded.subjectGlowSettings == capture.subjectGlowSettings)
         #expect(loaded.textBubbleSettings == capture.textBubbleSettings)
         #expect(loaded.isSourceLiveMotionEnabled == capture.isSourceLiveMotionEnabled)
         #expect(loaded.sourcePhotoAssetLocalIdentifier == capture.sourcePhotoAssetLocalIdentifier)
@@ -331,6 +337,7 @@ struct CanvasDraftStoreTests {
             liveDotAnimation: .none,
             y2kCCDFilterSettings: .default,
             asciiArtSettings: .default,
+            subjectGlowSettings: .default,
             textBubbleSettings: .default,
             isSourceLiveMotionEnabled: false,
             sourcePhotoAssetLocalIdentifier: nil

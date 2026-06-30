@@ -72,8 +72,8 @@ nonisolated enum CanvasLivePhotoExporter {
         let exportDuration = snapshot.exportDuration(sourceLiveVideo: sourceLiveVideo)
         guard exportDuration > 0 else { return nil }
 
-        let needsMask = snapshot.asciiArtSettings.enabled
-        let asciiArtMask: SubjectMask? = needsMask
+        let needsSubjectMask = snapshot.asciiArtSettings.enabled || snapshot.subjectGlowSettings.enabled
+        let subjectMask: SubjectMask? = needsSubjectMask
             ? try? await VisionSubjectMaskProvider().subjectMask(for: snapshot.image)
             : nil
 
@@ -86,8 +86,9 @@ nonisolated enum CanvasLivePhotoExporter {
             y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
             sourceKey: "export-base",
             asciiArtSettings: snapshot.asciiArtSettings,
-            asciiArtMask: asciiArtMask,
-            photoCompression: snapshot.photoCompression
+            subjectMask: subjectMask,
+            photoCompression: snapshot.photoCompression,
+            subjectGlowSettings: snapshot.subjectGlowSettings
         )
 
         guard
@@ -97,7 +98,7 @@ nonisolated enum CanvasLivePhotoExporter {
                 blinkTime: 0,
                 sourceLiveVideo: sourceLiveVideo,
                 exportDuration: exportDuration,
-                asciiArtMask: asciiArtMask,
+                subjectMask: subjectMask,
                 applySourceLivePhotoFrame: false,
                 styledBaseImage: styledBaseImage
             ),
@@ -118,7 +119,7 @@ nonisolated enum CanvasLivePhotoExporter {
             outputURL: videoURL,
             sourceLiveVideo: sourceLiveVideo,
             exportDuration: exportDuration,
-            asciiArtMask: asciiArtMask,
+            subjectMask: subjectMask,
             styledBaseImage: styledBaseImage
         ) else {
             try? FileManager.default.removeItem(at: imageURL)
@@ -148,7 +149,7 @@ nonisolated enum CanvasLivePhotoExporter {
         blinkTime: TimeInterval,
         sourceLiveVideo: CanvasSourceLiveVideo?,
         exportDuration: TimeInterval,
-        asciiArtMask: SubjectMask? = nil,
+        subjectMask: SubjectMask? = nil,
         applySourceLivePhotoFrame: Bool = true,
         styledBaseImage: UIImage? = nil
     ) -> UIImage? {
@@ -183,7 +184,8 @@ nonisolated enum CanvasLivePhotoExporter {
             blinkTime: blinkTime,
             y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
             asciiArtSettings: snapshot.asciiArtSettings,
-            asciiArtMask: asciiArtMask,
+            subjectMask: subjectMask,
+            subjectGlowSettings: snapshot.subjectGlowSettings,
             photoFrameImage: photoFrameImage,
             styledBaseImage: styledBaseImage
         )
@@ -196,7 +198,7 @@ nonisolated enum CanvasLivePhotoExporter {
         outputURL: URL,
         sourceLiveVideo: CanvasSourceLiveVideo?,
         exportDuration: TimeInterval,
-        asciiArtMask: SubjectMask? = nil,
+        subjectMask: SubjectMask? = nil,
         styledBaseImage: UIImage? = nil
     ) async -> Bool {
         try? FileManager.default.removeItem(at: outputURL)
@@ -262,7 +264,7 @@ nonisolated enum CanvasLivePhotoExporter {
                     blinkTime: blinkTime,
                     sourceLiveVideo: sourceLiveVideo,
                     exportDuration: exportDuration,
-                    asciiArtMask: asciiArtMask,
+                    subjectMask: subjectMask,
                     styledBaseImage: styledBaseImage
                 )
             }

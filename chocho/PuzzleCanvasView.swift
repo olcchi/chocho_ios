@@ -363,6 +363,7 @@ struct PuzzleCanvasView: View {
                         ),
                         canvasRect: canvasRect,
                         bubbleColor: textBubbleSettings.bubbleColor.color,
+                        borderColor: textBubbleSettings.isBorderEnabled ? textBubbleSettings.borderColor.color : nil,
                         baseSize: TextBubbleCanvasLayout.baseSize(for: bubble, in: canvasRect.size),
                         onSelect: {
                             selectedTextBubbleID = bubble.id
@@ -390,6 +391,7 @@ struct PuzzleCanvasView: View {
                     TextBubbleView(
                         text: bubble.displayText,
                         bubbleColor: textBubbleSettings.bubbleColor.color,
+                        borderColor: textBubbleSettings.isBorderEnabled ? textBubbleSettings.borderColor.color : nil,
                         baseSize: TextBubbleCanvasLayout.baseSize(for: bubble, in: canvasRect.size),
                         maximumTextWidth: TextBubbleCanvasLayout.maximumTextWidth(in: canvasRect.size)
                     )
@@ -1107,6 +1109,7 @@ private struct EditableTextBubbleView: View {
     @Binding var text: String
     let canvasRect: CGRect
     let bubbleColor: Color
+    let borderColor: Color?
     let baseSize: CGFloat
     let onSelect: () -> Void
     let onCommitMove: (TextBubbleItem) -> Void
@@ -1133,6 +1136,19 @@ private struct EditableTextBubbleView: View {
             )
 
             ZStack(alignment: .topLeading) {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.primary, lineWidth: 2.5)
+                        .frame(
+                            width: layout.renderSize.width + 10,
+                            height: layout.renderSize.height + 10
+                        )
+                        .position(
+                            x: bubbleOrigin.x + layout.renderSize.width / 2,
+                            y: bubbleOrigin.y + layout.renderSize.height / 2
+                        )
+                }
+
                 TextBubbleShape()
                     .fill(bubbleColor)
                     .frame(width: layout.renderSize.width, height: layout.renderSize.height)
@@ -1141,9 +1157,9 @@ private struct EditableTextBubbleView: View {
                         y: bubbleOrigin.y + layout.renderSize.height / 2
                     )
 
-                if isSelected {
+                if let borderColor {
                     TextBubbleShape()
-                        .stroke(Color.primary.opacity(0.9), lineWidth: 1.5)
+                        .stroke(borderColor, lineWidth: TextBubbleBorderStyle.lineWidth(baseSize: baseSize))
                         .frame(width: layout.renderSize.width, height: layout.renderSize.height)
                         .position(
                             x: bubbleOrigin.x + layout.renderSize.width / 2,
@@ -1176,35 +1192,23 @@ private struct EditableTextBubbleView: View {
                         x: bubbleOrigin.x + layout.textRect.midX,
                         y: bubbleOrigin.y + layout.textRect.midY
                     )
-                    .toolbar {
-                        if isTextFieldFocused {
-                            ToolbarItemGroup(placement: .keyboard) {
-                                Spacer()
-                                VStack(spacing: 0) {
-                                    Button("完成") {
-                                        isTextFieldFocused = false
-                                    }
-                                    Color.clear
-                                        .frame(height: 8)
-                                }
-                            }
-                        }
-                    }
 
-                Button(action: onDelete) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: deleteButtonSize * 0.48, weight: .bold))
-                        .foregroundStyle(Color.primaryForeground)
-                        .frame(width: deleteButtonSize, height: deleteButtonSize)
-                        .background(Color.primary.opacity(0.88), in: Circle())
+                if isSelected {
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: deleteButtonSize * 0.48, weight: .bold))
+                            .foregroundStyle(Color.primaryForeground)
+                            .frame(width: deleteButtonSize, height: deleteButtonSize)
+                            .background(Color.primary.opacity(0.88), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Circle())
+                    .position(
+                        x: bubbleOrigin.x + layout.renderSize.width + deleteButtonSize * 0.42,
+                        y: bubbleOrigin.y - deleteButtonSize * 0.42
+                    )
+                    .accessibilityLabel("删除气泡")
                 }
-                .buttonStyle(.plain)
-                .contentShape(Circle())
-                .position(
-                    x: bubbleOrigin.x + layout.renderSize.width + deleteButtonSize * 0.42,
-                    y: bubbleOrigin.y - deleteButtonSize * 0.42
-                )
-                .accessibilityLabel("删除气泡")
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .offset(dragTranslation)

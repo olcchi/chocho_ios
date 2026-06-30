@@ -942,6 +942,17 @@ struct PuzzleCanvasModelTests {
         #expect(longLayout.renderSize.width > shortLayout.renderSize.width)
     }
 
+    @Test func textBubblePlaceholderLayoutHugsDefaultContent() {
+        let baseSize: CGFloat = 42
+        let blankLayout = TextBubbleLayout.layout(for: "   ", baseSize: baseSize)
+        let defaultTextLayout = TextBubbleLayout.layout(for: CharacterDotText.defaultBubbleText, baseSize: baseSize)
+        let longerLayout = TextBubbleLayout.layout(for: "你好呀", baseSize: baseSize)
+
+        #expect(blankLayout.renderSize == defaultTextLayout.renderSize)
+        #expect(blankLayout.renderSize.width < baseSize * 1.52)
+        #expect(longerLayout.renderSize.width > blankLayout.renderSize.width)
+    }
+
     @Test func textBubbleDefaultColorDoesNotResolveWithSystemAppearance() {
         let color = TextBubbleSettings.default.enabledForPanelEditing.bubbleColor.uiColor
         let lightColor = color.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
@@ -949,6 +960,8 @@ struct PuzzleCanvasModelTests {
 
         #expect(lightColor.cacheKey == darkColor.cacheKey)
         #expect(TextBubbleSettings.default.enabledForPanelEditing.bubbleColor == .defaultBubble)
+        #expect(!TextBubbleSettings.default.enabledForPanelEditing.isBorderEnabled)
+        #expect(TextBubbleSettings.default.enabledForPanelEditing.borderColor == TextBubbleBorderStyle.defaultColor)
     }
 
     @Test func textBubbleSettingsDecodeLegacyDefaultColor() throws {
@@ -972,6 +985,23 @@ struct PuzzleCanvasModelTests {
         #expect(settings.enabled)
         #expect(settings.visibleBubbles.count == 1)
         #expect(settings.bubbleColor == .defaultBubble)
+        #expect(!settings.isBorderEnabled)
+        #expect(settings.borderColor == TextBubbleBorderStyle.defaultColor)
+    }
+
+    @Test func textBubbleSettingsRoundTripsBorderStyle() throws {
+        let source = TextBubbleSettings(
+            enabled: true,
+            bubbles: [TextBubbleItem()],
+            bubbleColor: TextBubbleColorComponents(red: 0.9, green: 0.8, blue: 0.7),
+            isBorderEnabled: true,
+            borderColor: TextBubbleColorComponents(red: 0.1, green: 0.2, blue: 0.3)
+        )
+
+        let data = try JSONEncoder().encode(source)
+        let decoded = try JSONDecoder().decode(TextBubbleSettings.self, from: data)
+
+        #expect(decoded == source)
     }
 
     @Test func textBubblePreviewLayoutUsesVisibleCanvasSize() {
@@ -998,6 +1028,27 @@ struct PuzzleCanvasModelTests {
         #expect(layout.localVisibleComposedFrame.size == layout.visibleComposedFrame.size)
         #expect(layout.localVisibleComposedFrame.size.width < layout.referenceComposedFrame.size.width)
         #expect(previewFrame.size == exportFrame.size)
+    }
+
+    @Test func textBubbleCanvasLayoutScalesWithExportCanvasSize() {
+        let bubble = TextBubbleItem(
+            text: "导出一致",
+            centerX: 0.28,
+            centerY: 0.2
+        )
+        let previewFrame = TextBubbleCanvasLayout.frame(
+            for: bubble,
+            in: CGRect(origin: .zero, size: CGSize(width: 480, height: 300))
+        )
+        let exportFrame = TextBubbleCanvasLayout.frame(
+            for: bubble,
+            in: CGRect(origin: .zero, size: CGSize(width: 4_800, height: 3_000))
+        )
+
+        #expect(abs(exportFrame.width / previewFrame.width - 10) < 0.001)
+        #expect(abs(exportFrame.height / previewFrame.height - 10) < 0.001)
+        #expect(abs(exportFrame.midX / previewFrame.midX - 10) < 0.001)
+        #expect(abs(exportFrame.midY / previewFrame.midY - 10) < 0.001)
     }
 
     @Test func categorizedAssetDotsRenderLargerThanBasicDots() {

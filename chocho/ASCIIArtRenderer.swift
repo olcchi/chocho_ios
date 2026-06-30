@@ -473,8 +473,8 @@ nonisolated enum ASCIIArtRenderer {
             renderSize: renderSize
         )
         let edgeBitmap: [Bool] = settings.showOutline && hasSubjectMask
-            ? dilateBitmap(
-                makeEdgeBitmap(from: maskBitmap, width: renderW, height: renderH),
+            ? SubjectMaskRaster.dilateBitmap(
+                SubjectMaskRaster.makeEdgeBitmap(from: maskBitmap, width: renderW, height: renderH),
                 width: renderW,
                 height: renderH,
                 radius: outlineDilationRadius(for: cellSize)
@@ -605,62 +605,9 @@ nonisolated enum ASCIIArtRenderer {
         return String(hash, radix: 16)
     }
 
-    /// 8-neighbor edge detection on the mask: a pixel is an edge if it's inside the subject
-    /// and at least one of its 8 neighbors differs.
-    private nonisolated static func makeEdgeBitmap(from maskBitmap: [Bool], width: Int, height: Int) -> [Bool] {
-        var edges = [Bool](repeating: false, count: width * height)
-        for y in 0..<height {
-            for x in 0..<width {
-                let center = maskBitmap[y * width + x]
-                guard center else { continue }
-                // Out-of-bounds neighbors are treated as same as center to avoid
-                // falsely marking subject pixels at the image border as edges.
-                func pixel(_ px: Int, _ py: Int) -> Bool {
-                    guard px >= 0, px < width, py >= 0, py < height else { return center }
-                    return maskBitmap[py * width + px]
-                }
-                let isEdge =
-                    pixel(x-1, y-1) != center ||
-                    pixel(x-1, y)   != center ||
-                    pixel(x-1, y+1) != center ||
-                    pixel(x,   y-1) != center ||
-                    pixel(x,   y+1) != center ||
-                    pixel(x+1, y-1) != center ||
-                    pixel(x+1, y)   != center ||
-                    pixel(x+1, y+1) != center
-                edges[y * width + x] = isEdge
-            }
-        }
-        return edges
-    }
-
     /// Expands the 1px contour so coarse cells still pick up outline glyphs.
     nonisolated static func outlineDilationRadius(for cellSize: CGFloat) -> Int {
         max(1, Int((cellSize * 0.45).rounded()))
-    }
-
-    private nonisolated static func dilateBitmap(
-        _ bitmap: [Bool],
-        width: Int,
-        height: Int,
-        radius: Int
-    ) -> [Bool] {
-        guard radius > 0, !bitmap.isEmpty else { return bitmap }
-        var dilated = bitmap
-        for y in 0..<height {
-            for x in 0..<width {
-                guard bitmap[y * width + x] else { continue }
-                for dy in -radius...radius {
-                    for dx in -radius...radius {
-                        let px = x + dx
-                        let py = y + dy
-                        guard px >= 0, px < width, py >= 0, py < height else { continue }
-                        dilated[py * width + px] = true
-                    }
-                }
-            }
-        }
-        return dilated
     }
 
     private nonisolated static func sampleCell(
@@ -722,6 +669,66 @@ nonisolated enum ASCIIArtRenderer {
         UIGraphicsPushContext(context)
         nsText.draw(in: drawRect, withAttributes: attrs)
         UIGraphicsPopContext()
+    }
+}
+
+// MARK: - Subject Mask Raster Helpers
+
+nonisolated enum SubjectMaskRaster {
+    /// 8-neighbor edge detection on the mask: a pixel is an edge if it's inside the subject
+    /// and at least one of its 8 neighbors differs.
+    nonisolated static func makeEdgeBitmap(from maskBitmap: [Bool], width: Int, height: Int) -> [Bool] {
+        guard width > 0, height > 0, maskBitmap.count >= width * height else { return [] }
+
+        var edges = [Bool](repeating: false, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                let center = maskBitmap[y * width + x]
+                guard center else { continue }
+                // Out-of-bounds neighbors are treated as same as center to avoid
+                // falsely marking subject pixels at the image border as edges.
+                func pixel(_ px: Int, _ py: Int) -> Bool {
+                    guard px >= 0, px < width, py >= 0, py < height else { return center }
+                    return maskBitmap[py * width + px]
+                }
+                let isEdge =
+                    pixel(x-1, y-1) != center ||
+                    pixel(x-1, y)   != center ||
+                    pixel(x-1, y+1) != center ||
+                    pixel(x,   y-1) != center ||
+                    pixel(x,   y+1) != center ||
+                    pixel(x+1, y-1) != center ||
+                    pixel(x+1, y)   != center ||
+                    pixel(x+1, y+1) != center
+                edges[y * width + x] = isEdge
+            }
+        }
+        return edges
+    }
+
+    nonisolated static func dilateBitmap(
+        _ bitmap: [Bool],
+        width: Int,
+        height: Int,
+        radius: Int
+    ) -> [Bool] {
+        guard width > 0, height > 0, radius > 0, bitmap.count >= width * height else { return bitmap }
+
+        var dilated = bitmap
+        for y in 0..<height {
+            for x in 0..<width {
+                guard bitmap[y * width + x] else { continue }
+                for dy in -radius...radius {
+                    for dx in -radius...radius {
+                        let px = x + dx
+                        let py = y + dy
+                        guard px >= 0, px < width, py >= 0, py < height else { continue }
+                        dilated[py * width + px] = true
+                    }
+                }
+            }
+        }
+        return dilated
     }
 }
 

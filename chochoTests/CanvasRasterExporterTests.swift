@@ -313,7 +313,9 @@ struct CanvasRasterExporterTests {
                             centerX: 0.28,
                             centerY: 0.2
                         )
-                    ]
+                    ],
+                    isBorderEnabled: true,
+                    borderColor: TextBubbleColorComponents(red: 1, green: 0, blue: 0)
                 )
             )
         )
@@ -323,6 +325,13 @@ struct CanvasRasterExporterTests {
                 in: exported,
                 rect: CGRect(x: 34, y: 24, width: 170, height: 60),
                 from: .sourceBlue
+            )
+        )
+        #expect(
+            containsColor(
+                .red,
+                in: exported,
+                rect: CGRect(x: 34, y: 24, width: 170, height: 60)
             )
         )
     }
@@ -651,6 +660,27 @@ private func containsDifferentColor(
     for y in stride(from: minY, through: maxY, by: 4) {
         for x in stride(from: minX, through: maxX, by: 4) {
             if !sampleColor(in: image, at: CGPoint(x: x, y: y)).isClose(to: expected) {
+                return true
+            }
+        }
+    }
+
+    return false
+}
+
+private func containsColor(
+    _ expected: SampledColor,
+    in image: UIImage,
+    rect: CGRect
+) -> Bool {
+    let minX = Int(rect.minX)
+    let maxX = Int(rect.maxX)
+    let minY = Int(rect.minY)
+    let maxY = Int(rect.maxY)
+
+    for y in minY...maxY {
+        for x in minX...maxX {
+            if sampleColor(in: image, at: CGPoint(x: x, y: y)).isClose(to: expected, tolerance: 18) {
                 return true
             }
         }

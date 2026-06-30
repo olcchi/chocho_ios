@@ -325,6 +325,7 @@ struct CharacterDotGlyphView: View {
 struct TextBubbleView: View {
     let text: String
     let bubbleColor: Color
+    var borderColor: Color? = nil
     var baseSize: CGFloat? = nil
     var maximumTextWidth: CGFloat? = nil
 
@@ -333,16 +334,22 @@ struct TextBubbleView: View {
             let resolvedBubbleColor = UIColor(bubbleColor)
             let foregroundColor = Color(resolvedBubbleColor.readableTextColor)
             let layout = TextBubbleLayout.layout(
-                for: CharacterDotText.bubbleDisplayText(for: text),
+                for: text,
                 baseSize: baseSize ?? proxy.size.height,
                 maximumTextWidth: maximumTextWidth
             )
+            let displayText = CharacterDotText.bubbleDisplayText(for: text)
 
             ZStack(alignment: .topLeading) {
                 TextBubbleShape()
                     .fill(bubbleColor)
 
-                Text(CharacterDotText.bubbleDisplayText(for: text))
+                if let borderColor {
+                    TextBubbleShape()
+                        .stroke(borderColor, lineWidth: TextBubbleBorderStyle.lineWidth(baseSize: baseSize ?? proxy.size.height))
+                }
+
+                Text(displayText)
                     .font(.system(size: layout.fontSize, weight: .regular))
                     .foregroundStyle(foregroundColor)
                     .lineLimit(TextBubbleLayout.maximumLineCount)
@@ -491,6 +498,7 @@ nonisolated enum CharacterDotGlyphRasterLayout {
 
 nonisolated enum TextBubbleLayout {
     static let maximumLineCount = 4
+    private static let lineHeightMultiplier: CGFloat = 1.24
 
     struct Result: Equatable {
         let renderSize: CGSize
@@ -509,15 +517,9 @@ nonisolated enum TextBubbleLayout {
         let horizontalPadding = max(7, safeBaseSize * 0.14)
         let verticalPadding = max(6, safeBaseSize * 0.16)
         let resolvedMaximumTextWidth = maximumTextWidth ?? max(safeBaseSize * 1.7, safeBaseSize * 4.8)
-        let minimumBubbleWidth = safeBaseSize * 1.52
         let minimumBubbleHeight = safeBaseSize * 0.76
-        let maximumTextHeight = fontSize * 1.24 * CGFloat(maximumLineCount)
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: fontSize, weight: .regular),
-            .paragraphStyle: paragraphStyle,
-        ]
+        let maximumTextHeight = fontSize * lineHeightMultiplier * CGFloat(maximumLineCount)
+        let attributes = textAttributes(fontSize: fontSize, color: nil)
         let measuredSize = displayText.boundingRect(
             with: CGSize(width: resolvedMaximumTextWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -528,7 +530,7 @@ nonisolated enum TextBubbleLayout {
         let textHeight = min(max(fontSize * 1.22, measuredSize.height), maximumTextHeight)
         let bubbleHeight = max(minimumBubbleHeight, textHeight + verticalPadding * 2)
         let textInsets = TextBubblePath.textInsets(forHeight: bubbleHeight)
-        let bubbleWidth = max(minimumBubbleWidth, textWidth + horizontalPadding * 2 + textInsets.leading + textInsets.trailing)
+        let bubbleWidth = textWidth + horizontalPadding * 2 + textInsets.leading + textInsets.trailing
         let textRect = CGRect(
             x: textInsets.leading + horizontalPadding,
             y: (bubbleHeight - textHeight) / 2,
@@ -538,11 +540,29 @@ nonisolated enum TextBubbleLayout {
 
         return Result(renderSize: CGSize(width: bubbleWidth, height: bubbleHeight), textRect: textRect, fontSize: fontSize)
     }
+
+    static func textAttributes(
+        fontSize: CGFloat,
+        color: UIColor?
+    ) -> [NSAttributedString.Key: Any] {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .left
+        paragraphStyle.lineBreakMode = .byWordWrapping
+
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .regular),
+            .paragraphStyle: paragraphStyle,
+        ]
+        if let color {
+            attributes[.foregroundColor] = color
+        }
+        return attributes
+    }
 }
 
 nonisolated enum TextBubbleCanvasLayout {
     static func baseSize(in canvasSize: CGSize) -> CGFloat {
-        min(max(min(canvasSize.width, canvasSize.height) * 0.14, 36), 88)
+        max(min(canvasSize.width, canvasSize.height) * 0.14, 36)
     }
 
     static func baseSize(for bubble: TextBubbleItem, in canvasSize: CGSize) -> CGFloat {

@@ -14,6 +14,7 @@ struct BottomSheetDotControls {
     var photoCompression: Binding<MainPhotoCompression>
     var y2kCCDFilterSettings: Binding<Y2KCCDFilterSettings>
     var asciiArtSettings: Binding<ASCIIArtSettings>
+    var subjectGlowSettings: Binding<SubjectGlowSettings>
     var textBubbleSettings: Binding<TextBubbleSettings>
     var isDetectingSubjectOutline: Bool = false
     var onRandomizeDots: () -> Void = {}

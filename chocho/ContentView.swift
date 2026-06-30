@@ -53,6 +53,8 @@ struct ContentView: View {
     @State private var asciiArtSettings: ASCIIArtSettings = .default
     @State private var asciiArtSessionSnapshot: ASCIIArtSettings?
     @State private var asciiArtCache = ASCIIArtCache()
+    @State private var subjectGlowSettings: SubjectGlowSettings = .default
+    @State private var subjectGlowSessionSnapshot: SubjectGlowSettings?
     @State private var textBubbleSettings: TextBubbleSettings = .default
     @State private var textBubbleSessionSnapshot: TextBubbleSettings?
     @State private var filteredCanvasPreviewImage: UIImage?
@@ -265,6 +267,14 @@ struct ContentView: View {
                 }
                 scheduleCanvasDraftSave()
             }
+            .onChange(of: subjectGlowSettings) { _, newSettings in
+                refreshStyledPreviewImageIfNeeded(debounces: true)
+                if newSettings.enabled {
+                    isSourceLiveMotionEnabled = false
+                    stopLivePreviewPlayback()
+                }
+                scheduleCanvasDraftSave()
+            }
             .onChange(of: liveDotAnimation) { _, _ in
                 stopLivePreviewPlayback()
                 scheduleCanvasDraftSave()
@@ -323,6 +333,7 @@ struct ContentView: View {
                 photoCompression: $photoCompression,
                 y2kCCDFilterSettings: $y2kCCDFilterSettings,
                 asciiArtSettings: $asciiArtSettings,
+                subjectGlowSettings: $subjectGlowSettings,
                 textBubbleSettings: $textBubbleSettings,
                 isDetectingSubjectOutline: isDetectingSubjectOutline,
                 onRandomizeDots: randomizePuzzleDots
@@ -364,6 +375,10 @@ struct ContentView: View {
             onConfirmASCIIArtFeature: confirmASCIIArtFeatureSession,
             onCancelASCIIArtFeature: cancelASCIIArtFeatureSession,
             onRemoveASCIIArtFeature: removeASCIIArtFeature,
+            onBeginSubjectGlowFeature: beginSubjectGlowFeatureSession,
+            onConfirmSubjectGlowFeature: confirmSubjectGlowFeatureSession,
+            onCancelSubjectGlowFeature: cancelSubjectGlowFeatureSession,
+            onRemoveSubjectGlowFeature: removeSubjectGlowFeature,
             onBeginTextBubbleFeature: beginTextBubbleFeatureSession,
             onConfirmTextBubbleFeature: confirmTextBubbleFeatureSession,
             onCancelTextBubbleFeature: cancelTextBubbleFeatureSession,
@@ -429,7 +444,8 @@ struct ContentView: View {
                     livePreviewPlaybackStart: livePreviewPlaybackStart,
                     isStyledPhotoPreviewEnabled: CanvasStyledPhotoRenderer.styledPreviewEnabled(
                         y2kCCDFilterSettings: y2kCCDFilterSettings,
-                        asciiArtSettings: asciiArtSettings
+                        asciiArtSettings: asciiArtSettings,
+                        subjectGlowSettings: subjectGlowSettings
                     ),
                     isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
                     sourceLiveVideo: sourceLiveVideo,
@@ -485,7 +501,8 @@ struct ContentView: View {
 
         guard CanvasStyledPhotoRenderer.styledPreviewEnabled(
             y2kCCDFilterSettings: y2kCCDFilterSettings,
-            asciiArtSettings: asciiArtSettings
+            asciiArtSettings: asciiArtSettings,
+            subjectGlowSettings: subjectGlowSettings
         ), let canvasImage else {
             filteredCanvasPreviewImage = nil
             filteredCanvasPreviewKey = nil
@@ -499,6 +516,7 @@ struct ContentView: View {
             "\(Int(pixelSize.width.rounded()))x\(Int(pixelSize.height.rounded()))",
             y2kCCDFilterSettings.cacheKey,
             asciiArtSettings.cacheKey,
+            subjectGlowSettings.cacheKey,
             photoCompression.rawValue
         ].joined(separator: "|")
 
@@ -510,6 +528,7 @@ struct ContentView: View {
 
         let ccdSettings = y2kCCDFilterSettings
         let asciiSettings = asciiArtSettings
+        let glowSettings = subjectGlowSettings
         let compression = photoCompression
         let ccdCache = y2kCCDFilterCache
         let asciiCache = asciiArtCache
@@ -527,7 +546,8 @@ struct ContentView: View {
                 y2kCCDCache: ccdCache,
                 asciiArtSettings: asciiSettings,
                 asciiArtCache: asciiCache,
-                photoCompression: compression
+                photoCompression: compression,
+                subjectGlowSettings: glowSettings
             )
 
             guard !Task.isCancelled, filteredCanvasPreviewKey == cacheKey else { return }
@@ -1414,6 +1434,40 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func beginSubjectGlowFeatureSession() {
+        guard subjectGlowSessionSnapshot == nil else { return }
+        subjectGlowSessionSnapshot = subjectGlowSettings
+        subjectGlowSettings = subjectGlowSettings.enabledForPanelEditing
+    }
+
+    @MainActor
+    private func confirmSubjectGlowFeatureSession() {
+        subjectGlowSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func removeSubjectGlowFeature() {
+        subjectGlowSettings = .default
+        subjectGlowSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
+    private func cancelSubjectGlowFeatureSession() {
+        guard let snapshot = subjectGlowSessionSnapshot else { return }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            subjectGlowSettings = snapshot
+        }
+
+        subjectGlowSessionSnapshot = nil
+        scheduleCanvasDraftSave()
+    }
+
+    @MainActor
     private func beginTextBubbleFeatureSession() {
         guard textBubbleSessionSnapshot == nil else { return }
         textBubbleSessionSnapshot = textBubbleSettings
@@ -1552,12 +1606,13 @@ struct ContentView: View {
         canvasImage = restored.image
         y2kCCDFilterSettings = restored.y2kCCDFilterSettings
         asciiArtSettings = restored.asciiArtSettings
+        subjectGlowSettings = restored.subjectGlowSettings
         textBubbleSettings = restored.textBubbleSettings
         invalidateStyledPreviewImage()
         refreshStyledPreviewImageIfNeeded()
         liveDotAnimation = restored.liveDotAnimation
         isSourceLiveMotionEnabled = restored.isSourceLiveMotionEnabled
-        if y2kCCDFilterSettings.enabled || asciiArtSettings.enabled {
+        if y2kCCDFilterSettings.enabled || asciiArtSettings.enabled || subjectGlowSettings.enabled {
             isSourceLiveMotionEnabled = false
         }
         sourcePhotoAssetLocalIdentifier = restored.sourcePhotoAssetLocalIdentifier
@@ -1641,6 +1696,7 @@ struct ContentView: View {
             liveDotAnimation: liveDotAnimation,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             asciiArtSettings: asciiArtSettings,
+            subjectGlowSettings: subjectGlowSettings,
             textBubbleSettings: textBubbleSettings,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
@@ -1700,6 +1756,7 @@ struct ContentView: View {
             liveDotAnimation: liveDotAnimation,
             y2kCCDFilterSettings: y2kCCDFilterSettings,
             asciiArtSettings: asciiArtSettings,
+            subjectGlowSettings: subjectGlowSettings,
             isSourceLiveMotionEnabled: isSourceLiveMotionEnabled,
             hasSourceLiveVideo: hasSourceLiveVideo,
             sourcePhotoAssetLocalIdentifier: sourcePhotoAssetLocalIdentifier
@@ -1730,8 +1787,8 @@ struct ContentView: View {
                     return .livePhoto(bundle)
 
                 case .staticJPEG:
-                    let needsMask = snapshot.asciiArtSettings.enabled
-                    let asciiArtMask: SubjectMask? = needsMask
+                    let needsSubjectMask = snapshot.asciiArtSettings.enabled || snapshot.subjectGlowSettings.enabled
+                    let subjectMask: SubjectMask? = needsSubjectMask
                         ? try? await VisionSubjectMaskProvider().subjectMask(for: snapshot.image)
                         : nil
 
@@ -1752,7 +1809,8 @@ struct ContentView: View {
                         textBubbleSettings: snapshot.textBubbleSettings,
                         y2kCCDFilterSettings: snapshot.y2kCCDFilterSettings,
                         asciiArtSettings: snapshot.asciiArtSettings,
-                        asciiArtMask: asciiArtMask
+                        subjectMask: subjectMask,
+                        subjectGlowSettings: snapshot.subjectGlowSettings
                     ) else {
                         return nil
                     }

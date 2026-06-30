@@ -8,13 +8,20 @@ nonisolated enum CanvasStyledPhotoRenderer {
         sourceKey: String = "source",
         y2kCCDCache: Y2KCCDFilterCache? = nil,
         asciiArtSettings: ASCIIArtSettings = .default,
+        subjectMask: SubjectMask? = nil,
         asciiArtMask: SubjectMask? = nil,
         asciiArtCache: ASCIIArtCache? = nil,
-        photoCompression: MainPhotoCompression = .none
+        photoCompression: MainPhotoCompression = .none,
+        subjectGlowSettings: SubjectGlowSettings = .default
     ) async -> UIImage {
         var result = image
         let originalSourcePixelSize = CanvasImageLoader.pixelSize(for: image)
         let asciiSourcePixelSize = photoCompression.compressedSize(for: originalSourcePixelSize)
+        let detectedSubjectMask = await subjectMaskIfNeeded(
+            image: image,
+            providedMask: subjectMask ?? asciiArtMask,
+            needsMask: asciiArtSettings.enabled || subjectGlowSettings.enabled
+        )
 
         if y2kCCDFilterSettings.enabled {
             if let filtered = Y2KCCDFilterRenderer.render(
@@ -33,10 +40,9 @@ nonisolated enum CanvasStyledPhotoRenderer {
             y2kCCDFilterSettings: y2kCCDFilterSettings
         )
         if asciiArtSettings.enabled {
-            if let mask = asciiArtMask,
-               let art = renderASCII(
+            if let art = renderASCII(
                    on: result,
-                   mask: mask,
+                   mask: detectedSubjectMask,
                    settings: asciiArtSettings,
                    targetPixelSize: targetPixelSize,
                    sourcePixelSize: asciiSourcePixelSize,
@@ -60,7 +66,7 @@ nonisolated enum CanvasStyledPhotoRenderer {
                 result = art
             } else if let art = await renderASCIIAsync(
                 on: result,
-                mask: asciiArtMask,
+                mask: detectedSubjectMask,
                 settings: asciiArtSettings,
                 targetPixelSize: targetPixelSize,
                 sourcePixelSize: asciiSourcePixelSize,
@@ -73,6 +79,15 @@ nonisolated enum CanvasStyledPhotoRenderer {
             }
         }
 
+        if subjectGlowSettings.enabled,
+           let glowed = SubjectGlowRenderer.render(
+               image: result,
+               mask: detectedSubjectMask,
+               settings: subjectGlowSettings
+           ) {
+            result = glowed
+        }
+
         return result
     }
 
@@ -83,13 +98,16 @@ nonisolated enum CanvasStyledPhotoRenderer {
         sourceKey: String = "source",
         y2kCCDCache: Y2KCCDFilterCache? = nil,
         asciiArtSettings: ASCIIArtSettings = .default,
+        subjectMask: SubjectMask? = nil,
         asciiArtMask: SubjectMask? = nil,
         asciiArtCache: ASCIIArtCache? = nil,
-        photoCompression: MainPhotoCompression = .none
+        photoCompression: MainPhotoCompression = .none,
+        subjectGlowSettings: SubjectGlowSettings = .default
     ) -> UIImage {
         var result = image
         let originalSourcePixelSize = CanvasImageLoader.pixelSize(for: image)
         let asciiSourcePixelSize = photoCompression.compressedSize(for: originalSourcePixelSize)
+        let resolvedSubjectMask = subjectMask ?? asciiArtMask
 
         if y2kCCDFilterSettings.enabled {
             if let filtered = Y2KCCDFilterRenderer.render(
@@ -110,7 +128,7 @@ nonisolated enum CanvasStyledPhotoRenderer {
         if asciiArtSettings.enabled,
            let art = renderASCII(
                on: result,
-               mask: asciiArtMask,
+               mask: resolvedSubjectMask,
                settings: asciiArtSettings,
                targetPixelSize: targetPixelSize,
                sourcePixelSize: asciiSourcePixelSize,
@@ -130,8 +148,17 @@ nonisolated enum CanvasStyledPhotoRenderer {
                        cache: asciiArtCache
                    )
                }
-           ) {
+        ) {
             result = art
+        }
+
+        if subjectGlowSettings.enabled,
+           let glowed = SubjectGlowRenderer.render(
+               image: result,
+               mask: resolvedSubjectMask,
+               settings: subjectGlowSettings
+           ) {
+            result = glowed
         }
 
         return result
@@ -241,10 +268,21 @@ nonisolated enum CanvasStyledPhotoRenderer {
         return "\(baseSourceKey)-ccd-\(y2kCCDFilterSettings.cacheKey)"
     }
 
+    private nonisolated static func subjectMaskIfNeeded(
+        image: UIImage,
+        providedMask: SubjectMask?,
+        needsMask: Bool
+    ) async -> SubjectMask? {
+        guard needsMask else { return nil }
+        if let providedMask { return providedMask }
+        return try? await VisionSubjectMaskProvider().subjectMask(for: image)
+    }
+
     nonisolated static func styledPreviewEnabled(
         y2kCCDFilterSettings: Y2KCCDFilterSettings,
-        asciiArtSettings: ASCIIArtSettings = .default
+        asciiArtSettings: ASCIIArtSettings = .default,
+        subjectGlowSettings: SubjectGlowSettings = .default
     ) -> Bool {
-        y2kCCDFilterSettings.enabled || asciiArtSettings.enabled
+        y2kCCDFilterSettings.enabled || asciiArtSettings.enabled || subjectGlowSettings.enabled
     }
 }

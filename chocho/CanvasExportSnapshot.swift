@@ -18,6 +18,7 @@ nonisolated struct CanvasExportSnapshot {
     let liveDotAnimation: LiveDotAnimation
     let y2kCCDFilterSettings: Y2KCCDFilterSettings
     let asciiArtSettings: ASCIIArtSettings
+    let subjectGlowSettings: SubjectGlowSettings
     let isSourceLiveMotionEnabled: Bool
     /// 与预览一致：内存中已成功加载源 Live 配对视频，而非仅持有相册 identifier。
     let hasSourceLiveVideo: Bool

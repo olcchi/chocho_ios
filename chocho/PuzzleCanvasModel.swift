@@ -894,19 +894,33 @@ nonisolated struct TextBubbleColorComponents: Codable, Equatable, Hashable, Send
     }
 }
 
+nonisolated enum TextBubbleBorderStyle {
+    static let defaultColor = TextBubbleColorComponents(red: 0, green: 0, blue: 0)
+
+    static func lineWidth(baseSize: CGFloat) -> CGFloat {
+        max(1.25, baseSize * 0.035)
+    }
+}
+
 nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
     var enabled: Bool
     var bubbles: [TextBubbleItem]
     var bubbleColor: TextBubbleColorComponents
+    var isBorderEnabled: Bool
+    var borderColor: TextBubbleColorComponents
 
     init(
         enabled: Bool,
         bubbles: [TextBubbleItem] = [],
-        bubbleColor: TextBubbleColorComponents = .defaultBubble
+        bubbleColor: TextBubbleColorComponents = .defaultBubble,
+        isBorderEnabled: Bool = false,
+        borderColor: TextBubbleColorComponents = TextBubbleBorderStyle.defaultColor
     ) {
         self.enabled = enabled
         self.bubbles = bubbles
         self.bubbleColor = bubbleColor
+        self.isBorderEnabled = isBorderEnabled
+        self.borderColor = borderColor
     }
 
     static let `default` = TextBubbleSettings(enabled: false)
@@ -948,6 +962,8 @@ nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
         case enabled
         case bubbles
         case bubbleColor
+        case isBorderEnabled
+        case borderColor
         case text
     }
 
@@ -961,6 +977,9 @@ nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
             bubbles = decodedBubbles
             bubbleColor = try container.decodeIfPresent(TextBubbleColorComponents.self, forKey: .bubbleColor)
                 ?? .defaultBubble
+            isBorderEnabled = try container.decodeIfPresent(Bool.self, forKey: .isBorderEnabled) ?? false
+            borderColor = try container.decodeIfPresent(TextBubbleColorComponents.self, forKey: .borderColor)
+                ?? TextBubbleBorderStyle.defaultColor
             return
         }
 
@@ -969,6 +988,9 @@ nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
         bubbles = decodedEnabled ? [TextBubbleItem(text: legacyText)] : []
         bubbleColor = try container.decodeIfPresent(TextBubbleColorComponents.self, forKey: .bubbleColor)
             ?? .defaultBubble
+        isBorderEnabled = try container.decodeIfPresent(Bool.self, forKey: .isBorderEnabled) ?? false
+        borderColor = try container.decodeIfPresent(TextBubbleColorComponents.self, forKey: .borderColor)
+            ?? TextBubbleBorderStyle.defaultColor
     }
 
     func encode(to encoder: Encoder) throws {
@@ -976,6 +998,8 @@ nonisolated struct TextBubbleSettings: Codable, Equatable, Hashable, Sendable {
         try container.encode(enabled, forKey: .enabled)
         try container.encode(bubbles, forKey: .bubbles)
         try container.encode(bubbleColor, forKey: .bubbleColor)
+        try container.encode(isBorderEnabled, forKey: .isBorderEnabled)
+        try container.encode(borderColor, forKey: .borderColor)
     }
 }
 
